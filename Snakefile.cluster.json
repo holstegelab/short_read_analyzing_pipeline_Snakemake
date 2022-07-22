@@ -1,0 +1,121 @@
+__default__:
+    time: 100
+    mem: 4000
+    n: 1
+    arch_use_add: 0
+    arch_use_remove: 0
+    active_use_add: 0
+    active_use_remove: 0
+    partition: compute
+
+
+cutadapter:
+        n: 32
+        mem: 12000
+        time: 3000
+mask_adapters:
+        n: 2
+        mem: 12000
+        time: 3000
+align_reads:
+        n: 30
+        mem: 60000
+        time: 1400
+merge_rgs:
+        n: 1
+        mem: 200
+        time: 800
+markdup:
+        n: 2
+        mem: 200
+        time: 1100
+CalibrateDragstrModel:
+        n: 1
+        mem: 7500
+        time: 400
+HaplotypeCaller:
+        n: 2
+        mem: 15000
+        time: 15500
+GenomicDBImport:
+        n: 4
+        mem: 10000
+        time: 25000
+GenotypeDBI:
+        n: 2
+        mem: 16500
+        time: 18500
+Mergechrs:
+        n: 1
+        mem: 4000
+        time: 200
+SelectSNPs:
+        n: 1
+        mem: 5500
+        time: 200
+VQSR_SNP:
+        n: 1
+        mem: 10000
+        time: 550
+ApplyVQSR_SNPs:
+        n: 1
+        mem: 6000
+        time:  200
+SelectINDELs:
+        n: 1
+        mem: 7500
+        time: 200
+VQSR_INDEL:
+        n: 1
+        mem: 5500
+        time: 150
+ApplyVQSR_INDEs:
+        n: 1
+        mem: 4500
+        time: 150
+combine:
+        n: 1
+        mem: 7000
+        time: 150
+norm:
+        n: 1
+        mem: 5000
+        time: 600
+Basic_stats:
+        n: 2
+        mem: 4500
+HS_stats:
+        n: 1
+        mem: 7500
+        time: 1000
+samtools_stat:
+        n: 2
+        mem: 200
+samtools_stat_exome:
+        n: 4
+        mem: 200
+Artifact_stats:
+        n: 1
+        mem: 15000
+        time: 1000
+OXOG_metrics:
+        n: 1
+        mem: 15000
+        time: 1000
+samtools_cov:
+        n: 1
+        mem: 200
+verifybamid:
+        n: 4
+bamstats_all:
+        n: 4
+bamstats_exome:
+        n: 4
+resort_by_readname:
+        n: 16
+declip:
+        n: 16
+sort_back:
+        n: 16
+bamstats_new:
+        n: 16

@@ -1,0 +1,56 @@
+#add first parts of paths asd variable
+#HOME FOLDERS:
+miniconda: '/home/gozhegov/miniconda3/envs/preprocess/'
+RES: '/projects/0/qtholstg/hg38_res/'
+SAMPLEFOLDER: '/projects/0/ades/NL_VUMC/batch4/'
+
+
+#path to intervals file with targets
+kit_folder: 'intervals/'
+interval: 'Agilent_V6_hg38.interval_list'
+kit_bed: 'Agilent_V6_hg38.bed'
+chr_list: 'all_chr.list'
+
+
+#OUTPUT FOLDERS
+LOG: 'logs'
+BENCH: 'benchmark'
+BAM: 'bams'
+VCF: 'vcfs'
+STAT: 'stats'
+FQ: 'fq'
+
+#programs
+gatk: 'bin/gatk'
+samtools: 'bin/samtools'
+bwa2: 'bin/bwa-mem2'
+bwa: 'bin/bwa'
+bcftools: 'bin/bcftools'
+dragmap: 'bin/dragen-os'
+cutadapt: 'bin/cutadapt'
+verifybamid2: 'bin/verifybamid2'
+
+#custom scripts
+BAMSTATS: 'bam_stats.py'
+DECLIP: 'bam_clean_v2.py'
+
+#path to ref and add ref files
+ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
+ref_dir: 'Ref/'
+mask_bed: 'Ref/hg38_alt_mask.bed'
+str_ref: 'Ref/GRCh38.str.zip'
+SD: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.dict'
+verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
+verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.100k.b38.vcf.gz.dat'
+
+# VQSR DBses
+dbsnp: 'databases/Homo_sapiens_assembly38.dbsnp138.vcf.gz'
+hapmap: 'databases/hapmap_3.3.hg38.vcf.gz'
+omni: 'databases/1000G_omni2.5.hg38.vcf.gz'
+kilo_g: 'databases/1000G_phase1.snps.high_confidence.hg38.vcf.gz'
+mills: 'databases/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz'
+dbsnp_indel: 'databases/Homo_sapiens_assembly38.known_indels.vcf.gz'
+
+
+
+tmpdir: '/scratch-local'
