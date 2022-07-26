@@ -9,25 +9,27 @@ bcftools = config['miniconda'] + config['bcftools']
 dragmap = config['miniconda'] + config['dragmap']
 cutadapt = config['miniconda'] + config['cutadapt']
 verifybamid2 = config['miniconda'] + config['verifybamid2']
-
 ref = config['RES'] + config['ref']
-chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
 
-# (SAMPLE,) = glob_wildcards("/projects/0/qtholstg/fastq_test/{sample}_cut_1.fq.gz")
+# main chromosomes from GRCh38 splitted into 99 bins
+bins = config['RES'] + config['bin_file_ref']
+import csv
+chrs = []
+with open(bins) as file:
+    tsv_file = csv.reader(file, delimiter="\t")
+    for line in tsv_file:
+        out = line[0] + ':' + line[1] + '-' + line[2]
+        chrs.append(out)
+# print(chrs)
+# chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
 from read_samples import *
 from common import *
 
-# read samplefile as csv and store
-sample_information = pd.read_csv("NL_VUMC_test_2.tsv", sep='\t', index_col=False, header = None)
+# extract all sample names from SAMPLEINFO dict to use it rule all
+sample_names = SAMPLEINFO.keys()
 
-# extract SN from samplefile
-sample_names = list(sample_information[1])
-#
-# # extract paths to files from SampleFile
-# for_paths = list(sample_information[6])
-# rev_paths = list(sample_information[7])
 
 def get_fastqpaired(wildcards):
     # command to extract path to fastq files from samplefile
@@ -45,6 +47,8 @@ def get_fastqpaired(wildcards):
         file2 = file2[:-4] + '.gz'
     return [file1,file2]
 
+# function to get information about reaadgroups
+# needed if sample contain more than 1 fastq files
 def get_readgroups(wildcards):
     readgroups = SAMPLEINFO[wildcards['sample']]['readgroups']
     files = []
@@ -52,25 +56,39 @@ def get_readgroups(wildcards):
         files.append(os.path.join(config['BAM'] + '/' + wildcards['sample'] + '.' + readgroup['info']['ID'] + '.bam'))
     return files
 
+# extract info about capture kit from SAMPLEFILE
+# assume that all kits bed and interval_list files are existing and download to res folder
+def get_capture_kit_bed(wildcards):
+    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+    # if capture_kit.strip() == '':
+    #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
+    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.bed'
+    return capture_kit_path
+# return interval_list file instead of bed file
+def get_capture_kit_interval_list(wildcards):
+    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.interval_list'
+    return capture_kit_path
+
 rule all:
     input:
-        expand("{bams}/{sample}-dragstr.txt", bams = config['BAM'], sample = sample_names)
-        # expand("{bams}/{sample}.merged.bam", sample = sample_names, bams = config['BAM']),
-        # # expand(config['STAT'] + "/{sample}.{readgroup}_adapters.stat", sample = sample_names)
-        # config['STAT'] + "/BASIC.variant_calling_detail_metrics",
-        # # # sample_names from sample file accord to all samples
-        # # # expanded version accord to all samples listed in samplefile
-        # expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
-        # expand("{stats}/{sample}.bait_bias.bait_bias_detail_metrics", sample=sample_names, stats = config['STAT']),
-        # expand("{stats}/{sample}.OXOG", sample=sample_names, stats = config['STAT']),
-        # expand("{stats}/{sample}_coverage.cov", sample=sample_names, stats = config['STAT']),
-        # expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
-        # expand("{vcf}/Merged_raw_DBI_{chrs}.vcf.gz", chrs = chrs, vcf = config['VCF']),
-        # expand("{vcf}/ALL_chrs.vcf.gz", vcf = config['VCF']),
-        # expand("{stats}/{sample}_verifybamid.selfSM", sample=sample_names, stats = config['STAT']),
-        # expand("{stats}/{sample}.bam_all.tsv", sample=sample_names, stats = config['STAT']),
-        # expand("{samplefile}.oxo_quality.tab", samplefile = "NL_VUMC_test_2.tsv"),
-        # expand("{samplefile}.bam_quality.v4.tab", samplefile = "NL_VUMC_test_2.tsv")
+        expand("{bams}/{sample}-dragstr.txt", bams = config['BAM'], sample = sample_names),
+        expand("{bams}/{sample}.merged.bam", sample = sample_names, bams = config['BAM']),
+        # expand(config['STAT'] + "/{sample}.{readgroup}_adapters.stat", sample = sample_names)
+        config['STAT'] + "/BASIC.variant_calling_detail_metrics",
+        # # sample_names from sample file accord to all samples
+        # # expanded version accord to all samples listed in samplefile
+        expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
+        expand("{stats}/{sample}.bait_bias.bait_bias_detail_metrics", sample=sample_names, stats = config['STAT']),
+        expand("{stats}/{sample}.OXOG", sample=sample_names, stats = config['STAT']),
+        expand("{stats}/{sample}_coverage.cov", sample=sample_names, stats = config['STAT']),
+        expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
+        expand("{vcf}/Merged_raw_DBI_{chrs}.vcf.gz", chrs = chrs, vcf = config['VCF']),
+        expand("{vcf}/ALL_chrs.vcf.gz", vcf = config['VCF']),
+        expand("{stats}/{sample}_verifybamid.selfSM", sample=sample_names, stats = config['STAT']),
+        expand("{stats}/{sample}.bam_all.tsv", sample=sample_names, stats = config['STAT']),
+        expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
+        expand("{samplefile}.bam_quality.v4.tab", samplefile = SAMPLE_FILES)
 
 #just alignment and convert to bams
 
@@ -119,14 +137,16 @@ rule all:
 #         """
 #         shell(cmd)
 
+# remove known illumina adapters
 rule cutadapter:
     input:
         get_fastqpaired
     output:
         forr_f=config['FQ'] + "/{sample}.{readgroup}.cut_1.fq.gz",
         rev_f=config['FQ'] + "/{sample}.{readgroup}.cut_2.fq.gz"
+    # log file in this case contain some stats about removed seqs
     log:
-        cutadapt_log= config['LOG'] + "/{sample}.{readgroup}.cutadapt.log",
+        cutadapt_log= config['STAT'] + "/{sample}.{readgroup}.cutadapt.log",
     benchmark:
         config['BENCH'] + "/{sample}.{readgroup}.cutadapt.txt"
     priority: 10
@@ -145,23 +165,19 @@ rule cutadapter:
         {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}
         """
         shell(cmd)
-    # shell:
-    #     """
-    #     {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input} 2> {log}
-    #     """
 
-
+# rule to align reads from cutted fq on hg38 ref
+# use dragmap aligner
+# samtools fixmate for future step with samtools mark duplicates
 rule align_reads:
     input:
         for_r = rules.cutadapter.output.forr_f,
         rev_r = rules.cutadapter.output.rev_f
-        # rules.mask_adapters.output.maskedbam
-        # forward="/projects/0/qtholstg/fastq_test/{sample}_cut_1.fq.gz",
-        # rev="/projects/0/qtholstg/fastq_test/{sample}_cut_2.fq.gz"
     output:
-        bam=config['BAM'] + "/" + "{sample}.{readgroup}.bam"
+        bam=config['BAM'] + "/{sample}.{readgroup}.bam"
     params:
         ref_dir = config['RES'] + config['ref_dir'],
+        # mask bed for current reference genome
         mask_bed = config['RES'] + config['mask_bed']
     threads: config["align_reads"]["n"]
     log:
@@ -180,6 +196,7 @@ rule align_reads:
         "{samtools} sort -T 'sort_temporary' -@ {threads}  -o {output.bam} &> {log.samtools_sort} &&"
         "{samtools} index -@ {threads} {output.bam} &> {log.samtools_index}"
 
+# merge different readgroups files for same sample
 rule merge_rgs:
     input:
         get_readgroups
@@ -202,6 +219,8 @@ rule markdup:
     params:
         machine = 2500 #change to function
     # 100 for HiSeq and 2500 for NovaSeq
+    # if fastq header not in known machines?
+    # if not Illumina?
     log:
         samtools_markdup = config['LOG'] + '/' + "{sample}.markdup.log",
         samtools_index_md = config['LOG'] + '/' + "{sample}.markdup_index.log"
@@ -211,7 +230,7 @@ rule markdup:
         "{samtools} index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
 
         # merge bam files here, add rule, option sort order
-        # 
+        #
         # additional ruleto markdup
         # "{samtools} markdup -@ {threads} - {output.bam} 2> {log.samtools_markdup} && "
         # add -S flag, find what it does 
@@ -228,15 +247,11 @@ rule markdup:
         # "{samtools} markdup -@ {threads} - {output.bam} 2> {log.samtools_markdup} && "
         # "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
 
-# bam_stats.py
-# IF supplemetary fraction > 0.5%
-# sort in query_name
-# run bam_clean.py
-# sort by pos
-# bam_stats.py post cleaning
-#
 
-# rule bamstats_all:
+ruleorder: sort_back > bamstats_all
+
+# checkpoint cause we ned to check supplemetary ratio
+# if supp_ratio is too high run additional clean process
 checkpoint bamstats_all:
     input:
         rules.markdup.output.mdbams
@@ -247,14 +262,15 @@ checkpoint bamstats_all:
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output}"
 
-
+# this rule triggers in case of high supp_ratio
+# resort bam file before additional cleanup
 rule resort_by_readname:
     input:
         rules.markdup.output.mdbams
     output: resort_bams = temp(config['BAM'] + '/{sample}_resort.bam')
     threads: config['resort_by_readname']['n']
     shell: "{samtools} sort -n -@ {threads} -o  {output} {input}"
-
+# additional cleanup with custom script
 rule declip:
     input:
         rules.resort_by_readname.output.resort_bams
@@ -263,49 +279,43 @@ rule declip:
     params: declip = config['DECLIP']
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.declip} > {output}"
-
+# back to original sort order after cleanup
 rule sort_back:
     input:
         rules.declip.output.declip_bam
-    output: ready_bams = config['BAM'] + '/{sample}.DeClipped.bam'
+    output:
+        ready_bams = config['BAM'] + '/{sample}.DeClipped.bam',
+        All_stats= config['STAT'] + '/{sample}.bam_all.additional_cleanup.tsv'
     threads: config['sort_back']['n']
     params:
+        # we need to store old stats and compute new stats
         old_stats = rules.bamstats_all.output.All_stats,
-        new_path_to_old_stats = config['STAT'] + '/expired/{sample}.bam_all_expired.tsv'
+        new_path_to_old_stats = config['STAT'] + '/expired/{sample}.bam_all_expired.tsv',
+        py_stats= config['BAMSTATS']
     shell:
-        "{samtools} sort -@ {threads} -o {output} {input}"
-        "{samtools} index -@ {threads} {output}"
-        "mv {params.old_stats} {params.new_path_to_old_stats}"
+        "{samtools} sort -@ {threads} -o {output.ready_bams} {input} &&"
+        "{samtools} index -@ {threads} {output.ready_bams} &&"
+        "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output.All_stats}"
 
 
-
+# check amount of supplementary reads
+# if value higher than 0.5% - run additional cleanup steps
+# from checkpoint step
+# trigger this additional steps only in case if these steps necessary
 def check_supp(wildcards):
     with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
         lines = f.readlines()
-        if float((lines[1].split()[3])) >= float(0.003):
+        # 4th column (3rd if 0-based) is column with supplementary fraction
+        if float((lines[1].split()[3])) >= float(0.005):
+            # return cleaned bam in case if clean up necessary
             return rules.sort_back.output.ready_bams
         else:
+            # return original MD bam if clean up not necessary
             return rules.markdup.output.mdbams
 
-def check_supp_stats(wildcards):
-    with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
-        lines = f.readlines()
-        if float((lines[1].split()[3])) >= float(0.003):
-            return rules.bamstat_new.output.All_stats
-        else:
-            return rules.bamstats_all.output.All_stats
-
-
-rule bamstats_new:
-    input:
-        check_supp
-    output:
-        All_stats = config['STAT'] + '/{sample}.bam_all.tsv'
-    threads: config['bamstats_new']['n']
-    params: py_stats = config['BAMSTATS']
-    shell:
-        "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output}"
-
+# calibrate model
+# step for HaplotypeCaller in dragen mode
+# for better resolution in complex regions
 rule CalibrateDragstrModel:
     input:
         check_supp
@@ -322,8 +332,11 @@ rule CalibrateDragstrModel:
 #find SNPs from bams
 rule HaplotypeCaller:
     input:
+        # check what bam file we need to use (with or without additional cleanup)
         bams = check_supp,
-        model = rules.CalibrateDragstrModel.output.dragstr_model
+        model = rules.CalibrateDragstrModel.output.dragstr_model,
+        # command to get path to capture_kit interval list from SAMPLEFILE
+        interval = get_capture_kit_interval_list
     output:
         gvcf=temp("gvcfs/{sample}.g.vcf.gz"),
     log:
@@ -332,15 +345,19 @@ rule HaplotypeCaller:
         config['BENCH'] + "/{sample}_haplotypecaller.txt"
     params:
         dbsnp = config['RES'] + config['dbsnp'],
-        interval = config['interval'],
-        padding=150  # extend intervals to this bp
+        padding=100  # extend intervals to this bp
     priority: 25
     shell:
-        # interval should be extended
         "{gatk} HaplotypeCaller \
-                 -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF \
+                 -R {ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF \
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-                 -I {input.bams} -O {output.gvcf} --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
+                 -I {input.bams} -O {output.gvcf} \
+                  --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
+
+#############################################################################################
+#############################################################################################
+# downstream analysis require less computational power and don't support multithreading
+# change to another snakemake file and run separatly?
 #############################################################################################
 #############################################################################################
 
@@ -361,7 +378,8 @@ rule GenomicDBImport:
     priority: 30
     shell:
         "ls gvcfs/*.g.vcf.gz > gvcfs.list && {gatk} GenomicsDBImport --reader-threads {threads}\
-        -V gvcfs.list --intervals {wildcards.chrs}  -R {ref} --genomicsdb-workspace-path {output} --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
+        -V gvcfs.list --intervals {wildcards.chrs}  -R {ref} --genomicsdb-workspace-path {output} \
+         --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
         # "ls gvcfs/*.g.vcf > gvcfs.list && {gatk} GenomicsDBImport -V gvcfs.list --intervals {chrs}  -R {ref} --genomicsdb-workspace-path {output} \
         #      --max-num-intervals-to-import-in-parallel {params.N_intervals} --reader-threads {params.threads}"
 
@@ -374,13 +392,12 @@ rule GenotypeDBI:
     log: config['LOG'] + '/' + "GenotypeDBI.{chrs}.log"
     benchmark: config['BENCH'] + "/GenotypeDBI.{chrs}.txt"
     params:
-        padding=150,
         dbsnp = config['RES'] + config['dbsnp']
     priority: 40
     shell:
             "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {wildcards.chrs} 2> {log}"
 
-# don't merge before VQSR
+
 rule Mergechrs:
     input:
         expand(config['VCF'] + "/Merged_raw_DBI_{chrs}.vcf.gz", chrs = chrs)
@@ -438,7 +455,7 @@ rule VQSR_SNP:
          -resource:omni,known=false,training=true,truth=true,prior=12.0 {params.omni} \
          -resource:1000G,known=false,training=true,truth=false,prior=10.0 {params.kilo_g} \
          -resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {params.dbsnp} \
-         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -mode SNP \
+         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -mode SNP -an InbreedingCoeff\
          --trust-all-polymorphic -AS TRUE\
          -tranche 100.0 -tranche 99.95 -tranche 99.9 -tranche 99.8 -tranche 99.6 -tranche 99.5 -tranche 99.4 -tranche 99.3 -tranche 99.0 -tranche 98.0 -tranche 97.0 -tranche 90.0 \
          -O {output.recal_snp} \
@@ -576,31 +593,31 @@ rule Basic_stats:
 #include off-target metrics
 rule HS_stats:
     input:
-        rules.markdup.output.mdbams
+        vcf = check_supp,
+        interval = get_capture_kit_interval_list
     output:
         HS_metrics=config['STAT'] + "/{sample}_hs_metrics"
     log: config['LOG'] + '/' + "HS_stats_{sample}.log"
     benchmark: config['BENCH'] + "/HS_stats_{sample}.txt"
     priority: 99
     params:
-        interval = config['interval'],
         #minimum Base Quality for a base to contribute cov
         #def is 20
         Q=10,
         #minimin Mapping Quality for a read to contribute cov
         #def is 20
         MQ=10,
-    #padding = 100
     shell:
         "{gatk} CollectHsMetrics \
-            -I {input} -R {ref} -BI {params.interval} -TI {params.interval} \
+            -I {input.vcf} -R {ref} -BI {input.interval} -TI {input.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"
 
 rule Artifact_stats:
     input:
-        rules.markdup.output.mdbams
+        vcf = check_supp,
+        interval= get_capture_kit_interval_list
     output:
         Bait_bias = config['STAT'] + "/{sample}.bait_bias.bait_bias_summary_metrics",
         Pre_adapter = config['STAT'] + "/{sample}.bait_bias.pre_adapter_summary_metrics"
@@ -612,28 +629,29 @@ rule Artifact_stats:
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
         out = config['STAT'] + "/{sample}.bait_bias",
-        interval = config['interval'],
         dbsnp = config['RES'] + config['dbsnp']
     shell:
-        "{gatk} CollectSequencingArtifactMetrics -I {input} -O {params.out} -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"
+        "{gatk} CollectSequencingArtifactMetrics -I {input.vcf} -O {params.out} \
+        -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> log"
 
 rule OXOG_metrics:
     input:
-        rules.markdup.output.mdbams
+        vcf = check_supp,
+        interval= get_capture_kit_interval_list
     output:
         Artifact_matrics = config['STAT'] + "/{sample}.OXOG"
     priority: 99
     log: config['LOG'] + '/' + "OXOG_stats_{sample}.log"
     benchmark: config['BENCH'] + "/OxoG_{sample}.txt"
     params:
-        interval = config['interval'],
         dbsnp = config['RES'] + config['dbsnp']
     shell:
-        "{gatk} CollectOxoGMetrics -I {input} -O {output} -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"
+        "{gatk} CollectOxoGMetrics -I {input.vcf} -O {output} -R {ref} \
+         --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> {log}"
 
 rule samtools_stat:
     input:
-        rules.markdup.output.mdbams
+        check_supp
     output: samtools_stat = config['STAT'] + "/{sample}_samtools.stat"
     priority: 99
     log: config['LOG'] + '/' + "samtools_{sample}.log"
@@ -644,37 +662,25 @@ rule samtools_stat:
 
 rule samtools_stat_exome:
     input:
-        rules.markdup.output.mdbams
+        bam = check_supp,
+        bed_interval = get_capture_kit_bed
     output: samtools_stat_exome = config['STAT'] + "/{sample}_samtools.exome.stat"
     priority: 99
     log: config['LOG'] + '/' + "samtools_exome_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_exome_{sample}.txt"
-    params:
-        bed_interval = config['kit_bed']
     threads: config['samtools_stat']['n']
     shell:
-        "{samtools} stat -@ {threads} -t {params.bed_interval} -r {ref} {input} > {output}"
-#
-# rule samtools_cov:
-#     input:
-#         rules.markdup.output.mdbams
-#     output: samtools_stat = config['STAT'] + "/{sample}_coverage.cov"
-#     priority: 99
-#     log: config['LOG'] + '/' + "coverage_{sample}.log"
-#     benchmark: config['BENCH'] + "/samtools_cov_{sample}.txt"
-#     params:
-#         MQ = 10, # mapping quality threshold, default 0
-#         BQ = 10 # base quality threshold, default 0
-#     shell:
-#         "{samtools} coverage -q {params.MQ} -Q {params.BQ} -o {output} {input}"
-
+        "{samtools} stat -@ {threads} -t {input.bed_interval} -r {ref} {input.bam} > {output}"
 
 # verifybamid
 # capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
 
+# verifybamid has some bugs and require samtools lower version
+# to avoid any bugs verifybamid step runs in different conda enviroment
+#
 rule verifybamid:
     input:
-        rules.markdup.output.mdbams
+        check_supp
     output:
         VBID_stat = config['STAT'] + '/{sample}_verifybamid.selfSM'
     threads: config['verifybamid']['n']
@@ -695,16 +701,26 @@ rule verifybamid:
 
 rule bamstats_exome:
     input:
-        rules.markdup.output.mdbams
+        bam = check_supp,
+        bed_interval= get_capture_kit_bed
     output:
         All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
     threads: config['bamstats_exome']['n']
     params:
-        py_stats = config['BAMSTATS'],
-        bed_interval = config['kit_bed']
+        py_stats = config['BAMSTATS']
     shell:
-        "samtools view -s 0.05 -h {input} --threads {threads} -L {params.bed_interval} | python3 {params.py_stats} stats > {output}"
+        "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {input.bed_interval} | python3 {params.py_stats} stats > {output}"
 
+# which statistic file we need to use depends on additional clean up steps
+# if we trigger addition clean up, so we need to provide bam_all.tsv statistic file after cleanup
+# other stat files won't chged a lot after cleanup, so we keep them
+def check_supp_stats(wildcards):
+    with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
+        lines = f.readlines()
+        if float((lines[1].split()[3])) >= float(0.005):
+            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.additional_cleanup.tsv')
+        else:
+            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.tsv')
 
 def get_quality_stats(wildcards):
     sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
@@ -715,7 +731,7 @@ def get_quality_stats(wildcards):
         files.append(config['STAT'] + '/' + sample + "_samtools.stat")
         files.append(config['STAT'] + '/' + sample + '_samtools.exome.stat')
         files.append(config['STAT'] + '/' + sample + '_verifybamid.selfSM')
-        files.append(config['STAT'] + '/' + sample + '.bam_all.tsv')
+        files.append(check_supp_stats(sample))
         files.append(config['STAT'] + '/' + sample + '.bam_exome.tsv')
         files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_summary_metrics')
         files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_summary_metrics')
@@ -741,9 +757,6 @@ rule gatherstats:
 
 def get_oxo_stats(wildcards):
     sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
-    directory = os.path.dirname(wildcards['samplefile'] + '.tsv')
-    basename = os.path.basename(wildcards['samplefile'])
-
     files = []
     samples = list(sampleinfo.keys())
     samples.sort()

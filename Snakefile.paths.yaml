@@ -1,15 +1,13 @@
 #add first parts of paths asd variable
 #HOME FOLDERS:
-miniconda: '/home/gozhegov/miniconda3/envs/preprocess/'
+# path to miniconda
+miniconda: '~/miniconda3/envs/preprocess/'
 RES: '/projects/0/qtholstg/hg38_res/'
+#path to folder with samples
 SAMPLEFOLDER: '/projects/0/ades/NL_VUMC/batch4/'
-
 
 #path to intervals file with targets
 kit_folder: 'intervals/'
-interval: 'Agilent_V6_hg38.interval_list'
-kit_bed: 'Agilent_V6_hg38.bed'
-chr_list: 'all_chr.list'
 
 
 #OUTPUT FOLDERS
@@ -39,6 +37,7 @@ ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_dir: 'Ref/'
 mask_bed: 'Ref/hg38_alt_mask.bed'
 str_ref: 'Ref/GRCh38.str.zip'
+bin_file_ref: 'Ref/GRCh38_main_chrs.bin_file.txt'
 SD: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.dict'
 verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
 verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.100k.b38.vcf.gz.dat'
