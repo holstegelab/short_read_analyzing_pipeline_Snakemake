@@ -8,7 +8,14 @@ __default__:
     active_use_remove: 0
     partition: compute
 
-
+convert_to_uBAM:
+        n: 1
+merge_ubams:
+        n: 2
+convert_to_uCRAM:
+        n: 15
+convert_fq_to_uCRAM:
+        n: 15
 cutadapter:
         n: 32
         mem: 12000

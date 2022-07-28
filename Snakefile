@@ -47,6 +47,7 @@ def get_fastqpaired(wildcards):
         file2 = file2[:-4] + '.gz'
     return [file1,file2]
 
+
 # function to get information about reaadgroups
 # needed if sample contain more than 1 fastq files
 def get_readgroups(wildcards):
@@ -88,9 +89,11 @@ rule all:
         expand("{stats}/{sample}_verifybamid.selfSM", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}.bam_all.tsv", sample=sample_names, stats = config['STAT']),
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
-        expand("{samplefile}.bam_quality.v4.tab", samplefile = SAMPLE_FILES)
+        expand("{samplefile}.bam_quality.v4.tab", samplefile = SAMPLE_FILES),
+        expand("{cram}/{sample}_unmapped_masked.cram", cram = config['CRAM'], sample=sample_names)
 
 #just alignment and convert to bams
+
 
 # rule mask_adapters:
 #     input:
@@ -137,7 +140,74 @@ rule all:
 #         """
 #         shell(cmd)
 
+
+
 # remove known illumina adapters
+# convert to uBAM for masking adapters
+rule convert_to_uBAM:
+    input:
+        get_fastqpaired
+    output:
+        uBAM = temp(config['uBAM'] + "/{sample}.{readgroup}.unmapped.bam"),
+        # maskedBAM = config['uBAM'] + "/{sample}.{readgroup}.unmapped.masked.bam",
+        # adapters_stats= config['STAT'] + "/{sample}.{readgroup}_adapters.stat"
+    benchmark: config['BENCH'] + "/{sample}.{readgroup}.unmappedBAM.txt"
+    log:
+        fqtosam = config['LOG'] + '/' + "{sample}.{readgroup}.fq2sam.log",
+        # adapters = config['LOG'] + '/' + "{sample}.{readgroup}.adapters.log"
+    shell:
+        """
+        {gatk} FastqToSam --FASTQ {input[0]} --FASTQ2 {input[1]} -O {output.uBAM} -SM {wildcards.sample} -RG {wildcards.readgroup}
+        """
+mask adapters in uBAM file
+rule mask_adapters:
+    input:
+        rules.convert_to_uBAM.output.uBAM
+    output:
+        maskedBAM = config['uBAM'] + "/{sample}.{readgroup}_unmapped_masked.bam",
+        adapters_stats= config['STAT'] + "/{sample}.{readgroup}_adapters.stat"
+    benchmark: config['BENCH'] + "/{sample}.{readgroup}.maskadapters.txt"
+    log:
+        adapters = config['LOG'] + '/' + "{sample}.{readgroup}.adapters.log"
+    shell:
+        """
+        {gatk} MarkIlluminaAdapters -I {input} -O {output.maskedBAM} -M {output.adapters_stats} 2> {log.adapters}
+        """
+
+def get_readgroups_unmapped(wildcards):
+    readgroups = SAMPLEINFO[wildcards['sample']]['readgroups']
+    files = []
+    for readgroup in readgroups:
+        files.append(os.path.join(config['uBAM'] + '/' + wildcards['sample'] + '.' + readgroup['info']['ID'] + '_unmapped_masked.bam'))
+    return files
+# comdine all uBAM with masked adpters in one file
+# extract fq from unmapped bam files with masked adapters
+rule merge_ubams:
+    input:
+        get_readgroups_unmapped
+    output:
+        merged_bam = config['uBAM']  + "/{sample}_merged_unmapped.masked.bam",
+        f1_masked = temp(config['FQ'] + "/{sample}_masked_1.fq.gz"),
+        f2_masked = temp(config['FQ'] + "/{sample}_masked_2.fq.gz")
+    threads: config['merge_ubams']['n']
+    shell:
+        "{samtools} merge -@ {threads} -o {output.merged_bam} {input}  &&  "
+        "{gatk} SamToFastq -I {output.merged_bam} -F {output.f1_masked} -F2 {output.f2_masked}"
+
+# convert fq with masked adapters to unmapped CRAM file for storage
+rule convert_fq_to_uCRAM:
+    input:
+        f1 = rules.merge_ubams.output.f1_masked,
+        f2 = rules.merge_ubams.output.f2_masked
+    output:
+        uCRAM = config['CRAM'] + "/{sample}_unmapped_masked.cram"
+    threads: config['convert_fq_to_uCRAM']['n']
+    shell:
+        "{samtools} import -@ {threads} -1 {input.f1} -2 {input.f2} -o {output}"
+
+
+# cut adapters from inout
+# DRAGMAP doesn;t work well with uBAM, so use fq as input
 rule cutadapter:
     input:
         get_fastqpaired

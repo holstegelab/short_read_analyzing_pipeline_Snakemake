@@ -17,6 +17,8 @@ BAM: 'bams'
 VCF: 'vcfs'
 STAT: 'stats'
 FQ: 'fq'
+uBAM: 'uBAM'
+CRAM: 'cram'
 
 #programs
 gatk: 'bin/gatk'
