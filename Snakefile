@@ -73,6 +73,8 @@ def get_capture_kit_interval_list(wildcards):
 
 rule all:
     input:
+        expand('{stat}/contam/{sample}_verifybamid.selfSM', stat = config['STAT'] , sample = sample_names),
+        expand('gvcfs/{sample}.g.vcf.gz', sample = sample_names),
         expand("{bams}/{sample}-dragstr.txt", bams = config['BAM'], sample = sample_names),
         expand("{bams}/{sample}.merged.bam", sample = sample_names, bams = config['BAM']),
         # expand(config['STAT'] + "/{sample}.{readgroup}_adapters.stat", sample = sample_names)
@@ -80,66 +82,18 @@ rule all:
         # # sample_names from sample file accord to all samples
         # # expanded version accord to all samples listed in samplefile
         expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
-        expand("{stats}/{sample}.bait_bias.bait_bias_detail_metrics", sample=sample_names, stats = config['STAT']),
+        # expand("{stats}/{sample}.bait_bias.bait_bias_detail_metrics", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}.OXOG", sample=sample_names, stats = config['STAT']),
-        expand("{stats}/{sample}_coverage.cov", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
         expand("{vcf}/Merged_raw_DBI_{chrs}.vcf.gz", chrs = chrs, vcf = config['VCF']),
         expand("{vcf}/ALL_chrs.vcf.gz", vcf = config['VCF']),
-        expand("{stats}/{sample}_verifybamid.selfSM", sample=sample_names, stats = config['STAT']),
+        expand("{stats}/contam/{sample}_verifybamid.selfSM", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}.bam_all.tsv", sample=sample_names, stats = config['STAT']),
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.v4.tab", samplefile = SAMPLE_FILES),
         expand("{cram}/{sample}_unmapped_masked.cram", cram = config['CRAM'], sample=sample_names)
 
 #just alignment and convert to bams
-
-
-# rule mask_adapters:
-#     input:
-#         # for_paths,
-#         # rev_paths
-#         get_fastqpaired,
-#     output:
-#         ubam = temp(config['BAM'] + "/{sample}.{readgroup}.unmapped.bam"),
-#         maskedbam = config['BAM'] + "/{sample}.{readgroup}_masked_unmapped.bam",
-#         adapters_stats = config['STAT'] + "/{sample}.{readgroup}_adapters.stat"
-#     benchmark: config['BENCH'] + "/{sample}.{readgroup}.maskadapters.txt"
-#     log:
-#         fqtosam = config['LOG'] + '/' + "{sample}.{readgroup}.fq2sam.log",
-#         adapters = config['LOG'] + '/' + "{sample}.{readgroup}.adapters.log"
-#     # shell:"""
-#     #     {gatk} FastqToSam --FASTQ {input[0]} --FASTQ2 {input[1]} -O {output.ubam} -SM {wildcards.sample} &&
-#     #     {gatk} MarkIlluminaAdapters -I {output.ubam} -O {output.maskedbam} -M {output.adapters_stats}
-#     # """
-#     run:
-#         sinfo = SAMPLEINFO[wildcards['sample']]
-#         rgroup = \
-#         [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
-#         rgroupid = rgroup['ID']
-#         rgrouplib = rgroup.get('LB','unknown')
-#         rgroupplat = rgroup.get('PL','unknown')
-#         rgrouppu = rgroup.get('PU','unknown')
-#         rgroupsc = rgroup.get('CN','unknown')
-#         rgrouprd = rgroup.get('DT','unknown')
-#
-#         rgline = '@RG\\tID:%s\\tSM:%s' % (rgroupid, wildcards['sample'])
-#         if 'DT' in rgroup:
-#             rgline += '\\tDT:%s' % rgroup['DT']
-#         if 'CN' in rgroup:
-#             rgline += '\\tCN:%s' % rgroup['CN']
-#         if 'LB' in rgroup:
-#             rgline += '\\tLB:%s' % rgroup['LB']
-#         if 'PL' in rgroup:
-#             rgline += '\\tPL:%s' % rgroup['PL']
-#         if 'PU' in rgroup:
-#             rgline += '\\tPU:%s' % rgroup['PU']
-#         cmd="""
-#         {gatk} FastqToSam --FASTQ {input[0]} --FASTQ2 {input[1]} -O {output.ubam} -SM {wildcards.sample} -RG {wildcards.readgroup} 2> {log.fqtosam} &&
-#         {gatk} MarkIlluminaAdapters -I {output.ubam} -O {output.maskedbam} -M {output.adapters_stats} 2> {log.adapters}
-#         """
-#         shell(cmd)
-
 
 
 # remove known illumina adapters
@@ -159,7 +113,7 @@ rule convert_to_uBAM:
         """
         {gatk} FastqToSam --FASTQ {input[0]} --FASTQ2 {input[1]} -O {output.uBAM} -SM {wildcards.sample} -RG {wildcards.readgroup}
         """
-mask adapters in uBAM file
+# mask adapters in uBAM file
 rule mask_adapters:
     input:
         rules.convert_to_uBAM.output.uBAM
@@ -352,15 +306,12 @@ rule declip:
 # back to original sort order after cleanup
 rule sort_back:
     input:
-        rules.declip.output.declip_bam
+        rules.declip.output.declip_bam,
     output:
         ready_bams = config['BAM'] + '/{sample}.DeClipped.bam',
         All_stats= config['STAT'] + '/{sample}.bam_all.additional_cleanup.tsv'
     threads: config['sort_back']['n']
     params:
-        # we need to store old stats and compute new stats
-        old_stats = rules.bamstats_all.output.All_stats,
-        new_path_to_old_stats = config['STAT'] + '/expired/{sample}.bam_all_expired.tsv',
         py_stats= config['BAMSTATS']
     shell:
         "{samtools} sort -@ {threads} -o {output.ready_bams} {input} &&"
@@ -399,27 +350,68 @@ rule CalibrateDragstrModel:
     shell:
         "{gatk} CalibrateDragstrModel -R {ref} -I {input} -O {output} -str {params.str_ref} 2>{log}"
 
+# verifybamid
+# capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+
+# verifybamid has some bugs and require samtools lower version
+# to avoid any bugs verifybamid step runs in different conda enviroment
+#
+rule verifybamid:
+    input:
+        check_supp
+    output:
+        VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.selfSM'
+    # end of this file hardcoded in Haplotypecaller and read_contam_w
+    threads: config['verifybamid']['n']
+    priority: 35
+    params:
+        VBID_prefix = config['STAT'] + '/{sample}_verifybamid',
+        SVD = config['RES'] + config['verifybamid_exome']
+    shell:
+        """
+        set +u
+        source ~/bin/start_conda
+        PS1=''
+        conda info --envs
+        source activate verifybamid
+        set -u
+        verifybamid2 --BamFile {input} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
+        """
+
+def read_contam_w(wildcards):
+    # filename = rules.verifybamid.output.VBID_stat
+    filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] + '_verifybamid.selfSM')
+    with open(filename,'r') as f:
+        c = csv.reader(f, delimiter='\t')
+        c = iter(c)
+        headers = c.__next__()
+        data = c.__next__()
+        freemix = data[6]
+    return freemix
+
 #find SNPs from bams
 rule HaplotypeCaller:
     input:
         # check what bam file we need to use (with or without additional cleanup)
         bams = check_supp,
         model = rules.CalibrateDragstrModel.output.dragstr_model,
+        contam= rules.verifybamid.output.VBID_stat,
         # command to get path to capture_kit interval list from SAMPLEFILE
-        interval = get_capture_kit_interval_list
+        interval = get_capture_kit_interval_list,
     output:
-        gvcf=temp("gvcfs/{sample}.g.vcf.gz"),
+        gvcf="gvcfs/{sample}.g.vcf.gz",
     log:
         HaplotypeCaller=config['LOG'] + '/' + "{sample}_haplotypecaller.log"
     benchmark:
         config['BENCH'] + "/{sample}_haplotypecaller.txt"
     params:
         dbsnp = config['RES'] + config['dbsnp'],
-        padding=100  # extend intervals to this bp
+        padding=100,  # extend intervals to this bp
+        contam_frac = read_contam_w
     priority: 25
     shell:
         "{gatk} HaplotypeCaller \
-                 -R {ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF \
+                 -R {ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf} \
                   --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
@@ -689,8 +681,8 @@ rule Artifact_stats:
         vcf = check_supp,
         interval= get_capture_kit_interval_list
     output:
-        Bait_bias = config['STAT'] + "/{sample}.bait_bias.bait_bias_summary_metrics",
-        Pre_adapter = config['STAT'] + "/{sample}.bait_bias.pre_adapter_summary_metrics"
+        Bait_bias = config['STAT'] + '/{sample}.bait_bias.bait_bias_summary_metrics',
+        Pre_adapter = config['STAT'] + '/{sample}.bait_bias.pre_adapter_summary_metrics'
         # Artifact_matrics = config['STAT'] + "/{sample}.bait_bias.bait_bias_detail_metrics"
     priority: 99
     log: config['LOG'] + '/' + "Artifact_stats_{sample}.log"
@@ -742,31 +734,7 @@ rule samtools_stat_exome:
     shell:
         "{samtools} stat -@ {threads} -t {input.bed_interval} -r {ref} {input.bam} > {output}"
 
-# verifybamid
-# capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
 
-# verifybamid has some bugs and require samtools lower version
-# to avoid any bugs verifybamid step runs in different conda enviroment
-#
-rule verifybamid:
-    input:
-        check_supp
-    output:
-        VBID_stat = config['STAT'] + '/{sample}_verifybamid.selfSM'
-    threads: config['verifybamid']['n']
-    params:
-        VBID_prefix = config['STAT'] + '/{sample}_verifybamid',
-        SVD = config['RES'] + config['verifybamid_exome']
-    shell:
-        """
-        set +u
-        source ~/bin/start_conda
-        PS1=''
-        conda info --envs
-        source activate verifybamid
-        set -u
-        verifybamid2 --BamFile {input} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
-        """
 
 
 rule bamstats_exome:
@@ -800,7 +768,7 @@ def get_quality_stats(wildcards):
     for sample in samples:
         files.append(config['STAT'] + '/' + sample + "_samtools.stat")
         files.append(config['STAT'] + '/' + sample + '_samtools.exome.stat')
-        files.append(config['STAT'] + '/' + sample + '_verifybamid.selfSM')
+        files.append(config['STAT'] + '/contam/' + sample + '_verifybamid.selfSM')
         files.append(check_supp_stats(sample))
         files.append(config['STAT'] + '/' + sample + '.bam_exome.tsv')
         files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_summary_metrics')
@@ -831,8 +799,8 @@ def get_oxo_stats(wildcards):
     samples = list(sampleinfo.keys())
     samples.sort()
     for sample in samples:
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_detail_metrics')
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_detail_metrics')
+        files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_summary_metrics')
+        files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_summary_metrics')
     return files
 
 
