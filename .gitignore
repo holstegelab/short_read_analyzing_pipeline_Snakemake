@@ -1,0 +1,10 @@
+test.py
+genomicbins.txt
+*.fq
+*.fastq
+token_git
+*.fq.gz
+*.fastq.gz
+*.bam
+*.vcf
+*.vcf.gz
