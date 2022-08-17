@@ -215,10 +215,10 @@ rule align_reads:
     priority: 15
     shell:
         # "{dragmap} -r {params.ref_dir} -b {input} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |"
-        "{dragmap} -r {params.ref_dir} -1 {input.for_r} -2 {input.rev_r} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |" 
-        "{samtools} fixmate -@ {threads} -m - -  &> {log.samtools_fixmate} | "
-        "{samtools} sort -T 'sort_temporary' -@ {threads}  -o {output.bam} &> {log.samtools_sort} &&"
-        "{samtools} index -@ {threads} {output.bam} &> {log.samtools_index}"
+        "{dragmap} -r {params.ref_dir} -1 {input.for_r} -2 {input.rev_r} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | " 
+        "{samtools} fixmate -@ {threads} -m - -  2> {log.samtools_fixmate} | "
+        "{samtools} sort -T 'sort_temporary' -@ {threads}  -o {output.bam} 2> {log.samtools_sort} && "
+        "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
 
 # merge different readgroups files for same sample
 rule merge_rgs:
@@ -231,7 +231,7 @@ rule merge_rgs:
     threads: config['merge_rgs']['n']
     run:
         inputs = ' '.join(f for f in input if f.endswith('.bam'))
-        shell("{samtools} merge -@ {threads} -o {output} {inputs} &> {log}")
+        shell("{samtools} merge -@ {threads} -o {output} {inputs} 2> {log}")
 
 rule markdup:
     input:
@@ -250,7 +250,7 @@ rule markdup:
         samtools_index_md = config['LOG'] + '/' + "{sample}.markdup_index.log"
     threads: config['markdup']['n']
     shell:
-        "{samtools} markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} &> {log.samtools_markdup} && "
+        "{samtools} markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && "
         "{samtools} index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
 
         # merge bam files here, add rule, option sort order
