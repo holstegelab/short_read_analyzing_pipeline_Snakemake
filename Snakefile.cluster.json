@@ -45,8 +45,8 @@ HaplotypeCaller:
         mem: 15000
         time: 15500
 GenomicDBImport:
-        n: 4
-        mem: 10000
+        n: 2
+        mem: 7000
         time: 25000
 GenotypeDBI:
         n: 2
@@ -116,8 +116,10 @@ verifybamid:
         n: 4
 bamstats_all:
         n: 4
+        mem: 6000
 bamstats_exome:
         n: 4
+        mem: 6000
 resort_by_readname:
         n: 16
 declip:
@@ -126,3 +128,4 @@ sort_back:
         n: 16
 bamstats_new:
         n: 16
+        mem: 6000

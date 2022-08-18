@@ -11,6 +11,9 @@ cutadapt = config['miniconda'] + config['cutadapt']
 verifybamid2 = config['miniconda'] + config['verifybamid2']
 ref = config['RES'] + config['ref']
 
+wildcard_constraints:
+    sample="[\w\d_\-@]+",
+    readgroup="[\w\d_\-@]+"
 
 # main chromosomes from GRCh38 splitted into 99 bins
 bins = config['RES'] + config['bin_file_ref']
@@ -19,7 +22,10 @@ chrs = []
 with open(bins) as file:
     tsv_file = csv.reader(file, delimiter="\t")
     for line in tsv_file:
-        out = line[0] + ':' + line[1] + '-' + line[2]
+        if line[1] == str('0'):
+            out = line[0] + ':' + str('1') + '-' + line[2]
+        else:
+            out = line[0] + ':' + line[1] + '-' + line[2]
         chrs.append(out)
 # print(chrs)
 # chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -54,7 +60,7 @@ def get_readgroups(wildcards):
     readgroups = SAMPLEINFO[wildcards['sample']]['readgroups']
     files = []
     for readgroup in readgroups:
-        files.append(os.path.join(config['BAM'] + '/' + wildcards['sample'] + '.' + readgroup['info']['ID'] + '.bam'))
+        files.append(os.path.join(config['BAM'] + '/' + wildcards['sample'] + '._' + readgroup['info']['ID'] + '.bam'))
     return files
 
 # extract info about capture kit from SAMPLEFILE
@@ -73,11 +79,11 @@ def get_capture_kit_interval_list(wildcards):
 
 rule all:
     input:
-        expand('{stat}/contam/{sample}_verifybamid.selfSM', stat = config['STAT'] , sample = sample_names),
+        expand('{stat}/contam/{sample}_verifybamid.pca2.selfSM', stat = config['STAT'] , sample = sample_names),
         expand('gvcfs/{sample}.g.vcf.gz', sample = sample_names),
         expand("{bams}/{sample}-dragstr.txt", bams = config['BAM'], sample = sample_names),
         expand("{bams}/{sample}.merged.bam", sample = sample_names, bams = config['BAM']),
-        # expand(config['STAT'] + "/{sample}.{readgroup}_adapters.stat", sample = sample_names)
+        # expand(config['STAT'] + "/{sample}._{readgroup}_adapters.stat", sample = sample_names)
         config['STAT'] + "/BASIC.variant_calling_detail_metrics",
         # # sample_names from sample file accord to all samples
         # # expanded version accord to all samples listed in samplefile
@@ -87,7 +93,6 @@ rule all:
         expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
         expand("{vcf}/Merged_raw_DBI_{chrs}.vcf.gz", chrs = chrs, vcf = config['VCF']),
         expand("{vcf}/ALL_chrs.vcf.gz", vcf = config['VCF']),
-        expand("{stats}/contam/{sample}_verifybamid.selfSM", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}.bam_all.tsv", sample=sample_names, stats = config['STAT']),
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.v4.tab", samplefile = SAMPLE_FILES),
@@ -102,13 +107,10 @@ rule convert_to_uBAM:
     input:
         get_fastqpaired
     output:
-        uBAM = temp(config['uBAM'] + "/{sample}.{readgroup}.unmapped.bam"),
-        # maskedBAM = config['uBAM'] + "/{sample}.{readgroup}.unmapped.masked.bam",
-        # adapters_stats= config['STAT'] + "/{sample}.{readgroup}_adapters.stat"
-    benchmark: config['BENCH'] + "/{sample}.{readgroup}.unmappedBAM.txt"
+        uBAM = temp(config['uBAM'] + "/{sample}._{readgroup}.unmapped.bam"),
+    benchmark: config['BENCH'] + "/{sample}._{readgroup}.unmappedBAM.txt"
     log:
-        fqtosam = config['LOG'] + '/' + "{sample}.{readgroup}.fq2sam.log",
-        # adapters = config['LOG'] + '/' + "{sample}.{readgroup}.adapters.log"
+        fqtosam = config['LOG'] + '/' + "{sample}._{readgroup}.fq2sam.log",
     shell:
         """
         {gatk} FastqToSam --FASTQ {input[0]} --FASTQ2 {input[1]} -O {output.uBAM} -SM {wildcards.sample} -RG {wildcards.readgroup}
@@ -118,11 +120,11 @@ rule mask_adapters:
     input:
         rules.convert_to_uBAM.output.uBAM
     output:
-        maskedBAM = config['uBAM'] + "/{sample}.{readgroup}_unmapped_masked.bam",
-        adapters_stats= config['STAT'] + "/{sample}.{readgroup}_adapters.stat"
-    benchmark: config['BENCH'] + "/{sample}.{readgroup}.maskadapters.txt"
+        maskedBAM = config['uBAM'] + "/{sample}._{readgroup}_unmapped_masked.bam",
+        adapters_stats= config['STAT'] + "/{sample}._{readgroup}_adapters.stat"
+    benchmark: config['BENCH'] + "/{sample}._{readgroup}.maskadapters.txt"
     log:
-        adapters = config['LOG'] + '/' + "{sample}.{readgroup}.adapters.log"
+        adapters = config['LOG'] + '/' + "{sample}._{readgroup}.adapters.log"
     shell:
         """
         {gatk} MarkIlluminaAdapters -I {input} -O {output.maskedBAM} -M {output.adapters_stats} 2> {log.adapters}
@@ -132,8 +134,9 @@ def get_readgroups_unmapped(wildcards):
     readgroups = SAMPLEINFO[wildcards['sample']]['readgroups']
     files = []
     for readgroup in readgroups:
-        files.append(os.path.join(config['uBAM'] + '/' + wildcards['sample'] + '.' + readgroup['info']['ID'] + '_unmapped_masked.bam'))
+        files.append(os.path.join(config['uBAM'] + '/' + wildcards['sample'] + '._' + readgroup['info']['ID'] + '_unmapped_masked.bam'))
     return files
+
 # comdine all uBAM with masked adpters in one file
 # extract fq from unmapped bam files with masked adapters
 rule merge_ubams:
@@ -162,56 +165,58 @@ rule convert_fq_to_uCRAM:
 
 # cut adapters from inout
 # DRAGMAP doesn;t work well with uBAM, so use fq as input
-rule cutadapter:
-    input:
-        get_fastqpaired
-    output:
-        forr_f=config['FQ'] + "/{sample}.{readgroup}.cut_1.fq.gz",
-        rev_f=config['FQ'] + "/{sample}.{readgroup}.cut_2.fq.gz"
-    # log file in this case contain some stats about removed seqs
-    log:
-        cutadapt_log= config['STAT'] + "/{sample}.{readgroup}.cutadapt.log",
-    benchmark:
-        config['BENCH'] + "/{sample}.{readgroup}.cutadapt.txt"
-    priority: 10
-    threads: config["cutadapter"]["n"]
-    run:
-        sinfo = SAMPLEINFO[wildcards['sample']]
-        rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
-        rgroupid = rgroup['ID']
-        rgrouplib = rgroup.get('LB','unknown')
-        rgroupplat = rgroup.get('PL','unknown')
-        rgrouppu = rgroup.get('PU','unknown')
-        rgroupsc = rgroup.get('CN','unknown')
-        rgrouprd = rgroup.get('DT','unknown')
-        # cut standard Illumina adapters
-        cmd="""
-        {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}
-        """
-        shell(cmd)
+# rule cutadapter:
+#     input:
+#         get_fastqpaired
+#     output:
+#         forr_f=config['FQ'] + "/{sample}._{readgroup}.cut_1.fq.gz",
+#         rev_f=config['FQ'] + "/{sample}._{readgroup}.cut_2.fq.gz"
+#     # log file in this case contain some stats about removed seqs
+#     log:
+#         cutadapt_log= config['STAT'] + "/{sample}._{readgroup}.cutadapt.log",
+#     benchmark:
+#         config['BENCH'] + "/{sample}._{readgroup}.cutadapt.txt"
+#     priority: 10
+#     threads: config["cutadapter"]["n"]
+#     run:
+#         sinfo = SAMPLEINFO[wildcards['sample']]
+#         rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
+#         rgroupid = rgroup['ID']
+#         rgrouplib = rgroup.get('LB','unknown')
+#         rgroupplat = rgroup.get('PL','unknown')
+#         rgrouppu = rgroup.get('PU','unknown')
+#         rgroupsc = rgroup.get('CN','unknown')
+#         rgrouprd = rgroup.get('DT','unknown')
+#         # cut standard Illumina adapters
+#         cmd="""
+#         {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}
+#         """
+#         shell(cmd)
 
 # rule to align reads from cutted fq on hg38 ref
 # use dragmap aligner
 # samtools fixmate for future step with samtools mark duplicates
+
+
 rule align_reads:
     input:
-        for_r = rules.cutadapter.output.forr_f,
-        rev_r = rules.cutadapter.output.rev_f
+        for_r = rules.merge_ubams.output.f1_masked,
+        rev_r = rules.merge_ubams.output.f2_masked
     output:
-        bam=config['BAM'] + "/{sample}.{readgroup}.bam"
+        bam=config['BAM'] + "/{sample}._{readgroup}.bam"
     params:
         ref_dir = config['RES'] + config['ref_dir'],
         # mask bed for current reference genome
         mask_bed = config['RES'] + config['mask_bed']
     threads: config["align_reads"]["n"]
     log:
-        dragmap_log=config['LOG'] + '/' + "{sample}.{readgroup}_dragmap.log",
-        samtools_fixmate=config['LOG'] + '/' + "{sample}.{readgroup}_samtools_fixamte.log",
-        samtools_sort=config['LOG'] + '/' + "{sample}.{readgroup}_samtools_sort.log",
-        samtools_markdup=config['LOG'] + '/' + "{sample}.{readgroup}_samtools_markdup.log",
-        samtools_index = config['LOG'] + '/' + "{sample}.{readgroup}_samtools_index.log"
+        dragmap_log=config['LOG'] + '/' + "{sample}._{readgroup}_dragmap.log",
+        samtools_fixmate=config['LOG'] + '/' + "{sample}._{readgroup}_samtools_fixamte.log",
+        samtools_sort=config['LOG'] + '/' + "{sample}._{readgroup}_samtools_sort.log",
+        samtools_markdup=config['LOG'] + '/' + "{sample}._{readgroup}_samtools_markdup.log",
+        samtools_index = config['LOG'] + '/' + "{sample}._{readgroup}_samtools_index.log"
     benchmark:
-        config['BENCH'] + "/{sample}.{readgroup}.dragmap.txt"
+        config['BENCH'] + "/{sample}._{readgroup}.dragmap.txt"
     priority: 15
     shell:
         # "{dragmap} -r {params.ref_dir} -b {input} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |"
@@ -220,7 +225,7 @@ rule align_reads:
         "{samtools} sort -T 'sort_temporary' -@ {threads}  -o {output.bam} 2> {log.samtools_sort} && "
         "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
 
-# merge different readgroups files for same sample
+# merge different readgroups bam files for same sample
 rule merge_rgs:
     input:
         get_readgroups
@@ -324,15 +329,17 @@ rule sort_back:
 # from checkpoint step
 # trigger this additional steps only in case if these steps necessary
 def check_supp(wildcards):
-    with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
+    with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
         lines = f.readlines()
         # 4th column (3rd if 0-based) is column with supplementary fraction
         if float((lines[1].split()[3])) >= float(0.005):
             # return cleaned bam in case if clean up necessary
             return rules.sort_back.output.ready_bams
+            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.DeClipped.bam')
         else:
             # return original MD bam if clean up not necessary
             return rules.markdup.output.mdbams
+            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.markdup.bam')
 
 # calibrate model
 # step for HaplotypeCaller in dragen mode
@@ -360,12 +367,12 @@ rule verifybamid:
     input:
         check_supp
     output:
-        VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.selfSM'
+        VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
     # end of this file hardcoded in Haplotypecaller and read_contam_w
     threads: config['verifybamid']['n']
     priority: 35
     params:
-        VBID_prefix = config['STAT'] + '/{sample}_verifybamid',
+        VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
         SVD = config['RES'] + config['verifybamid_exome']
     shell:
         """
@@ -380,7 +387,7 @@ rule verifybamid:
 
 def read_contam_w(wildcards):
     # filename = rules.verifybamid.output.VBID_stat
-    filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] + '_verifybamid.selfSM')
+    filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] + '_verifybamid.pca2.selfSM')
     with open(filename,'r') as f:
         c = csv.reader(f, delimiter='\t')
         c = iter(c)
@@ -412,8 +419,8 @@ rule HaplotypeCaller:
     shell:
         "{gatk} HaplotypeCaller \
                  -R {ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
-                 -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-                 -I {input.bams} -O {output.gvcf} \
+                 -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -G GenotypeSummaries -G DepthPerAlleleBySample -G SampleList -G TandemRepeat \
+                 -I {input.bams} -O {output.gvcf} --apply-bqd --apply-frd --dragstr-het-hom-ratio  \
                   --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
 
 #############################################################################################
@@ -424,7 +431,7 @@ rule HaplotypeCaller:
 #############################################################################################
 
 #Genomics DBImport instead CombineGVCFs
-# run parts of chrs instead of full chr (at least fisrt 10)
+# chr - it's chr-s split in 99 parts (total, e.g. 99 dir on this step)
 rule GenomicDBImport:
     input:
         expand("gvcfs/{sample}.g.vcf.gz", sample = sample_names)
@@ -481,7 +488,8 @@ rule SelectSNPs:
     input:
         rules.Mergechrs.output.vcf
     output:
-        SNP_vcf=temp(config['VCF'] + "/Merged_SNPs.vcf")
+        SNP_vcf = (config['VCF'] + "/Merged_SNPs.vcf")
+        # SNP_vcf=temp(config['VCF'] + "/Merged_SNPs.vcf")
     priority: 50
     log: config['LOG'] + '/' + "SelectSNPs.log"
     benchmark: config['BENCH'] + "/SelectSNPs.txt"
@@ -497,8 +505,10 @@ rule VQSR_SNP:
     input:
         rules.SelectSNPs.output.SNP_vcf
     output:
-        recal_snp=temp(config['VCF'] + "/SNPs_vqsr.recal"),
-        tranches_file_snp=temp(config['VCF'] + "/SNPs_vqsr.tranches"),
+        recal_snp=(config['VCF'] + "/SNPs_vqsr.recal"),
+        tranches_file_snp=(config['VCF'] + "/SNPs_vqsr.tranches"),
+        # recal_snp=temp(config['VCF'] + "/SNPs_vqsr.recal"),
+        # tranches_file_snp=temp(config['VCF'] + "/SNPs_vqsr.tranches"),
         r_snp=config['STAT'] + "/SNPs_vqsr_plots.R"
     log: config['LOG'] + '/' + "VQSR_SNP.log"
     benchmark: config['BENCH'] + "/VQSR_SNP.txt"
@@ -517,8 +527,7 @@ rule VQSR_SNP:
          -resource:omni,known=false,training=true,truth=true,prior=12.0 {params.omni} \
          -resource:1000G,known=false,training=true,truth=false,prior=10.0 {params.kilo_g} \
          -resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {params.dbsnp} \
-         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -mode SNP -an InbreedingCoeff\
-         --trust-all-polymorphic -AS TRUE\
+         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -an InbreedingCoeff -mode SNP --trust-all-polymorphic -AS TRUE \
          -tranche 100.0 -tranche 99.95 -tranche 99.9 -tranche 99.8 -tranche 99.6 -tranche 99.5 -tranche 99.4 -tranche 99.3 -tranche 99.0 -tranche 98.0 -tranche 97.0 -tranche 90.0 \
          -O {output.recal_snp} \
          --tranches-file {output.tranches_file_snp} \
@@ -531,7 +540,8 @@ rule ApplyVQSR_SNPs:
         tranches_snp=rules.VQSR_SNP.output.tranches_file_snp,
         snps_variants=rules.SelectSNPs.output.SNP_vcf
     output:
-        recal_vcf_snp=temp(config['VCF'] + "/SNPs_recal_apply_vqsr.vcf")
+        recal_vcf_snp = (config['VCF'] + "/SNPs_recal_apply_vqsr.vcf")
+        # recal_vcf_snp=temp(config['VCF'] + "/SNPs_recal_apply_vqsr.vcf")
     log: config['LOG'] + '/' + "Apply_VQSR_SNP.log"
     benchmark: config['BENCH'] + "/Apply_VQSR_SNP.txt"
     params:
@@ -549,7 +559,7 @@ rule SelectINDELs:
     input:
         rules.Mergechrs.output.vcf
     output:
-        INDEL_vcf=temp(config['VCF'] + "/Merged_INDELs.vcf")
+        INDEL_vcf=(config['VCF'] + "/Merged_INDELs.vcf")
     log: config['LOG'] + '/' + "SelectINDELS.log"
     benchmark: config['BENCH'] + "/SelectINDELs.txt"
     priority: 50
@@ -565,8 +575,8 @@ rule VQSR_INDEL:
     input:
         rules.SelectINDELs.output.INDEL_vcf
     output:
-        recal_indel=temp(config['VCF'] + "/INDELs_vqsr.recal"),
-        tranches_file_indel=temp(config['VCF'] + "/INDELs_vqsr.tranches"),
+        recal_indel=(config['VCF'] + "/INDELs_vqsr.recal"),
+        tranches_file_indel=(config['VCF'] + "/INDELs_vqsr.tranches"),
         r_indel=config['STAT'] + "/INDELs_vqsr_plots.R"
     log: config['LOG'] + '/' + "VQSR_INDEL.log"
     benchmark: config['BENCH'] + "/VQSR_INDEL.txt"
@@ -595,7 +605,7 @@ rule ApplyVQSR_INDEs:
     log: config['LOG'] + '/' + "ApplyVQSR_INDELs.log"
     benchmark: config['BENCH'] + "/ApplyVQSR_INDELs.txt"
     output:
-        recal_vcf_indel=temp(config['VCF'] + "/INDELs_recal_apply_vqsr.vcf")
+        recal_vcf_indel=(config['VCF'] + "/INDELs_recal_apply_vqsr.vcf")
     params:
         ts_level='97.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
     priority: 60
@@ -655,7 +665,7 @@ rule Basic_stats:
 #include off-target metrics
 rule HS_stats:
     input:
-        vcf = check_supp,
+        bam = check_supp,
         interval = get_capture_kit_interval_list
     output:
         HS_metrics=config['STAT'] + "/{sample}_hs_metrics"
@@ -671,14 +681,14 @@ rule HS_stats:
         MQ=10,
     shell:
         "{gatk} CollectHsMetrics \
-            -I {input.vcf} -R {ref} -BI {input.interval} -TI {input.interval} \
+            -I {input.bam} -R {ref} -BI {input.interval} -TI {input.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"
 
 rule Artifact_stats:
     input:
-        vcf = check_supp,
+        bam = check_supp,
         interval= get_capture_kit_interval_list
     output:
         Bait_bias = config['STAT'] + '/{sample}.bait_bias.bait_bias_summary_metrics',
@@ -693,12 +703,12 @@ rule Artifact_stats:
         out = config['STAT'] + "/{sample}.bait_bias",
         dbsnp = config['RES'] + config['dbsnp']
     shell:
-        "{gatk} CollectSequencingArtifactMetrics -I {input.vcf} -O {params.out} \
+        "{gatk} CollectSequencingArtifactMetrics -I {input.bam} -O {params.out} \
         -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> log"
 
 rule OXOG_metrics:
     input:
-        vcf = check_supp,
+        bam = check_supp,
         interval= get_capture_kit_interval_list
     output:
         Artifact_matrics = config['STAT'] + "/{sample}.OXOG"
@@ -708,46 +718,50 @@ rule OXOG_metrics:
     params:
         dbsnp = config['RES'] + config['dbsnp']
     shell:
-        "{gatk} CollectOxoGMetrics -I {input.vcf} -O {output} -R {ref} \
+        "{gatk} CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
          --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> {log}"
 
 rule samtools_stat:
     input:
-        check_supp
+        bam = check_supp
     output: samtools_stat = config['STAT'] + "/{sample}_samtools.stat"
     priority: 99
     log: config['LOG'] + '/' + "samtools_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_{sample}.txt"
     threads: config['samtools_stat']['n']
     shell:
-        "{samtools} stat -@ {threads} -r {ref} {input} > {output}"
+        "{samtools} stat -@ {threads} -r {ref} {input.bam} > {output}"
 
 rule samtools_stat_exome:
     input:
         bam = check_supp,
-        bed_interval = get_capture_kit_bed
+
     output: samtools_stat_exome = config['STAT'] + "/{sample}_samtools.exome.stat"
     priority: 99
+    params:
+        bed_interval = get_capture_kit_bed
     log: config['LOG'] + '/' + "samtools_exome_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_exome_{sample}.txt"
     threads: config['samtools_stat']['n']
     shell:
-        "{samtools} stat -@ {threads} -t {input.bed_interval} -r {ref} {input.bam} > {output}"
-
-
+        "{samtools} stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
 
 rule bamstats_exome:
     input:
+        # very annoying bug here
+        # if in input 2 functions and one of them is check chekpoint (check_supp and get_capture_kit_bed here was as example)
+        # first command has not been executed
+        # and in shell wildcard (instead of iutput of function) has putted
         bam = check_supp,
-        bed_interval= get_capture_kit_bed
     output:
         All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
     threads: config['bamstats_exome']['n']
     params:
-        py_stats = config['BAMSTATS']
+        py_stats = config['BAMSTATS'],
+        bed_interval= get_capture_kit_bed,
     shell:
-        "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {input.bed_interval} | python3 {params.py_stats} stats > {output}"
+        "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | python3 {params.py_stats} stats > {output}"
 
 # which statistic file we need to use depends on additional clean up steps
 # if we trigger addition clean up, so we need to provide bam_all.tsv statistic file after cleanup
@@ -768,7 +782,7 @@ def get_quality_stats(wildcards):
     for sample in samples:
         files.append(config['STAT'] + '/' + sample + "_samtools.stat")
         files.append(config['STAT'] + '/' + sample + '_samtools.exome.stat')
-        files.append(config['STAT'] + '/contam/' + sample + '_verifybamid.selfSM')
+        files.append(config['STAT'] + '/contam/' + sample + '_verifybamid.pca2.selfSM')
         files.append(check_supp_stats(sample))
         files.append(config['STAT'] + '/' + sample + '.bam_exome.tsv')
         files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_summary_metrics')
@@ -777,6 +791,9 @@ def get_quality_stats(wildcards):
 
 
 rule gatherstats:
+    # keep in mind, that samtools_stat create file even if it it's finished with error or you force to stop it
+    # if you force to stop samtools_stat delete all output to prevent errors
+    # rm -r stats/*samtools*
     input:
         get_quality_stats
     output:
@@ -799,8 +816,8 @@ def get_oxo_stats(wildcards):
     samples = list(sampleinfo.keys())
     samples.sort()
     for sample in samples:
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_summary_metrics')
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_summary_metrics')
+        files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_detail_metrics')
+        files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_detail_metrics')
     return files
 
 
