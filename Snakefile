@@ -77,10 +77,14 @@ def get_capture_kit_interval_list(wildcards):
     capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.interval_list'
     return capture_kit_path
 
+
+main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
+
+
 rule all:
     input:
         expand('{stat}/contam/{sample}_verifybamid.pca2.selfSM', stat = config['STAT'] , sample = sample_names),
-        expand('gvcfs/{sample}.g.vcf.gz', sample = sample_names),
+        expand('gvcfs/{sample}.{chr}.g.vcf.gz', sample = sample_names, chr = main_chrs),
         expand("{bams}/{sample}-dragstr.txt", bams = config['BAM'], sample = sample_names),
         expand("{bams}/{sample}.merged.bam", sample = sample_names, bams = config['BAM']),
         # expand(config['STAT'] + "/{sample}._{readgroup}_adapters.stat", sample = sample_names)
@@ -197,6 +201,8 @@ rule convert_fq_to_uCRAM:
 # use dragmap aligner
 # samtools fixmate for future step with samtools mark duplicates
 
+def get_mem_mb_align_reads(wildcrads, attempt):
+    return attempt*1.5*int(config['align_reads']['mem'])
 
 rule align_reads:
     input:
@@ -218,6 +224,8 @@ rule align_reads:
     benchmark:
         config['BENCH'] + "/{sample}._{readgroup}.dragmap.txt"
     priority: 15
+    resources:
+        mem_mb = get_mem_mb_align_reads
     shell:
         # "{dragmap} -r {params.ref_dir} -b {input} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |"
         "{dragmap} -r {params.ref_dir} -1 {input.for_r} -2 {input.rev_r} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | " 
@@ -329,7 +337,7 @@ rule sort_back:
 # from checkpoint step
 # trigger this additional steps only in case if these steps necessary
 def check_supp(wildcards):
-    with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
+    with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
         lines = f.readlines()
         # 4th column (3rd if 0-based) is column with supplementary fraction
         if float((lines[1].split()[3])) >= float(0.005):
@@ -396,6 +404,13 @@ def read_contam_w(wildcards):
         freemix = data[6]
     return freemix
 
+def get_chrom_capture_kit(wildcards):
+    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+    for chr in main_chrs:
+        capture_kit_chr_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38/' + capture_kit + '_hg38_' + chr + '.interval_list'
+    return capture_kit_chr_path
+    # return os.path.join(RESOURCES, 'capture_kits', capture_kit, capture_kit + '.chr' + wildcards.chrom + '.bed')
+
 #find SNPs from bams
 rule HaplotypeCaller:
     input:
@@ -404,13 +419,13 @@ rule HaplotypeCaller:
         model = rules.CalibrateDragstrModel.output.dragstr_model,
         contam= rules.verifybamid.output.VBID_stat,
         # command to get path to capture_kit interval list from SAMPLEFILE
-        interval = get_capture_kit_interval_list,
+        interval = get_chrom_capture_kit,
     output:
-        gvcf="gvcfs/{sample}.g.vcf.gz",
-    log:
-        HaplotypeCaller=config['LOG'] + '/' + "{sample}_haplotypecaller.log"
-    benchmark:
-        config['BENCH'] + "/{sample}_haplotypecaller.txt"
+        gvcf="gvcfs/{sample}.{chr}.g.vcf.gz"
+    # log:
+    #     HaplotypeCaller=config['LOG'] + '/' + expand("{{sample}}_{chr}_haplotypecaller.log", chr = main_chrs)
+    # benchmark:
+    #     config['BENCH'] + expand("/{{sample}}_{chr}_haplotypecaller.txt", chr = main_chrs)
     params:
         dbsnp = config['RES'] + config['dbsnp'],
         padding=100,  # extend intervals to this bp
@@ -434,7 +449,7 @@ rule HaplotypeCaller:
 # chr - it's chr-s split in 99 parts (total, e.g. 99 dir on this step)
 rule GenomicDBImport:
     input:
-        expand("gvcfs/{sample}.g.vcf.gz", sample = sample_names)
+        expand("gvcfs/{sample}.{chr}.g.vcf.gz", sample = sample_names, chr = main_chrs)
     log: config['LOG'] + '/' + "GenomicDBImport.{chrs}.log"
     benchmark: config['BENCH'] + "/GenomicDBImport.{chrs}.txt"
     output:
@@ -692,7 +707,9 @@ rule Artifact_stats:
         interval= get_capture_kit_interval_list
     output:
         Bait_bias = config['STAT'] + '/{sample}.bait_bias.bait_bias_summary_metrics',
-        Pre_adapter = config['STAT'] + '/{sample}.bait_bias.pre_adapter_summary_metrics'
+        Pre_adapter = config['STAT'] + '/{sample}.bait_bias.pre_adapter_summary_metrics',
+        Bait_bias_det = config['STAT'] + '/{sample}.bait_bias.bait_bias_detail_metrics',
+        Pre_adapter_det = config['STAT'] + '/{sample}.bait_bias.pre_adapter_detail_metrics',
         # Artifact_matrics = config['STAT'] + "/{sample}.bait_bias.bait_bias_detail_metrics"
     priority: 99
     log: config['LOG'] + '/' + "Artifact_stats_{sample}.log"
@@ -770,9 +787,9 @@ def check_supp_stats(wildcards):
     with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
         lines = f.readlines()
         if float((lines[1].split()[3])) >= float(0.005):
-            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.additional_cleanup.tsv')
+            return os.path.join(config['STAT'] + '/' + wildcards.sample + '.bam_all.additional_cleanup.tsv')
         else:
-            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.tsv')
+            return os.path.join(config['STAT'] + '/' + wildcards.sample + '.bam_all.tsv')
 
 def get_quality_stats(wildcards):
     sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
