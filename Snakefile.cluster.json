@@ -1,20 +1,24 @@
 __default__:
     time: 100
-    mem: 4000
+    mem: 6000
     n: 1
     arch_use_add: 0
     arch_use_remove: 0
     active_use_add: 0
     active_use_remove: 0
     partition: compute
-
+uBAM_to_fq:
+        n: 1
 convert_to_uBAM:
         n: 1
+        mem: 12000
 merge_ubams:
         n: 2
 convert_to_uCRAM:
         n: 15
 convert_fq_to_uCRAM:
+        n: 15
+mCRAM:
         n: 15
 cutadapter:
         n: 32
@@ -25,7 +29,7 @@ mask_adapters:
         mem: 12000
         time: 3000
 align_reads:
-        n: 30
+        n: 32
         mem: 60000
         time: 1400
 merge_rgs:
