@@ -9,17 +9,21 @@ SAMPLEFOLDER: '/projects/0/ades/NL_VUMC/batch4/'
 #path to intervals file with targets
 kit_folder: 'intervals/'
 
+#conda env's paths
+CONDA_VERIFYBAMID: 'verifybamid.yaml'
 
 #OUTPUT FOLDERS
 LOG: 'logs'
 BENCH: 'benchmark'
 BAM: 'bams'
 VCF: 'vcfs'
+VCF_Final: 'Final_VCF'
 STAT: 'stats'
 FQ: 'fq'
 uBAM: 'uBAM'
 uCRAM: 'uCRAM'
 CRAM: 'CRAM'
+TARGET: 'cnvkit/target'
 
 #programs
 gatk: 'bin/gatk'
@@ -42,6 +46,7 @@ mask_bed: 'Ref/hg38_alt_mask.bed'
 str_ref: 'Ref/GRCh38.str.zip'
 bin_file_ref: 'Ref/GRCh38_main_chrs.bin_file.txt'
 SD: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.dict'
+main_chr_bed: 'standard_chrs.bed'
 verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
 verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.100k.b38.vcf.gz.dat'
 

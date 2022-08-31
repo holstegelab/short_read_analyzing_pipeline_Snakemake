@@ -133,3 +133,6 @@ sort_back:
 bamstats_new:
         n: 16
         mem: 6000
+neewBams:
+        n: 16
+
