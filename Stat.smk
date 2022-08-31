@@ -58,7 +58,7 @@ rule Basic_stats:
     log: config['LOG'] + '/' + "VCF_stats.log"
     benchmark: config['BENCH'] + "/VCF_stats.txt"
     params: dbsnp = config['RES'] + config['dbsnp']
-    threads: config['Basic_stats']['n']
+    threads: config['Stat_Basic_stats']['n']
     shell:
         "{gatk} CollectVariantCallingMetrics \
         -R {ref} -I {input} -O stats/BASIC \
@@ -140,7 +140,7 @@ rule samtools_stat:
     priority: 99
     log: config['LOG'] + '/' + "samtools_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_{sample}.txt"
-    threads: config['samtools_stat']['n']
+    threads: config['Stat_samtools_stat']['n']
     shell:
         "{samtools} stat -@ {threads} -r {ref} {input.bam} > {output}"
 
@@ -162,7 +162,7 @@ rule samtools_stat_exome:
         bed_interval = get_capture_kit_bed
     log: config['LOG'] + '/' + "samtools_exome_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_exome_{sample}.txt"
-    threads: config['samtools_stat']['n']
+    threads: config['Stat_samtools_stat']['n']
     shell:
         "{samtools} stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
@@ -175,7 +175,7 @@ rule bamstats_exome:
         bam = rules.CalibrateDragstrModel.input.bam,
     output:
         All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
-    threads: config['bamstats_exome']['n']
+    threads: config['Stat_bamstats_exome']['n']
     params:
         py_stats = config['BAMSTATS'],
         bed_interval= get_capture_kit_bed,

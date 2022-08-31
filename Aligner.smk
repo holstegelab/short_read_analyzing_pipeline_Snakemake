@@ -57,7 +57,7 @@ rule cutadapter:
     benchmark:
         config['BENCH'] + "/{sample}._{readgroup}.cutadapt.txt"
     priority: 10
-    threads: config["cutadapter"]["n"]
+    threads: config["Aligner_cutadapter"]["n"]
     run:
         sinfo = SAMPLEINFO[wildcards['sample']]
         rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
@@ -78,7 +78,7 @@ rule cutadapter:
 # samtools fixmate for future step with samtools mark duplicates
 
 def get_mem_mb_align_reads(wildcrads, attempt):
-    return attempt*1.5*int(config['align_reads']['mem'])
+    return attempt*int(config['Aligner_align_reads']['mem'])
 
 rule align_reads:
     input:
@@ -93,7 +93,7 @@ rule align_reads:
         ref_dir = config['RES'] + config['ref_dir'],
         # mask bed for current reference genome
         mask_bed = config['RES'] + config['mask_bed']
-    threads: config["align_reads"]["n"]
+    threads: config["Aligner_align_reads"]["n"]
     log:
         dragmap_log=config['LOG'] + '/' + "{sample}._{readgroup}_dragmap.log",
         samtools_fixmate=config['LOG'] + '/' + "{sample}._{readgroup}_samtools_fixamte.log",
@@ -129,7 +129,7 @@ rule merge_rgs:
         mer_bam = (config['BAM'] + "/{sample}.merged.bam")
     log: config['LOG'] + '/' + "{sample}.mergereadgroups.log"
     benchmark: "benchmark/{sample}.merge_rgs.txt"
-    threads: config['merge_rgs']['n']
+    threads: config['Aligner_merge_rgs']['n']
     run:
         inputs = ' '.join(f for f in input if f.endswith('.bam'))
         shell("{samtools} merge -@ {threads} -o {output} {inputs} 2> {log}")
@@ -149,7 +149,7 @@ rule markdup:
     log:
         samtools_markdup = config['LOG'] + '/' + "{sample}.markdup.log",
         samtools_index_md = config['LOG'] + '/' + "{sample}.markdup_index.log"
-    threads: config['markdup']['n']
+    threads: config['Aligner_markdup']['n']
     shell:
         "{samtools} markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && "
         "{samtools} index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
@@ -162,7 +162,7 @@ checkpoint bamstats_all:
         rules.markdup.output.mdbams
     output:
         All_stats = config['STAT'] + '/{sample}.bam_all.tsv'
-    threads: config['bamstats_all']['n']
+    threads: config['Aligner_bamstats_all']['n']
     params: py_stats = config['BAMSTATS']
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output}"
@@ -174,14 +174,14 @@ rule resort_by_readname:
     input:
         rules.markdup.output.mdbams
     output: resort_bams = temp(config['BAM'] + '/{sample}_resort.bam')
-    threads: config['resort_by_readname']['n']
+    threads: config['Aligner_resort_by_readname']['n']
     shell: "{samtools} sort -n -@ {threads} -o  {output} {input}"
 # additional cleanup with custom script
 rule declip:
     input:
         rules.resort_by_readname.output.resort_bams
     output: declip_bam = temp(config['BAM'] + '/{sample}_declip.bam')
-    threads: config['declip']['n']
+    threads: config['Aligner_declip']['n']
     params: declip = config['DECLIP']
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.declip} > {output}"
@@ -192,7 +192,7 @@ rule sort_back:
     output:
         ready_bams = config['BAM'] + '/{sample}.DeClipped.bam',
         All_stats= config['STAT'] + '/{sample}.bam_all.additional_cleanup.tsv'
-    threads: config['sort_back']['n']
+    threads: config['Aligner_sort_back']['n']
     params:
         py_stats= config['BAMSTATS']
     shell:
@@ -206,7 +206,7 @@ rule mCRAM:
         rules.markdup.output.mdbams
     output:
         CRAM = config['CRAM'] + "/{sample}_mapped_hg38.cram"
-    threads: config['mCRAM']['n']
+    threads: config['Aligner_mCRAM']['n']
     benchmark: config['BENCH'] + '/{sample}_mCRAM.txt'
     shell:
         "{samtools} view --cram -T {ref} -@ {threads} -o {output.CRAM} {input}"

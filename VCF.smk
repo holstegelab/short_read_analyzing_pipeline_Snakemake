@@ -132,7 +132,7 @@ rule GenomicDBImport:
     output:
         dbi=directory("genomicsdb_{chr}"),
         gvcf_list = temp("{chr}_gvcfs.list")
-    threads: config['GenomicDBImport']['n']
+    threads: config['VCF_GenomicDBImport']['n']
     # params:
         # N_intervals=5,
         # threads=16,

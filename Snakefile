@@ -44,19 +44,19 @@ module Aligner:
 use rule * from Aligner as Aligner_*
 
 module VCF:
-    snakefile: 'Raw_VCF_production.smk'
+    snakefile: 'VCF.smk'
     config: config
 
 use rule * from VCF as VCF_*
 
 module VQSR:
-    snakefile: 'VQSR_and_vcf_postprocessing.smk'
+    snakefile: 'VQSR.smk'
     config: config
 
 use rule * from VQSR as VQSR_*
 
 module Stat:
-    snakefile: 'Stat_collection.smk'
+    snakefile: 'Stat.smk'
     config: config
 
 use rule * from Stat as Stat_*

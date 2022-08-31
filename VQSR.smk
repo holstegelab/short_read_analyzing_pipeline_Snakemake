@@ -30,7 +30,7 @@ module Aligner:
     snakefile: 'Aligner.smk'
 
 module Raw_vcf:
-    snakefile: 'Raw_VCF_production.smk'
+    snakefile: 'VCF.smk'
 
 
 # VQSR
