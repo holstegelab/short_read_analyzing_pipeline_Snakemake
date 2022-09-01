@@ -3,7 +3,6 @@ import os
 import os.path
 import sys
 import gzip
-import numpy
 import datetime
 import csv
 import subprocess
@@ -65,13 +64,13 @@ def get_bam_readgroups(fname, filetype):
     return [dict([rejoin(e.split(':')) for e in row.strip().split('\t')[1:]]) for row in rows]
 
 
-def get_sra_readgroups(filedir, fname):
+def get_sra_readgroups(fname):
     attempts = 3
     success = False
     while not success and attempts > 0:
         p = subprocess.Popen(
             '(sam-dump %s || if [[ $? -eq 141 ]]; then true; else exit $?; fi) | samtools view -H | grep ^@RG' % fname,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, cwd=filedir)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         result, err = p.communicate()
         if p.returncode != 0:
             print('Retry...')
@@ -237,7 +236,7 @@ def read_samplefile(filename):
                 warning(len(filenames2) == 0, 'No second filename can be given for SRA files: ' + sample_id)
                 for sraid in filenames1:
                     try:
-                        readgroups_info = get_sra_readgroups(filedir, sraid)
+                        readgroups_info = get_sra_readgroups(sraid)
                     except IOError as e:
                         warning(False, str(e))
                         continue
@@ -320,7 +319,7 @@ def read_samplefile_simple(filename, prefixpath, config):
     samples = []
     capture_kits = set()
     print('Reading sample file: ' + filename)
-    with open(filename, 'r') as f:
+    with open(filename, 'r', encoding='utf-8') as f:
         c = csv.reader(f, delimiter='\t')
         c = list(c)
         s = os.stat(os.path.dirname(filename))
@@ -394,9 +393,8 @@ def read_samplefile_simple(filename, prefixpath, config):
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
                    'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex}
-            if ((all([os.path.isabs(e) for e in filenames1]) and \
-                 all([os.path.isabs(e) for e in filenames2])) or \
-                    not prefixpath.startswith('/archive')):
+            
+            if any([not append_prefix(prefixpath,f).startswith("/archive") for f in itertools.chain(filenames1,filenames2)]):
                 res, warnings = get_readgroups(res, prefixpath)
                 for w in warnings:
                     warning(False, w)
@@ -428,8 +426,8 @@ def get_readgroups(sample, sourcedir):
     sample_id = sample['sample']
     sample_type = sample['sample_type']
     study = sample['study']
-    filenames1 = sample['file1']
-    filenames2 = sample['file2']
+    filenames1 = [append_prefix(sourcedir, f) for f in sample['file1']]
+    filenames2 = [append_prefix(sourcedir, f) for f in sample['file2']]
     alternative_names = sample['alt_name']
     file_type = sample['file_type']
     warnings = []
@@ -437,8 +435,6 @@ def get_readgroups(sample, sourcedir):
     readgroups = []
     if file_type == 'fastq_paired':
         for pos, (f1, f2) in enumerate(zip(filenames1, filenames2)):
-            f1 = append_prefix(sourcedir, f1)
-            f2 = append_prefix(sourcedir, f2)
             info_f1 = read_fastqfile(f1)
             info_f2 = read_fastqfile(f2)
 
@@ -468,7 +464,7 @@ def get_readgroups(sample, sourcedir):
     elif file_type == 'sra_paired' or file_type == 'sra_single':
         for sraid in filenames1:
             try:
-                readgroups_info = get_sra_readgroups(sourcedir, sraid)
+                readgroups_info = get_sra_readgroups(sraid)
             except IOError as e:
                 check(warnings, False, str(e))
                 raise
@@ -488,7 +484,7 @@ def get_readgroups(sample, sourcedir):
                 readgroups.append(readgroup)
     elif file_type == 'gvcf':
         for filename in filenames1:
-            fstat = os.stat(append_prefix(sourcedir, filename))
+            fstat = os.stat(filename)
             readgroup_info = {}
             filedate = fstat.st_mtime
             readgroup_info['ID'] = sample_id + '_1'
@@ -501,8 +497,8 @@ def get_readgroups(sample, sourcedir):
     else:
         used_readgroups = set()
         for filename in [e for e in filenames1 if not e.endswith('crai') or e.endswith('bai')]:
-            fstat = os.stat(append_prefix(sourcedir, filename))
-            readgroups_info = get_bam_readgroups(append_prefix(sourcedir, filename), file_type)
+            fstat = os.stat(filename)
+            readgroups_info = get_bam_readgroups(filename, file_type)
             for readgroup_info in readgroups_info:
                 if not 'DT' in readgroup_info:
                     filedate = fstat.st_mtime
