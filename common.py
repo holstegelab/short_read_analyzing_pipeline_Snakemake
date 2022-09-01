@@ -13,7 +13,7 @@ SAMPLEFILE_TO_SAMPLES = {}
 
 def get_contamination_from_quality_file(filename):
     res = dict()
-    with open(filename, 'r') as f:
+    with open(filename, 'r', encoding='utf-8') as f:
         c = csv.reader(f,delimiter='\t')
         for row in c:
             res[row[0]] = (row[-2], row[-1])
@@ -45,34 +45,34 @@ def samplefile(sfilename, config):
 def load_samplefiles(filedir, config):
     if not 'SAMPLE_FILES' in config:
         SAMPLE_FILES = []
-        SAMPLES_BY_FILE = {}
         SAMPLEINFO = {}
 
         #read in all tsv files in current workdir as samplefiles
         for f in os.listdir(filedir):
             if f.endswith('.tsv') and not f.startswith('sample_'): #possible sample file
-                f = os.path.join(os.getcwd(), f)
-                with open(f, 'r') as fopen:
+                f = os.path.join(filedir, f)
+                with open(f, 'r', encoding='utf-8') as fopen:
                     ncount = len(fopen.readline().split('\t'))
 
                 if ncount == 8 or ncount == 9: #sample file
-                    SAMPLE_FILES.append(f)
+                    basename = os.path.splitext(os.path.basename(f))[0]
+                    SAMPLE_FILES.append(basename)
                     w = samplefile(f, config)
-                    nw = {}
+                    
+                    #generate some indices
+                    for sample,info in w.items():
+                        if sample in SAMPLEINFO:
+                            print('WARNING!: Sample ' + sample + ' is defined in more than one sample files.')
+                        SAMPLEINFO[sample] = info
+                   
                     for key,value in w.items():
-                        if len(value['readgroups']) > 0:
-                            nw[key] = value
-                        else:
+                        if len(value['readgroups']) == 0:
                             print('WARNING: %s has no readgroups' % key)
-
-                            nw[key] = value
-                    SAMPLEINFO.update(nw)
-                    SAMPLES_BY_FILE[os.path.basename(f)] = nw
 
 
         SAMPLE_FILES.sort()
         config['SAMPLE_FILES'] = SAMPLE_FILES
-        config['SAMPLES_BY_FILE'] = SAMPLES_BY_FILE
+        config['SAMPLEFILE_TO_SAMPLES'] = SAMPLEFILE_TO_SAMPLES
         config['SAMPLEINFO'] = SAMPLEINFO
 
-    return (config['SAMPLE_FILES'], config['SAMPLES_BY_FILE'], config['SAMPLEINFO'])
+    return (config['SAMPLE_FILES'], config['SAMPLEFILE_TO_SAMPLES'], config['SAMPLEINFO'])

@@ -32,7 +32,7 @@ wildcard_constraints:
 
 from read_samples import *
 from common import *
-SAMPLE_FILES, SAMPLES_BY_FILE, SAMPLEINFO = load_samplefiles('.', config)
+SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
@@ -185,7 +185,7 @@ rule bamstats_exome:
         "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | python3 {params.py_stats} stats > {output}"
 
 def get_quality_stats(wildcards):
-    sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
+    sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     files = []
     samples = list(sampleinfo.keys())
     samples.sort()
@@ -208,7 +208,7 @@ rule gatherstats:
     output:
         '{samplefile}.bam_quality.tab'
     run:
-        sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
+        sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
         samples.sort()
 
@@ -219,7 +219,7 @@ rule gatherstats:
         read_stats.write_tsv(str(output),header,data)
 
 def get_oxo_stats(wildcards):
-    sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
+    sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     files = []
     samples = list(sampleinfo.keys())
     samples.sort()
@@ -234,7 +234,7 @@ rule gatherosostats:
     output:
         '{samplefile}.oxo_quality.tab'
     run:
-        sampleinfo = SAMPLES_BY_FILE[os.path.basename(wildcards['samplefile'])]
+        sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
         samples.sort()
 
