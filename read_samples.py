@@ -316,6 +316,22 @@ def read_samplefile(filename):
 def read_samplefile_simple(filename, prefixpath, config):
     orig_filename = filename
     filename = os.path.realpath(filename)
+
+    basename = os.path.splitext(filename)[0] 
+    if os.path.exists(basename + '.source'):
+        with open(basename + '.source','r') as fsource:
+            prefixpath = fsource.readline().strip()
+        print(f'Data path overridden from {basename}.source file to {prefixpath}')            
+
+
+    if os.path.exists(basename + '.target'):
+        with open(basename + '.target','r') as ftarget:
+            targetpath = ftarget.readline().strip()
+        print(f'Data target path set to {targetpath}') 
+    else:
+        targetpath = None
+
+
     samples = []
     capture_kits = set()
     print('Reading sample file: ' + filename)
@@ -391,6 +407,7 @@ def read_samplefile_simple(filename, prefixpath, config):
                 warning(len(filenames2) == 0, 'No second filename can be given for bam files: ' + sample_id)
 
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
+                    'target':targetpath',
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
                    'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex}
             
