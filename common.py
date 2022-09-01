@@ -11,15 +11,6 @@ main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'ch
 
 SAMPLEFILE_TO_SAMPLES = {}
 
-def get_contamination_from_quality_file(filename):
-    res = dict()
-    with open(filename, 'r', encoding='utf-8') as f:
-        c = csv.reader(f,delimiter='\t')
-        for row in c:
-            res[row[0]] = (row[-2], row[-1])
-    return res
-
-
 #function to read in and cache a samplefile
 def samplefile(sfilename, config):
     basename = os.path.splitext(os.path.basename(sfilename))[0]
