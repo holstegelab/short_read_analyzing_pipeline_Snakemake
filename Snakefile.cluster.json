@@ -7,31 +7,16 @@ __default__:
     active_use_add: 0
     active_use_remove: 0
     partition: compute
-Aligner_mCRAM:
-        n: 15
 mCRAM:
         n: 15
-Aligner_cutadapter:
-        n: 32
-        mem: 12000
-        time: 3000
 cutadapter:
         n: 32
         mem: 12000
         time: 3000
-
-Aligner_align_reads:
-        n: 32
-        mem: 60000
-        time: 1400
 align_reads:
         n: 32
         mem: 60000
         time: 1400
-Aligner_merge_rgs:
-        n: 2
-        mem: 200
-        time: 800
 merge_rgs:
         n: 1
         mem: 200
@@ -40,20 +25,9 @@ markdup:
         n: 2
         mem: 200
         time: 1100
-Aligner_markdup:
-        n: 2
-        mem: 200
-        time: 1100
-Aligner_bamstats_all:
-        n: 4
-        mem: 6000
 bamstats_all:
         n: 4
         mem: 6000
-VCF_CalibrateDragstrModel:
-        n: 1
-        mem: 7500
-        time: 400
 CalibrateDragstrModel:
         n: 1
         mem: 7500
@@ -62,14 +36,6 @@ HaplotypeCaller:
         n: 2
         mem: 15000
         time: 15500
-VCF_HaplotypeCaller:
-        n: 2
-        mem: 15000
-        time: 15500
-VCF_GenomicDBImport:
-        n: 2
-        mem: 7000
-        time: 25000
 GenomicDBImport:
         n: 2
         mem: 7000
@@ -78,21 +44,9 @@ GenotypeDBI:
         n: 2
         mem: 16500
         time: 18500
-VCF_GenotypeDBI:
-        n: 2
-        mem: 16500
-        time: 18500
 Mergechrs:
         n: 1
         mem: 4000
-        time: 200
-VCF_Mergechrs:
-        n: 1
-        mem: 4000
-        time: 200
-VQSR_SelectSNPs:
-        n: 1
-        mem: 5500
         time: 200
 SelectSNPs:
         n: 1
@@ -102,30 +56,14 @@ VQSR_SNP:
         n: 1
         mem: 10000
         time: 550
-VQSR_VQSR_SNP:
-        n: 1
-        mem: 10000
-        time: 550
 ApplyVQSR_SNPs:
         n: 1
         mem: 6000
         time:  200
-VQSR_ApplyVQSR_SNPs:
-        n: 1
-        mem: 6000
-        time:  200
-VQSR_SelectINDELs:
-        n: 1
-        mem: 7500
-        time: 200
 SelectINDELs:
         n: 1
         mem: 7500
         time: 200
-VQSR_VQSR_INDEL:
-        n: 1
-        mem: 5500
-        time: 150
 VQSR_INDEL:
         n: 1
         mem: 5500
@@ -133,14 +71,6 @@ VQSR_INDEL:
 ApplyVQSR_INDEs:
         n: 1
         mem: 4500
-        time: 150
-VQSR_ApplyVQSR_INDEs:
-        n: 1
-        mem: 4500
-        time: 150
-VQSR_combine:
-        n: 1
-        mem: 7000
         time: 150
 combine:
         n: 1
@@ -150,13 +80,6 @@ norm:
         n: 1
         mem: 5000
         time: 600
-VQSR_norm:
-        n: 1
-        mem: 5000
-        time: 600
-Stat_Basic_stats:
-        n: 2
-        mem: 4500
 Basic_stats:
         n: 2
         mem: 4500
@@ -164,26 +87,12 @@ HS_stats:
         n: 1
         mem: 7500
         time: 1000
-Stat_HS_stats:
-        n: 1
-        mem: 7500
-        time: 1000
-Stat_samtools_stat:
-        n: 2
-        mem: 200
 samtools_stat:
         n: 2
         mem: 200
 samtools_stat_exome:
         n: 4
         mem: 200
-Stat_samtools_stat_exome:
-        n: 4
-        mem: 200
-Stat_Artifact_stats:
-        n: 1
-        mem: 15000
-        time: 1000
 Artifact_stats:
         n: 1
         mem: 15000
@@ -192,28 +101,13 @@ OXOG_metrics:
         n: 1
         mem: 15000
         time: 1000
-Stat_OXOG_metrics:
-        n: 1
-        mem: 15000
-        time: 1000
-VCF_verifybamid:
-        n: 4
 verifybamid:
         n: 4
-Stat_bamstats_exome:
-        n: 4
-        mem: 6000
-Aligner_resort_by_readname:
-        n: 16
 resort_by_readname:
-        n: 16
-Aligner_declip:
         n: 16
 declip:
         n: 16
 sort_back:
-        n: 16
-Aligner_sort_back:
         n: 16
 uBAM_to_fq:
         n: 1

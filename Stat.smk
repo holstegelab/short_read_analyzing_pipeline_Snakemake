@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy
 import read_stats
 import os
 configfile: srcdir("Snakefile.cluster.json")
@@ -37,7 +38,7 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
-rule all:
+rule Stat_all:
     input:
         config['STAT'] + "/BASIC.variant_calling_detail_metrics",
         expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
@@ -45,6 +46,7 @@ rule all:
         expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
+    default_target: True
 
 
 
@@ -60,7 +62,7 @@ rule Basic_stats:
     log: config['LOG'] + '/' + "VCF_stats.log"
     benchmark: config['BENCH'] + "/VCF_stats.txt"
     params: dbsnp = config['RES'] + config['dbsnp']
-    threads: config['Stat_Basic_stats']['n']
+    threads: config['Basic_stats']['n']
     shell:
         "{gatk} CollectVariantCallingMetrics \
         -R {ref} -I {input} -O stats/BASIC \
@@ -142,7 +144,7 @@ rule samtools_stat:
     priority: 99
     log: config['LOG'] + '/' + "samtools_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_{sample}.txt"
-    threads: config['Stat_samtools_stat']['n']
+    threads: config['samtools_stat']['n']
     shell:
         "{samtools} stat -@ {threads} -r {ref} {input.bam} > {output}"
 
@@ -164,7 +166,7 @@ rule samtools_stat_exome:
         bed_interval = get_capture_kit_bed
     log: config['LOG'] + '/' + "samtools_exome_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_exome_{sample}.txt"
-    threads: config['Stat_samtools_stat']['n']
+    threads: config['samtools_stat']['n']
     shell:
         "{samtools} stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
@@ -177,7 +179,7 @@ rule bamstats_exome:
         bam = rules.CalibrateDragstrModel.input.bam,
     output:
         All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
-    threads: config['Stat_bamstats_exome']['n']
+    threads: config['bamstats_exome']['n']
     params:
         py_stats = config['BAMSTATS'],
         bed_interval= get_capture_kit_bed,

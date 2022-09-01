@@ -23,9 +23,10 @@ SAMPLE_FILES, SAMPLE_BY_FILE, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
-rule all:
+rule VQSR_all:
     input:
         expand("{vcf}/ALL_chrs.vcf.gz",vcf=config['VCF']),
+    default_target: True
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -80,7 +81,7 @@ rule VQSR_SNP:
          -resource:omni,known=false,training=true,truth=true,prior=12.0 {params.omni} \
          -resource:1000G,known=false,training=true,truth=false,prior=10.0 {params.kilo_g} \
          -resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {params.dbsnp} \
-         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -an InbreedingCoeff -mode SNP --trust-all-polymorphic -AS TRUE \
+         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -mode SNP --trust-all-polymorphic -AS TRUE \
          -tranche 100.0 -tranche 99.95 -tranche 99.9 -tranche 99.8 -tranche 99.6 -tranche 99.5 -tranche 99.4 -tranche 99.3 -tranche 99.0 -tranche 98.0 -tranche 97.0 -tranche 90.0 \
          -O {output.recal_snp} \
          --tranches-file {output.tranches_file_snp} \

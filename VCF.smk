@@ -16,9 +16,10 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
-rule all:
+rule VCF_all:
     input:
         expand("{vcf}/ALL_chrs.vcf.gz",vcf=config['VCF']),
+    default_target: True
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -133,7 +134,7 @@ rule GenomicDBImport:
     output:
         dbi=directory("genomicsdb_{chr}"),
         gvcf_list = temp("{chr}_gvcfs.list")
-    threads: config['VCF_GenomicDBImport']['n']
+    threads: config['GenomicDBImport']['n']
     # params:
         # N_intervals=5,
         # threads=16,
@@ -147,6 +148,7 @@ rule GenomicDBImport:
         #      --max-num-intervals-to-import-in-parallel {params.N_intervals} --reader-threads {params.threads}"
 
 # genotype
+# multiple samplefiles
 rule GenotypeDBI:
     input:
         rules.GenomicDBImport.output.dbi
@@ -165,7 +167,7 @@ rule Mergechrs:
     input:
         expand(config['VCF'] + "/Merged_raw_DBI_{chr}.vcf.gz", chr = chr)
     params:
-        vcfs = list(map("-I {}/Merged_raw_DBI_{}.vcf.gz".format, config['VCF'], chr))
+        vcfs = expand("-I {dir}/Merged_raw_DBI_{chr}.vcf.gz", dir = config['VCF'], chr = chr)
     log: config['LOG'] + '/' + "Mergechrs.log"
     benchmark: config['BENCH'] + "/Mergechrs.txt"
     output:
