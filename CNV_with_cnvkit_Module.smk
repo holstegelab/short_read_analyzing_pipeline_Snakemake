@@ -1,3 +1,5 @@
+configfile: srcdir("Snakefile.cluster.json")
+configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['miniconda'] + config['gatk']
 samtools = config['miniconda'] + config['samtools']
 ref = config['RES'] + config['ref']
@@ -6,6 +8,7 @@ wildcard_constraints:
     sample="[\w\d_\-@]+"
 from read_samples import *
 from common import *
+SAMPLE_FILES, SAMPLES_BY_FILE, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 rule all:

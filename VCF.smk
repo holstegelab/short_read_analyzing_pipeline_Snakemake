@@ -1,5 +1,5 @@
-configfile: "Snakefile.cluster.json"
-configfile: "Snakefile.paths.yaml"
+configfile: srcdir("Snakefile.cluster.json")
+configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['miniconda'] + config['gatk']
 verifybamid2 = config['miniconda'] + config['verifybamid2']
 ref = config['RES'] + config['ref']
@@ -11,6 +11,7 @@ wildcard_constraints:
 
 from read_samples import *
 from common import *
+SAMPLE_FILES, SAMPLES_BY_FILE, SAMPLEINFO = load_samplefiles('.', config)
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
