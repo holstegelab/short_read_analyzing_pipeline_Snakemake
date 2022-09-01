@@ -12,7 +12,9 @@ import struct
 import stat
 import bz2
 import time
+import argparse
 
+import utils
 
 def gzipFileSize(filename):
     """return UNCOMPRESSED filesize of a gzipped file.
@@ -312,7 +314,7 @@ def read_samplefile(filename):
     return samples
 
 
-def read_samplefile_simple(filename, prefixpath):
+def read_samplefile_simple(filename, prefixpath, config):
     orig_filename = filename
     filename = os.path.realpath(filename)
     samples = []
@@ -401,7 +403,7 @@ def read_samplefile_simple(filename, prefixpath):
             samples.append(res)
 
     for capture_kit in capture_kits:
-        f = '/projects/0/ades/resources/capture_kits/' + capture_kit + '.bed'
+        f = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.bed')
         if not os.path.isfile(f):
             warning(False, 'capture kit file does not exist: ' + f)
     print('')
@@ -435,8 +437,10 @@ def get_readgroups(sample, sourcedir):
     readgroups = []
     if file_type == 'fastq_paired':
         for pos, (f1, f2) in enumerate(zip(filenames1, filenames2)):
-            info_f1 = read_fastqfile(append_prefix(sourcedir, f1))
-            info_f2 = read_fastqfile(append_prefix(sourcedir, f2))
+            f1 = append_prefix(sourcedir, f1)
+            f2 = append_prefix(sourcedir, f2)
+            info_f1 = read_fastqfile(f1)
+            info_f2 = read_fastqfile(f2)
 
             check(warnings,
                   info_f1['instrument'] == info_f2['instrument'] and info_f1['run'] == info_f2['run'] and info_f1[
@@ -600,8 +604,22 @@ def read_fastqfile(filename):
     return res
 
 if __name__ == '__main__':
-    if len(sys.argv) == 1:
-        print('Usage: check_samplefile SAMPLEFILE [SAMPLEFILE2] ...')
-    for sf in sys.argv[1:]:
-        read_samplefile_simple(sf,'/projects/0/ades/NL_VUMC/batch4/')
+    parser = argparse.ArgumentParser(description='Process sample description files for the preprocessing pipeline.')	
+    parser.add_argument('samplefiles', metavar='SAMPLEFILE', nargs='+', help='Path to sample file.')
+    parser.add_argument('--config', default='', help='Location of the preprocessing pipeline path config file (default: Snakefile.paths.yaml)')
+    parser.add_argument('--data_root', default='', help='Root folder in which to look for source files (referred to from sample file) (default=folder of sample file).')
+    args = parser.parse_args()
+    data_root = args.data_root
+
+    #load config
+    if not args.config:
+        configfile = os.path.join(os.path.dirname(os.path.realpath(__file__)),'Snakefile.paths.yaml')
+    else:
+        configfile = os.path.expanduser(args.config)
+    config = utils.read_yaml_config(configfile)
+
+    samplefiles = [os.path.expanduser(sample_file) for sample_file in args.samplefiles]
+    for samplefile in samplefiles:
+        cur_data_root = os.path.dirname(samplefile) if not args.data_root else os.path.expanduser(args.data_root)
+        read_samplefile_simple(samplefile, cur_data_root, config)
 
