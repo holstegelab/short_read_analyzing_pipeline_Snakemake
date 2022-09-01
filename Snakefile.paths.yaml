@@ -4,7 +4,6 @@
 miniconda: '~/miniconda3/envs/preprocess/'
 RES: '/projects/0/qtholstg/hg38_res/'
 #path to folder with samples
-SAMPLEFOLDER: '/projects/0/ades/NL_VUMC/batch4/'
 
 #path to intervals file with targets
 kit_folder: 'intervals/'

@@ -34,13 +34,10 @@ def get_fastqpaired(wildcards):
     sinfo = SAMPLEINFO[wildcards['sample']]  # SMAPLEINFO comes from common.py, it's dict created from samplefile
     # check readgroups
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
-    # SAMPLEFOLDER it's path folder
-    # maybe created symlinks to folder with all fq easier?
-    # ln -s
-    file1 = os.path.join(config['SAMPLEFOLDER'],readgroup['file1'])
+    file1 = os.path.join(readgroup['prefixpath'],readgroup['file1'])
     if file1.endswith('.bz2'):
         file1 = file1[:-4] + '.gz'
-    file2 = os.path.join(config['SAMPLEFOLDER'],readgroup['file2'])
+    file2 = os.path.join(readgroup['prefixpath'],readgroup['file2'])
     if file2.endswith('.bz2'):
         file2 = file2[:-4] + '.gz'
     return [file1, file2]
