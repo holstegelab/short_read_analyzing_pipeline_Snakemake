@@ -42,27 +42,19 @@ sample_names = SAMPLEINFO.keys()
 module Aligner:
     snakefile: 'Aligner.smk'
     config: config
-
-use rule * from Aligner as Aligner_*
-
 module VCF:
     snakefile: 'VCF.smk'
     config: config
-
-use rule * from VCF as VCF_*
-
 module VQSR:
     snakefile: 'VQSR.smk'
     config: config
-
-use rule * from VQSR as VQSR_*
-
 module Stat:
     snakefile: 'Stat.smk'
     config: config
-
+use rule * from Aligner as Aligner_*
+use rule * from VCF as VCF_*
+use rule * from VQSR as VQSR_*
 use rule * from Stat as Stat_*
-
 
 rule all:
     input:
@@ -70,10 +62,7 @@ rule all:
         rules.VCF_all.input,
         rules.VQSR_all.input,
         rules.Stat_all.input
-
-
-
-
+    default_target: True
 
 
 
@@ -86,13 +75,7 @@ rule all:
 # # which statistic file we need to use depends on additional clean up steps
 # # if we trigger addition clean up, so we need to provide bam_all.tsv statistic file after cleanup
 # # other stat files won't chged a lot after cleanup, so we keep them
-# def check_supp_stats(wildcards):
-#     with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
-#         lines = f.readlines()
-#         if float((lines[1].split()[3])) >= float(0.005):
-#             return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.additional_cleanup.tsv')
-#         else:
-#             return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.tsv')
+
 #
 
 

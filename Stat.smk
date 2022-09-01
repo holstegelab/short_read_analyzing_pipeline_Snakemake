@@ -184,6 +184,15 @@ rule bamstats_exome:
     shell:
         "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | python3 {params.py_stats} stats > {output}"
 
+def check_supp_stats(wildcards):
+    with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
+        lines = f.readlines()
+        if float((lines[1].split()[3])) >= float(0.005):
+            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.additional_cleanup.tsv')
+        else:
+            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.tsv')
+
+
 def get_quality_stats(wildcards):
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     files = []
