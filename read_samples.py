@@ -124,196 +124,9 @@ sampletypes = set(['illumina_exome', 'illumina_wgs', 'illumina_wgs_pcr_free', 'i
 sexes = set(['F', 'M'])
 
 
-def read_samplefile(filename):
-    filename = os.path.realpath(filename)
-    filedir = os.path.dirname(filename)
-    samples = []
-    capture_kits = set()
-    print('Reading sample file: ' + filename)
-    with open(filename, 'r') as f:
-        c = csv.reader(f, delimiter='\t')
-        c = list(c)
-        s = os.stat(os.path.dirname(filename))
-        warning(((s.st_mode & stat.S_IWGRP) > 0) & ((s.st_mode & stat.S_IRGRP) > 0),
-                'Directory does not have group write/read permission: ' + os.path.dirname(filename))
-
-        for rowpos, row in enumerate(c):
-            alternative_names = set()
-            readgroups = []
-
-            error(len(row) == 7 or len(row) == 8 or len(row) == 9, 'Row encountered with != 8 or 9 fields: ' + str(row))
-            if len(row) == 8:
-                study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2 = row
-                ethnicity = 'EUR'
-            elif len(row) == 7:
-                study, sample_id, file_type, sample_type, capture_kit, sex, filenames1 = row
-                filenames2 = ""
-                ethnicity = 'EUR'
-            else:
-                study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2, ethnicity = row
-
-            warning(sample_id.startswith(study),
-                    'Sample id needs to start with study name to prevent sample name conflicts for ' + sample_id)
-            sys.stdout.write('- Checking sample ' + sample_id + ' (%d/%d)\r' % (rowpos + 1, len(c)))
-            warning(sample_type in sampletypes, 'Unknown sample_type: ' + sample_type)
-            warning(sex in sexes, 'Unknown sex: ' + sex)
-
-            if sample_type == 'illumina_exome':
-                warning(capture_kit != '', 'Need to fill in capture kit for exome')
-                capture_kits.add(capture_kit)
-            else:
-                warning(capture_kit == '' or capture_kit.startswith('WGS'),
-                        'Capture kit filled in for ' + sample_type + ' sample')
-
-            not_exist = False
-            if file_type == 'sra_paired' or file_type == 'sra_single':
-                filenames1 = [a.strip() for a in filenames1.split(',') if a.strip() != '']
-                filenames2 = [a.strip() for a in filenames2.split(',') if a.strip() != '']
-            elif file_type == 'gvcf':
-                filenames1 = [a.strip() for a in filenames1.split(',') if a.strip() != '']
-                filenames2 = [a.strip() for a in filenames2.split(',') if a.strip() != '']
-                for gvcf in filenames1:
-                    if not os.path.isfile(gvcf):
-                        not_exist = warning(os.path.isfile(gvcf), 'File does not exist: ' + gvcf) or not_exist
-
-            else:
-                filenames1 = [os.path.join(filedir, a.strip()) for a in filenames1.split(',') if a.strip() != '']
-                filenames2 = [os.path.join(filedir, a.strip()) for a in filenames2.split(',') if a.strip() != '']
-                for filename in itertools.chain(filenames1, filenames2):
-                    if os.path.isfile(filename):
-                        s = os.stat(filename)
-                        warning((s.st_mode & stat.S_IRGRP) > 0, 'File does not have group read permission: ' + filename)
-                    else:
-                        not_exist = warning(os.path.isfile(filename), 'File does not exist: ' + filename) or not_exist
-
-            alternative_names.add(
-                os.path.splitext(os.path.commonprefix([os.path.basename(e) for e in (filenames1 + filenames2)]))[
-                    0].strip('_'))
-            if not_exist or file_type == 'sra_paired' or file_type == 'sra_single':  # FI XME: temp hack, remove SRA when done
-                res = {'sample': sample_id, 'ethnicity': ethnicity, 'alt_name': alternative_names, 'study': study,
-                       'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex,
-                       'readgroups': []}
-                samples.append(res)
-                continue
-
-            error(file_type in filetypes, 'Unknown file_type: ' + file_type)
-            if file_type == 'fastq_paired':
-                warning(len(filenames1) > 0, 'No filename given for sample ' + sample_id)
-                if len(filenames2) == 0:
-                    file_type = 'fastq_interleaved'
-                    error(False,
-                          'Handling interleaved fastq files is not yet implemented, let me know if you need this')
-                else:
-                    warning(len(filenames1) == len(filenames2),
-                            'Number of fastq files is not equal for filenames_read1 and filenames_read2 for sample ' + sample_id)
-                    for pos, (f1, f2) in enumerate(zip(filenames1, filenames2)):
-                        info_f1 = read_fastqfile(f1)
-                        info_f2 = read_fastqfile(f2)
-
-                        warning(info_f1['instrument'] == info_f2['instrument'] and info_f1['run'] == info_f2['run'] and
-                                info_f1['flowcell'] == info_f2['flowcell'] and info_f1['lane'] == info_f2['lane'] and \
-                                info_f1['index'] == info_f2['index'],
-                                'Fastq files for sample ' + sample_id + ' have nonmatching metadata')
-                        warning(info_f1['pair'] == '1' and info_f2['pair'] == '2',
-                                'Fastq files are incorrect order for sample ' + sample_id)
-
-                        fs1 = file_size(f1)
-                        fs2 = file_size(f2)
-                        warning(fs1 == fs2,
-                                'Paired fastq files are unequal in size (%d, %d) for sample ' % (fs1, fs2) + sample_id)
-                        readgroup_info = {'ID': sample_id + '_rg%d' % pos, \
-                                          'PL': sample_type, \
-                                          'PU': info_f1['instrument'] + '.' + info_f1['flowcell'] + '.' + info_f1[
-                                              'lane'] + '.' + info_f1['index'], \
-                                          'LB': info_f1['instrument'] + '.' + info_f1['run'] + '.' + sample_id, \
-                                          'DT': datetime.datetime.fromtimestamp(int(info_f1['date'])).strftime(
-                                              '%Y-%m-%dT%H:%M:%S+01:00'), \
-                                          'CN': study, \
-                                          'SM': sample_id}
-                        readgroup = {'info': readgroup_info, 'file_type': file_type, 'file1': f1, 'file2': f2}
-                        readgroups.append(readgroup)
-            elif file_type == 'sra_paired' or file_type == 'sra_single':
-                warning(len(filenames2) == 0, 'No second filename can be given for SRA files: ' + sample_id)
-                for sraid in filenames1:
-                    try:
-                        readgroups_info = get_sra_readgroups(sraid)
-                    except IOError as e:
-                        warning(False, str(e))
-                        continue
-                    for readgroup_info in readgroups_info:
-                        if not 'DT' in readgroup_info:
-                            readgroup_info['DT'] = ""
-                        if not 'CN' in readgroup_info:
-                            readgroup_info['CN'] = study
-                        if not 'PL' in readgroup_info:
-                            readgroup_info['PL'] = sample_type
-                        if 'SM' in readgroup_info:
-                            alternative_names.add(readgroup_info['SM'])
-                        readgroup_info['SM'] = sample_id
-
-                        readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': sraid,
-                                     'nreadgroups': len(readgroups_info)}
-                        readgroups.append(readgroup)
-            elif file_type == 'gvcf':
-                warning(len(filenames2) == 0, 'No second filename can be given for bam files: ' + sample_id)
-                assert len(filenames1) == 1
-                for filename in filenames1:
-                    fstat = os.stat(filename)
-                    readgroup_info = {}
-                    filedate = fstat.st_mtime
-                    readgroup_info['ID'] = sample_id + '_1'
-                    readgroup_info['DT'] = datetime.datetime.fromtimestamp(filedate).strftime('%Y-%m-%dT%H:%M:%S+01:00')
-                    readgroup_info['CN'] = study
-                    readgroup_info['PL'] = sample_type
-                    readgroup_info['SM'] = sample_id
-                    readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename, 'nreadgroups': 1}
-                    readgroups.append(readgroup)
-            else:
-                warning(len(filenames2) == 0, 'No second filename can be given for bam files: ' + sample_id)
-                used_readgroups = set()
-                for filename in filenames1:
-                    fstat = os.stat(filename)
-                    readgroups_info = get_bam_readgroups(filename, file_type)
-                    for readgroup_info in readgroups_info:
-                        if not 'DT' in readgroup_info:
-                            filedate = fstat.st_mtime
-                            readgroup_info['DT'] = datetime.datetime.fromtimestamp(filedate).strftime(
-                                '%Y-%m-%dT%H:%M:%S+01:00')
-                        if not 'CN' in readgroup_info:
-                            readgroup_info['CN'] = study
-                        if not 'PL' in readgroup_info:
-                            readgroup_info['PL'] = sample_type
-                        if 'SM' in readgroup_info:
-                            alternative_names.add(readgroup_info['SM'])
-                        readgroup_info['SM'] = sample_id
-
-                        readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename,
-                                     'nreadgroups': len(readgroups_info)}
-                        if readgroup_info['ID'] in used_readgroups:
-                            readgroup_info['oldname'] = readgroup_info['ID']
-                            counter = 2
-                            while (readgroup_info['ID'] + '.' + str(counter)) in used_readgroups:
-                                counter += 1
-                            readgroup_info['ID'] = readgroup_info['ID'] + '.' + str(counter)
-
-                        used_readgroups.add(readgroup_info['ID'])
-
-                        readgroups.append(readgroup)
-            warning(len(readgroups) > 0, 'No readgroups defined for sample: ' + sample_id)
-            res = {'sample': sample_id, 'ethnicity': ethnicity, 'alt_name': alternative_names, 'study': study,
-                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex,
-                   'readgroups': readgroups}
-            samples.append(res)
-    for capture_kit in capture_kits:
-        f = '/projects/0/ades/resources/capture_kits/' + capture_kit + '.bed'
-        if not os.path.isfile(f):
-            warning(False, 'capture kit file does not exist: ' + f)
-    print('')
-    print('Check complete')
-    return samples
 
 
-def read_samplefile_simple(filename, prefixpath, config):
+def read_samplefile_simple(filename, config, prefixpath=None):
     orig_filename = filename
     filename = os.path.realpath(filename)
 
@@ -323,6 +136,8 @@ def read_samplefile_simple(filename, prefixpath, config):
             prefixpath = fsource.readline().strip()
         print(f'Data path overridden from {basename}.source file to {prefixpath}')            
 
+    if not prefixpath:
+        prefixpath = os.path.dirname(filename)
 
     if os.path.exists(basename + '.target'):
         with open(basename + '.target','r') as ftarget:
@@ -407,7 +222,7 @@ def read_samplefile_simple(filename, prefixpath, config):
                 warning(len(filenames2) == 0, 'No second filename can be given for bam files: ' + sample_id)
 
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
-                    'target':targetpath',
+                    'target':targetpath,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
                    'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex}
             
@@ -633,6 +448,5 @@ if __name__ == '__main__':
 
     samplefiles = [os.path.expanduser(sample_file) for sample_file in args.samplefiles]
     for samplefile in samplefiles:
-        cur_data_root = os.path.dirname(samplefile) if not args.data_root else os.path.expanduser(args.data_root)
-        read_samplefile_simple(samplefile, cur_data_root, config)
+        read_samplefile_simple(samplefile, config, args.data_root)
 

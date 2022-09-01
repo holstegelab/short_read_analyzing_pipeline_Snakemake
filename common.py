@@ -1,15 +1,15 @@
-import pickle
 import os
-import read_samples
 import csv
+from collections import OrderedDict
 
+import read_samples
+import utils
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
 
-SAMPLE_CACHE = {}
-
+SAMPLEFILE_TO_SAMPLES = {}
 
 def get_contamination_from_quality_file(filename):
     res = dict()
@@ -21,23 +21,26 @@ def get_contamination_from_quality_file(filename):
 
 
 #function to read in and cache a samplefile
-def samplefile(filename):
-   basename = os.path.basename(filename)
-   if not basename in SAMPLE_CACHE: 
-        datfilename = os.path.realpath(filename)[:-4] + '.dat'
+def samplefile(sfilename, config):
+    basename = os.path.splitext(os.path.basename(sfilename))[0]
+    if not basename in SAMPLEFILE_TO_SAMPLES: 
+        if not os.path.isfile(sfilename):
+            raise RuntimeError('Sample file ' + sfilename + ' does not exist')
+       
+        datfilename = os.path.realpath(sfilename)[:-4] + '.adat'
         if not os.path.isfile(datfilename):
-            if not os.path.isfile(filename):
-                raise RuntimeError('Sample file ' + filename + ' does not exist')
-            info = read_samples.read_samplefile(filename)
-            sampleinfodict = dict([(a['sample'], a) for a in info])
-            with open(datfilename,'wb') as f:
-                pickle.dump(sampleinfodict, f)
+            if not os.path.isfile(sfilename):
+                raise RuntimeError('Sample file ' + sfilename + ' does not exist')
+            samplelist = read_samples.read_samplefile_simple(sfilename, config)
+            #using ordereddict to main stable order
+            sampleinfodict = OrderedDict([(a['sample'], a) for a in samplelist])
+            utils.save(sampleinfodict,datfilename)
         else:
-            with open(datfilename, 'rb') as f:
-                sampleinfodict = pickle.load(f)
-            
-        SAMPLE_CACHE[basename] = sampleinfodict
-   return SAMPLE_CACHE[basename]
+            sampleinfodict = utils.load(datfilename)
+
+        SAMPLEFILE_TO_SAMPLES[basename] = sampleinfodict
+    return SAMPLEFILE_TO_SAMPLES[basename]
+
 
 def load_samplefiles(filedir, config):
     if not 'SAMPLE_FILES' in config:
@@ -46,7 +49,7 @@ def load_samplefiles(filedir, config):
         SAMPLEINFO = {}
 
         #read in all tsv files in current workdir as samplefiles
-        for f in os.listdir('.'):
+        for f in os.listdir(filedir):
             if f.endswith('.tsv') and not f.startswith('sample_'): #possible sample file
                 f = os.path.join(os.getcwd(), f)
                 with open(f, 'r') as fopen:
@@ -54,7 +57,7 @@ def load_samplefiles(filedir, config):
 
                 if ncount == 8 or ncount == 9: #sample file
                     SAMPLE_FILES.append(f)
-                    w = samplefile(f)
+                    w = samplefile(f, config)
                     nw = {}
                     for key,value in w.items():
                         if len(value['readgroups']) > 0:
