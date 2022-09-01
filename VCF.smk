@@ -89,7 +89,7 @@ def get_chrom_capture_kit(wildcards):
 def read_contam_w(wildcards):
     # filename = rules.verifybamid.output.VBID_stat
     filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] + '_verifybamid.pca2.selfSM')
-    with open(filename,'r') as f:
+    with open(filename,'r', encoding='utf-8') as f:
         c = csv.reader(f, delimiter='\t')
         c = iter(c)
         headers = c.__next__()
