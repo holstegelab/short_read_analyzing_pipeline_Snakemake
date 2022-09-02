@@ -117,19 +117,19 @@ rule align_reads:
         "{samtools} sort -T 'sort_temporary' -@ {threads}  -o {output.bam} 2> {log.samtools_sort} && "
         "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
 
-# function to get information about reaadgroups
-# needed if sample contain more than 1 fastq files
-def get_readgroups(wildcards):
-    readgroups = SAMPLEINFO[wildcards['sample']]['readgroups']
+# # function to get information about reaadgroups
+# # needed if sample contain more than 1 fastq files
+def get_readgroups_bam(wildcards):
+    readgroups_b = SAMPLEINFO[wildcards['sample']]['readgroups']
     files = []
-    for readgroup in readgroups:
+    for readgroup in readgroups_b:
         files.append(os.path.join(config['BAM'] + '/' + wildcards['sample'] + '._' + readgroup['info']['ID'] + '.bam'))
     return files
 
 # merge different readgroups bam files for same sample
 rule merge_rgs:
     input:
-        get_readgroups
+        get_readgroups_bam
     output:
         mer_bam = (config['BAM'] + "/{sample}.merged.bam")
     log: config['LOG'] + '/' + "{sample}.mergereadgroups.log"
