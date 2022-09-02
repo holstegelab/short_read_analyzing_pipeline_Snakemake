@@ -291,7 +291,7 @@ def get_readgroups(sample, sourcedir):
                                   '%Y-%m-%dT%H:%M:%S+01:00'), \
                               'CN': study, \
                               'SM': sample_id}
-            readgroup = {'info': readgroup_info, 'file_type': file_type, 'file1': f1, 'file2': f2}
+            readgroup = {'info': readgroup_info, 'file_type': file_type, 'file1': f1, 'file2': f2, 'prefix': sourcedir}
             readgroups.append(readgroup)
     elif file_type == 'sra_paired' or file_type == 'sra_single':
         for sraid in filenames1:
@@ -312,7 +312,7 @@ def get_readgroups(sample, sourcedir):
                 readgroup_info['SM'] = sample_id
 
                 readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': sraid,
-                             'nreadgroups': len(readgroups_info)}
+                             'nreadgroups': len(readgroups_info), 'prefix': sourcedir}
                 readgroups.append(readgroup)
     elif file_type == 'gvcf':
         for filename in filenames1:
@@ -344,7 +344,7 @@ def get_readgroups(sample, sourcedir):
                 readgroup_info['SM'] = sample_id
 
                 readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename,
-                             'nreadgroups': len(readgroups_info)}
+                             'nreadgroups': len(readgroups_info), 'prefix': sourcedir}
                 if readgroup_info['ID'] in used_readgroups:
                     readgroup_info['oldname'] = readgroup_info['ID']
                     counter = 2
