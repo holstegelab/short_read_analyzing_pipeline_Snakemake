@@ -58,21 +58,24 @@ rule cutadapter:
     benchmark:
         config['BENCH'] + "/{sample}._{readgroup}.cutadapt.txt"
     priority: 10
+    conda: config['CONDA_MAIN']
     threads: config["cutadapter"]["n"]
-    run:
-        sinfo = SAMPLEINFO[wildcards['sample']]
-        rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
-        rgroupid = rgroup['ID']
-        rgrouplib = rgroup.get('LB','unknown')
-        rgroupplat = rgroup.get('PL','unknown')
-        rgrouppu = rgroup.get('PU','unknown')
-        rgroupsc = rgroup.get('CN','unknown')
-        rgrouprd = rgroup.get('DT','unknown')
-        # cut standard Illumina adapters
-        cmd="""
-        {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}
-        """
-        shell(cmd)
+    shell:
+        "{cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}"
+    # run:
+    #     sinfo = SAMPLEINFO[wildcards['sample']]
+    #     rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
+    #     rgroupid = rgroup['ID']
+    #     rgrouplib = rgroup.get('LB','unknown')
+    #     rgroupplat = rgroup.get('PL','unknown')
+    #     rgrouppu = rgroup.get('PU','unknown')
+    #     rgroupsc = rgroup.get('CN','unknown')
+    #     rgrouprd = rgroup.get('DT','unknown')
+    #     # cut standard Illumina adapters
+    #     cmd="""
+    #     {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}
+    #     """
+    #     shell(cmd)
 
 # rule to align reads from cutted fq on hg38 ref
 # use dragmap aligner
@@ -94,6 +97,7 @@ rule align_reads:
         ref_dir = config['RES'] + config['ref_dir'],
         # mask bed for current reference genome
         mask_bed = config['RES'] + config['mask_bed']
+    conda: config['CONDA_MAIN']
     threads: config["align_reads"]["n"]
     log:
         dragmap_log=config['LOG'] + '/' + "{sample}._{readgroup}_dragmap.log",
@@ -131,9 +135,12 @@ rule merge_rgs:
     log: config['LOG'] + '/' + "{sample}.mergereadgroups.log"
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     threads: config['merge_rgs']['n']
-    run:
-        inputs = ' '.join(f for f in input if f.endswith('.bam'))
-        shell("{samtools} merge -@ {threads} -o {output} {inputs} 2> {log}")
+    conda: config['CONDA_MAIN']
+    shell: "{samtools} merge -@ {threads} -o {output} {input} 2> {log}"
+
+    # run:
+    #     inputs = ' '.join(f for f in input if f.endswith('.bam'))
+    #     shell("{samtools} merge -@ {threads} -o {output} {inputs} 2> {log}")
 
 rule markdup:
     input:
@@ -151,6 +158,7 @@ rule markdup:
         samtools_markdup = config['LOG'] + '/' + "{sample}.markdup.log",
         samtools_index_md = config['LOG'] + '/' + "{sample}.markdup_index.log"
     threads: config['markdup']['n']
+    conda: config['CONDA_MAIN']
     shell:
         "{samtools} markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && "
         "{samtools} index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
@@ -165,6 +173,7 @@ checkpoint bamstats_all:
         All_stats = config['STAT'] + '/{sample}.bam_all.tsv'
     threads: config['bamstats_all']['n']
     params: py_stats = config['BAMSTATS']
+    conda: config['CONDA_MAIN']
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output}"
 
@@ -176,6 +185,7 @@ rule resort_by_readname:
         rules.markdup.output.mdbams
     output: resort_bams = temp(config['BAM'] + '/{sample}_resort.bam')
     threads: config['resort_by_readname']['n']
+    conda: config['CONDA_MAIN']
     shell: "{samtools} sort -n -@ {threads} -o  {output} {input}"
 # additional cleanup with custom script
 rule declip:
@@ -184,6 +194,7 @@ rule declip:
     output: declip_bam = temp(config['BAM'] + '/{sample}_declip.bam')
     threads: config['declip']['n']
     params: declip = config['DECLIP']
+    conda: config['CONDA_MAIN']
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.declip} > {output}"
 # back to original sort order after cleanup
@@ -196,6 +207,7 @@ rule sort_back:
     threads: config['sort_back']['n']
     params:
         py_stats= config['BAMSTATS']
+    conda: config['CONDA_MAIN']
     shell:
         "{samtools} sort -@ {threads} -o {output.ready_bams} {input} &&"
         "{samtools} index -@ {threads} {output.ready_bams} &&"
@@ -209,5 +221,6 @@ rule mCRAM:
         CRAM = config['CRAM'] + "/{sample}_mapped_hg38.cram"
     threads: config['mCRAM']['n']
     benchmark: config['BENCH'] + '/{sample}_mCRAM.txt'
+    conda: config['CONDA_MAIN']
     shell:
         "{samtools} view --cram -T {ref} -@ {threads} -o {output.CRAM} {input}"

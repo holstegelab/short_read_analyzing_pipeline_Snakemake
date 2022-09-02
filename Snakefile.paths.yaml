@@ -10,6 +10,7 @@ kit_folder: 'intervals/'
 
 #conda env's paths
 CONDA_VERIFYBAMID: 'verifybamid.yaml'
+CONDA_MAIN: 'preprocess.yaml'
 
 #OUTPUT FOLDERS
 LOG: 'logs'
