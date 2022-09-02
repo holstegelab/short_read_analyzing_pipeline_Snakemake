@@ -38,6 +38,12 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
+module Aligner:
+    snakefile: 'Aligner.smk'
+
+module VCF:
+    snakefile: 'VCF.smk'
+
 rule Stat_all:
     input:
         config['STAT'] + "/BASIC.variant_calling_detail_metrics",
@@ -75,12 +81,24 @@ def get_capture_kit_interval_list(wildcards):
     capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.interval_list'
     return capture_kit_path
 
+def check_supp(wildcards):
+    with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
+        lines = f.readlines()
+        # 4th column (3rd if 0-based) is column with supplementary fraction
+        if float((lines[1].split()[3])) >= float(0.005):
+            # return cleaned bam in case if clean up necessary
+            return rules.sort_back.output.ready_bams
+            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.DeClipped.bam')
+        else:
+            # return original MD bam if clean up not necessary
+            return rules.markdup.output.mdbams
+            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.markdup.bam')
 
 #hsmetrics
 #include off-target metrics
 rule HS_stats:
     input:
-        bam = rules.CalibrateDragstrModel.input.bam
+        bam = check_supp
     output:
         HS_metrics=config['STAT'] + "/{sample}_hs_metrics"
     log: config['LOG'] + '/' + "HS_stats_{sample}.log"
@@ -97,14 +115,14 @@ rule HS_stats:
     conda: config['CONDA_MAIN']
     shell:
         "{gatk} CollectHsMetrics \
-            -I {input.bam} -R {ref} -BI {params.interval} -TI {params.interval} \
+            -I {input} -R {ref} -BI {params.interval} -TI {params.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"
 
 rule Artifact_stats:
     input:
-        bam = rules.CalibrateDragstrModel.input.bam
+        bam = check_supp
     output:
         Bait_bias = config['STAT'] + '/{sample}.bait_bias.bait_bias_summary_metrics',
         Pre_adapter = config['STAT'] + '/{sample}.bait_bias.pre_adapter_summary_metrics',
@@ -127,7 +145,7 @@ rule Artifact_stats:
 
 rule OXOG_metrics:
     input:
-        bam = rules.CalibrateDragstrModel.input.bam,
+        bam = check_supp
     output:
         Artifact_matrics = config['STAT'] + "/{sample}.OXOG"
     priority: 99
@@ -143,7 +161,7 @@ rule OXOG_metrics:
 
 rule samtools_stat:
     input:
-        bam = rules.CalibrateDragstrModel.input.bam
+        bam = check_supp
     output: samtools_stat = config['STAT'] + "/{sample}_samtools.stat"
     priority: 99
     log: config['LOG'] + '/' + "samtools_{sample}.log"
@@ -164,7 +182,7 @@ def get_capture_kit_bed(wildcards):
 
 rule samtools_stat_exome:
     input:
-        bam = rules.CalibrateDragstrModel.input.bam,
+        bam = check_supp
     output: samtools_stat_exome = config['STAT'] + "/{sample}_samtools.exome.stat"
     priority: 99
     params:
@@ -182,7 +200,7 @@ rule bamstats_exome:
         # if in input 2 functions and one of them is check chekpoint (check_supp and get_capture_kit_bed here was as example)
         # first command has not been executed
         # and in shell wildcard (instead of iutput of function) has putted
-        bam = rules.CalibrateDragstrModel.input.bam,
+        bam = check_supp
     output:
         All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
     threads: config['bamstats_exome']['n']
