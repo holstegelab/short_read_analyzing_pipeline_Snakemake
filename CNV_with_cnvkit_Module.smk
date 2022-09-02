@@ -42,6 +42,12 @@ rule neewBams:
     shell:
         "{samtools} view -@ {threads} -L {params.interval} -b -o {output} {input}"
 
+def get_capture_kit_bed(wildcards):
+    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+    # if capture_kit.strip() == '':
+    #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
+    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.bed'
+    return capture_kit_path
 
 rule autobin:
     input:
@@ -49,9 +55,9 @@ rule autobin:
     output:
         target = config['TARGET'] + '/{sample}_covered.bed'
     params:
-            inputs = list(map(" {}/extracted_for_CNV/{}.extracted.bam".format,config['BAM'], sample_names)),
+            inputs = expand(" {bam}/extracted_for_CNV/{sample_name}.extracted.bam", bam = config['BAM'], sample_name = sample_names),
             iBED = get_capture_kit_bed,
-            anno = '/projects/0/qtholstg/hg38_res/refFlat.txt'
+            anno = config['RES'] + config['refflat']
     shell:
         "cnvkit.py autobin {params.inputs} --annotate {params.anno} --target-output-bed {output} -f {ref} -t {params.iBED}"
 #
@@ -61,7 +67,7 @@ rule coverage_target:
     output:
         target_cov = 'cnvkit/coverage/{sample}.targetcoverage.cnn'
     params:
-        iBED = '/projects/0/qtholstg/hg38_res/intervals/Agilent_V6_hg38.bed',
+        iBED = get_capture_kit_bed,
     benchmark: 'bench/{sample}_target_cov.txt'
     shell:
         "cnvkit.py coverage {input.bam} {params.iBED} -o {output.target_cov}"

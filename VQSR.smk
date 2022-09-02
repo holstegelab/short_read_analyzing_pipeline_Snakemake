@@ -47,7 +47,7 @@ rule SelectSNPs:
     priority: 50
     log: config['LOG'] + '/' + "SelectSNPs.log"
     benchmark: config['BENCH'] + "/SelectSNPs.txt"
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         """
         {gatk} SelectVariants \
@@ -72,7 +72,7 @@ rule VQSR_SNP:
         omni = config['RES'] + config['omni'],
         kilo_g = config['RES'] + config['kilo_g'],
         dbsnp = config['RES'] + config['dbsnp']
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     priority: 55
     shell:
         # -an InbreedingCoeff if 10+
@@ -103,7 +103,7 @@ rule ApplyVQSR_SNPs:
     params:
         ts_level='99.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
     priority: 60
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         """
         {gatk} ApplyVQSR -R {ref} -mode SNP \
@@ -120,7 +120,7 @@ rule SelectINDELs:
     log: config['LOG'] + '/' + "SelectINDELS.log"
     benchmark: config['BENCH'] + "/SelectINDELs.txt"
     priority: 50
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         """
         {gatk} SelectVariants \
@@ -142,7 +142,7 @@ rule VQSR_INDEL:
     params:
         mills = config['RES'] + config['mills'],
         dbsnp_indel = config['RES'] + config['dbsnp_indel']
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         # -an InbreedingCoeff if 10+
         """
@@ -167,7 +167,7 @@ rule ApplyVQSR_INDEs:
         recal_vcf_indel=temp(config['VCF_Final'] + "/INDELs_recal_apply_vqsr.vcf")
     params:
         ts_level='97.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     priority: 60
     shell:
         """
@@ -186,7 +186,7 @@ rule combine:
     output:
         filtrVCF=temp(config['VCF_Final'] + "/Merged_after_VQSR.vcf")
     priority: 70
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         "{gatk} MergeVcfs \
                 -I {input.snps} -I {input.indel} -O {output} 2> {log}"
@@ -201,6 +201,6 @@ rule norm:
     log: config['LOG'] + '/' + "normalization.log"
     benchmark: config['BENCH'] + "/normalization.txt"
     priority: 80
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "

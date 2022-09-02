@@ -53,7 +53,7 @@ rule CalibrateDragstrModel:
     priority: 16
     params:
         str_ref = config['RES'] + config['str_ref']
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
     shell:
@@ -114,7 +114,7 @@ rule HaplotypeCaller:
         HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_haplotypecaller.log"
     benchmark:
         config['BENCH'] + "/{sample}_{chr}_haplotypecaller.txt"
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     params:
         dbsnp = config['RES'] + config['dbsnp'],
         padding=100,  # extend intervals to this bp
@@ -142,7 +142,7 @@ rule GenomicDBImport:
         # threads=16,
         # padding = 100
     priority: 30
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     shell:
         "ls gvcfs/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && {gatk} GenomicsDBImport --reader-threads {threads} \
         -V {wildcards.chr}_gvcfs.list --intervals {wildcards.chr}  -R {ref} --genomicsdb-workspace-path {output.dbi} \
@@ -161,7 +161,7 @@ rule GenotypeDBI:
     benchmark: config['BENCH'] + "/GenotypeDBI.{chr}.txt"
     params:
         dbsnp = config['RES'] + config['dbsnp']
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     priority: 40
     shell:
             "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {wildcards.chr} 2> {log}"
@@ -172,7 +172,7 @@ rule Mergechrs:
         expand(config['VCF'] + "/Merged_raw_DBI_{chr}.vcf.gz", chr = chr)
     params:
         vcfs = expand("-I {dir}/Merged_raw_DBI_{chr}.vcf.gz", dir = config['VCF'], chr = chr)
-    conda: config['CONDA_MAIN']
+    conda: "preprocess"
     log: config['LOG'] + '/' + "Mergechrs.log"
     benchmark: config['BENCH'] + "/Mergechrs.txt"
     output:

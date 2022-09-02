@@ -17,7 +17,7 @@ dependencies:
   - scipy=1.8.1=py39he49c0e8_0
   - delly=1.0.3=h358d541_3
   - cnvkit=0.9.9=pyhdfd78af_0
-  - java-jdk=8.45.14=0
+  - java-jdk=8*
   - r-optparse=1.7.3=r41hc72bb7e_0
   - r-data.table=1.14.2=r41hcfec24a_0
   - r-ggplot2=3.3.6=r41hc72bb7e_0
