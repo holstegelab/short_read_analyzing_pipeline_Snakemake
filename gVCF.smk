@@ -16,13 +16,18 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
-rule VCF_all:
-    input:
-        expand("{vcf}/ALL_chrs.vcf.gz",vcf=config['VCF']),
-    default_target: True
-
 module Aligner:
     snakefile: 'Aligner.smk'
+    config: config
+use rule * from Aligner
+
+rule gVCF_all:
+    input:
+        expand("done_{chr}", chr = main_chrs),
+        expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names),
+        rules.Aligner_all.input
+    default_target: True
+
 
 
 # check amount of supplementary reads
@@ -109,7 +114,7 @@ rule HaplotypeCaller:
         interval= get_chrom_capture_kit,
         # command to get path to capture_kit interval list from SAMPLEFILE
     output:
-        gvcf="gvcfs/{chr}/{sample}.{chr}.g.vcf.gz"
+        gvcf= config['gVCF'] + "/{chr}/{sample}.{chr}.g.vcf.gz"
     log:
         HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_haplotypecaller.log"
     benchmark:
@@ -127,57 +132,8 @@ rule HaplotypeCaller:
                  -I {input.bams} -O {output.gvcf}  \
                   --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
 
-#Genomics DBImport instead CombineGVCFs
-rule GenomicDBImport:
-    input:
-        expand("gvcfs/{chr}/{sample}.{chr}.g.vcf.gz", sample = sample_names, chr = main_chrs)
-    log: config['LOG'] + '/' + "GenomicDBImport.{chr}.log"
-    benchmark: config['BENCH'] + "/GenomicDBImport.{chr}.txt"
-    output:
-        dbi=directory("genomicsdb_{chr}"),
-        gvcf_list = temp("{chr}_gvcfs.list")
-    threads: config['GenomicDBImport']['n']
-    # params:
-        # N_intervals=5,
-        # threads=16,
-        # padding = 100
-    priority: 30
-    conda: "preprocess"
-    shell:
-        "ls gvcfs/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && {gatk} GenomicsDBImport --reader-threads {threads} \
-        -V {wildcards.chr}_gvcfs.list --intervals {wildcards.chr}  -R {ref} --genomicsdb-workspace-path {output.dbi} \
-         --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
-        # "ls gvcfs/*.g.vcf > gvcfs.list && {gatk} GenomicsDBImport -V gvcfs.list --intervals {chrs}  -R {ref} --genomicsdb-workspace-path {output} \
-        #      --max-num-intervals-to-import-in-parallel {params.N_intervals} --reader-threads {params.threads}"
-
-# genotype
-# multiple samplefiles
-rule GenotypeDBI:
-    input:
-        rules.GenomicDBImport.output.dbi
-    output:
-        raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.vcf.gz"
-    log: config['LOG'] + '/' + "GenotypeDBI.{chr}.log"
-    benchmark: config['BENCH'] + "/GenotypeDBI.{chr}.txt"
-    params:
-        dbsnp = config['RES'] + config['dbsnp']
-    conda: "preprocess"
-    priority: 40
-    shell:
-            "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {wildcards.chr} 2> {log}"
 
 
-rule Mergechrs:
-    input:
-        expand(config['VCF'] + "/Merged_raw_DBI_{chr}.vcf.gz", chr = chr)
-    params:
-        vcfs = expand("-I {dir}/Merged_raw_DBI_{chr}.vcf.gz", dir = config['VCF'], chr = chr)
-    conda: "preprocess"
-    log: config['LOG'] + '/' + "Mergechrs.log"
-    benchmark: config['BENCH'] + "/Mergechrs.txt"
-    output:
-        vcf = config['VCF'] + "/ALL_chrs.vcf.gz"
-    priority: 45
-    shell:
-        "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log} && {gatk} IndexFeatureFile -I {output} "
+
+
 

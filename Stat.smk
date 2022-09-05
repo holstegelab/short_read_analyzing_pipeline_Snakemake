@@ -42,7 +42,7 @@ module Aligner:
     snakefile: 'Aligner.smk'
 
 module VCF:
-    snakefile: 'VCF.smk'
+    snakefile: 'gVCF.smk'
 
 rule Stat_all:
     input:

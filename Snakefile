@@ -42,8 +42,14 @@ sample_names = SAMPLEINFO.keys()
 module Aligner:
     snakefile: 'Aligner.smk'
     config: config
-module VCF:
-    snakefile: 'VCF.smk'
+module gVCF:
+    snakefile: 'gVCF.smk'
+    config: config
+module DBImport:
+    snakefile: 'DBImport.smk'
+    config: config
+module Genotype:
+    snakefile: 'Genotype.smk'
     config: config
 module VQSR:
     snakefile: 'VQSR.smk'
@@ -52,7 +58,9 @@ module Stat:
     snakefile: 'Stat.smk'
     config: config
 use rule * from Aligner
-use rule * from VCF
+use rule * from gVCF
+use rule * from DBImport
+use rule * from Genotype
 use rule * from VQSR
 use rule * from Stat
 
@@ -60,7 +68,8 @@ use rule * from Stat
 rule all:
     input:
         rules.Aligner_all.input,
-        rules.VCF_all.input,
+        rules.gVCF_all.input,
+        rules.Genotype_all.input,
         rules.VQSR_all.input,
         rules.Stat_all.input
     default_target: True

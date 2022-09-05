@@ -32,7 +32,7 @@ module Aligner:
     snakefile: 'Aligner.smk'
 
 module Raw_vcf:
-    snakefile: 'VCF.smk'
+    snakefile: 'gVCF.smk'
 
 
 # VQSR
