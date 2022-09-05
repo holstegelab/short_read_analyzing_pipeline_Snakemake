@@ -25,6 +25,8 @@ uBAM: 'uBAM'
 uCRAM: 'uCRAM'
 CRAM: 'CRAM'
 TARGET: 'cnvkit/target'
+CNVKIT: 'cnvkit'
+DELLY: 'SV_delly'
 
 #programs
 gatk: 'bin/gatk'
@@ -50,7 +52,7 @@ SD: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.dict'
 main_chr_bed: 'standard_chrs.bed'
 verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
 verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.100k.b38.vcf.gz.dat'
-reffalt: 'refFlat.txt'
+refflat: 'refFlat.txt'
 
 # VQSR DBses
 dbsnp: 'databases/Homo_sapiens_assembly38.dbsnp138.vcf.gz'

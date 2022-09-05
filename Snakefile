@@ -57,8 +57,16 @@ module VQSR:
 module Stat:
     snakefile: 'Stat.smk'
     config: config
+module SV_delly:
+    snakefile: 'SV_delly.smk'
+    config: config
+module CNV_with_cnvkit_Module:
+    snakefile: 'CNV_with_cnvkit_Module.smk'
+    config: config
 use rule * from Aligner
 use rule * from gVCF
+use rule * from SV_delly
+use rule * from CNV_with_cnvkit_Module
 use rule * from DBImport
 use rule * from Genotype
 use rule * from VQSR
@@ -71,6 +79,8 @@ rule all:
         rules.gVCF_all.input,
         rules.Genotype_all.input,
         rules.VQSR_all.input,
-        rules.Stat_all.input
+        rules.Stat_all.input,
+        rules.SV_delly_all.input,
+        rules.CNV_with_cnvkit_Module_all.input
     default_target: True
 

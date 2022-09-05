@@ -49,8 +49,8 @@ rule GenomicDBImport:
     priority: 30
     conda: "preprocess"
     shell:
-        "ls gvcf/{chr}/*.g.vcf.gz > {output.gvcf_list} && {gatk} GenomicsDBImport --reader-threads {threads} \
-        -V {chr}_gvcfs.list --intervals {chr}  -R {ref} --genomicsdb-workspace-path {output.dbi} --batch-size {params.batches} \
+        "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && {gatk} GenomicsDBImport --reader-threads {threads} \
+        -V {wildcards.chr}_gvcfs.list --intervals {wildcards.chr}  -R {ref} --genomicsdb-workspace-path {output.dbi} --batch-size {params.batches} \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
 
 # rule update_DBImport:
