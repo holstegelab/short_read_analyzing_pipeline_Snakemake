@@ -1,6 +1,10 @@
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['miniconda'] + config['gatk']
+samtools = config['miniconda'] + config['samtools']
+bcftools = config['miniconda'] + config['bcftools']
+dragmap = config['miniconda'] + config['dragmap']
+cutadapt = config['miniconda'] + config['cutadapt']
 verifybamid2 = config['miniconda'] + config['verifybamid2']
 ref = config['RES'] + config['ref']
 
