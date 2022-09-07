@@ -64,7 +64,7 @@ rule cutadapter:
     conda: "preprocess"
     threads: config["cutadapter"]["n"]
     shell:
-        "{cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}"
+        "{cutadapt} -j {threads} -m 20 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}"
     # run:
     #     sinfo = SAMPLEINFO[wildcards['sample']]
     #     rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
