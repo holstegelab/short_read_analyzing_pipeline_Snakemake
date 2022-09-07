@@ -63,13 +63,13 @@ rule bcf_merge:
 
 rule filter:
     input: rules.bcf_merge.output.bcf_merge
-    output: bcf_filter = config['DELLY'] + 'Filtred_SV.bcf'
+    output: bcf_filter = os.path.join(config['DELLY'], 'Filtred_SV.bcf')
     conda: 'preprocess'
     shell: "delly filter -f germline -o {output} {input}"
 
 rule vcf_prod:
     input: rules.filter.output
-    output: config['DELLY'] + 'Filtred_SV.vcf'
+    output: os.path.join(config['DELLY'], 'Filtred_SV.vcf')
     conda: 'preprocess'
     shell: "bcftools convert -O z -o {output} {input}"
 

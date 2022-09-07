@@ -144,7 +144,7 @@ rule plot_scatter:
         cnr = rules.fix.output.corrected,
         cns = rules.segment.output.segmeted
     output:
-        scatter = config['CNVKIT'] + 'plots/scatter/{sample}-scatter.pdf'
+        scatter = config['CNVKIT'] + '/plots/scatter/{sample}-scatter.pdf'
     conda: 'preprocess'
     shell:
         "cnvkit.py scatter {input.cnr} -s {input.cns} -o {output}"
