@@ -99,7 +99,8 @@ rule align_reads:
     params:
         ref_dir = os.path.join(config['RES'], config['ref_dir']),
         # mask bed for current reference genome
-        mask_bed = os.path.join(config['RES'], config['mask_bed'])
+        mask_bed = os.path.join(config['RES'], config['mask_bed']),
+        temp_sort = os.path.join("sort_temporary_{sample}_{readgroup}")
     conda: "preprocess"
     threads: config["align_reads"]["n"]
     log:
@@ -117,7 +118,7 @@ rule align_reads:
         # "{dragmap} -r {params.ref_dir} -b {input.ubam} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |"
         "{dragmap} -r {params.ref_dir} -1 {input.for_r} -2 {input.rev_r} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | " 
         "{samtools} fixmate -@ {threads} -m - -  2> {log.samtools_fixmate} | "
-        "{samtools} sort -T 'sort_temporary' -@ {threads}  -o {output.bam} 2> {log.samtools_sort} && "
+        "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -m 256M -o {output.bam} 2> {log.samtools_sort} && "
         "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
 
 # # function to get information about reaadgroups
@@ -139,7 +140,7 @@ rule merge_rgs:
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     threads: config['merge_rgs']['n']
     conda: "preprocess"
-    shell: "{samtools} merge -@ {threads} -o {output} {input} 2> {log}"
+    shell: "{samtools} merge -@ {threads} {output} {input} 2> {log}"
 
     # run:
     #     inputs = ' '.join(f for f in input if f.endswith('.bam'))
@@ -187,9 +188,10 @@ rule resort_by_readname:
     input:
         rules.markdup.output.mdbams
     output: resort_bams = temp(os.path.join(config['BAM'], '{sample}_resort.bam'))
+    params: temp_sort = "resort_temporary_{sample}"
     threads: config['resort_by_readname']['n']
     conda: "preprocess"
-    shell: "{samtools} sort -n -@ {threads} -o  {output} {input}"
+    shell: "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -n -@ {threads} -o  {output} {input}"
 # additional cleanup with custom script
 rule declip:
     input:
@@ -209,10 +211,11 @@ rule sort_back:
         All_stats= os.path.join(config['STAT'],  '{sample}.bam_all.additional_cleanup.tsv')
     threads: config['sort_back']['n']
     params:
-        py_stats= config['BAMSTATS']
+        py_stats= config['BAMSTATS'],
+        temp_sort = "resort_back_temporary_{sample}"
     conda: "preprocess"
     shell:
-        "{samtools} sort -@ {threads} -o {output.ready_bams} {input} &&"
+        "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -o {output.ready_bams} {input} &&"
         "{samtools} index -@ {threads} {output.ready_bams} &&"
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output.All_stats}"
 
