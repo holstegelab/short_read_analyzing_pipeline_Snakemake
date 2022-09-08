@@ -64,7 +64,7 @@ rule cutadapter:
     conda: "preprocess"
     threads: config["cutadapter"]["n"]
     shell:
-        "{cutadapt} -j {threads} -m 20 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}"
+        "{cutadapt} -j {threads} -m 35 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}"
     # run:
     #     sinfo = SAMPLEINFO[wildcards['sample']]
     #     rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
@@ -118,7 +118,7 @@ rule align_reads:
         # "{dragmap} -r {params.ref_dir} -b {input.ubam} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |"
         "{dragmap} -r {params.ref_dir} -1 {input.for_r} -2 {input.rev_r} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | " 
         "{samtools} fixmate -@ {threads} -m - -  2> {log.samtools_fixmate} | "
-        "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -m 256M -o {output.bam} 2> {log.samtools_sort} && "
+        "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 500M -o {output.bam} 2> {log.samtools_sort} && "
         "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
 
 # # function to get information about reaadgroups
@@ -198,7 +198,7 @@ rule declip:
         rules.resort_by_readname.output.resort_bams
     output: declip_bam = temp(os.path.join(config['BAM'], '{sample}_declip.bam'))
     threads: config['declip']['n']
-    params: declip = config['DECLIP']
+    params: declip = srcdir(config['DECLIP'])
     conda: "preprocess"
     shell:
         "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.declip} > {output}"

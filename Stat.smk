@@ -205,7 +205,7 @@ rule bamstats_exome:
         All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
     threads: config['bamstats_exome']['n']
     params:
-        py_stats = config['BAMSTATS'],
+        py_stats = srcdir(config['BAMSTATS']),
         bed_interval= get_capture_kit_bed,
     conda: "preprocess"
     shell:
