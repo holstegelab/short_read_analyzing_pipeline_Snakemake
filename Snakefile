@@ -17,20 +17,6 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     readgroup="[\w\d_\-@]+"
 
-# main chromosomes from GRCh38 splitted into 99 bins
-bins = config['RES'] + config['bin_file_ref']
-import csv
-chr_p = []
-with open(bins) as file:
-    tsv_file = csv.reader(file, delimiter="\t")
-    for line in tsv_file:
-        if line[1] == str('0'):
-            out = line[0] + ':' + str('1') + '-' + line[2]
-        else:
-            out = line[0] + ':' + line[1] + '-' + line[2]
-        chr_p.append(out)
-# print(chrs)
-
 from read_samples import *
 from common import *
 SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
