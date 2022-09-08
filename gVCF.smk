@@ -28,7 +28,6 @@ use rule * from Aligner
 
 rule gVCF_all:
     input:
-        expand("done_{chr}", chr = main_chrs),
         expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names),
         rules.Aligner_all.input
     default_target: True

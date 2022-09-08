@@ -23,16 +23,28 @@ SAMPLE_FILES, SAMPLE_BY_FILE, SAMPLEINFO = load_samplefiles('.', config)
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
+module Aligner:
+    snakefile: 'Aligner.smk'
+    config: config
+module gVCF:
+    snakefile: 'gVCF.smk'
+    config: config
+module DBImport:
+    snakefile: 'DBImport.smk'
+    config: config
+module Genotype:
+    snakefile: 'Genotype.smk'
+    config: config
+
+use rule * from Genotype
+
+
 rule VQSR_all:
     input:
+        rules.Genotype_all.input,
         expand("{vcf}/ALL_chrs.vcf.gz",vcf=config['VCF']),
     default_target: True
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-
-module Raw_vcf:
-    snakefile: 'gVCF.smk'
 
 
 # VQSR

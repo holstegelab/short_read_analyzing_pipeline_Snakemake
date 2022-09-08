@@ -34,9 +34,10 @@ use rule * from Aligner
 rule CNV_with_cnvkit_Module_all:
     input:
         rules.Aligner_all.input,
-        expand('{cnvkit}/stats/Sex_sample_table.tsv', cnvkit = config['CNVKIT']),
-        expand('{cnvkit}/plots/diagram/{sample}-diagram.pdf', sample=sample_names, cnvkit = config['CNVKIT']),
-        expand('{cnvkit}/plots/scatter/{sample}-scatter.pdf', sample=sample_names, cnvkit = config['CNVKIT']),
+        config['CNVKIT'] + '/stats/Sex_sample_table.tsv',
+        expand(config['CNVKIT'] + '/plots/diagram/{sample}-diagram.pdf', sample=sample_names),
+        expand(config['CNVKIT'] + '/plots/scatter/{sample}-scatter.pdf', sample=sample_names),
+        # expand('{cnvkit}/plots/scatter/{sample}-scatter.pdf', sample=sample_names, cnvkit = config['CNVKIT']),
         expand('{cnvkit}/VCF/{sample}_cnv.vcf', sample=sample_names, cnvkit = config['CNVKIT']),
         expand('{cnvkit}/call/{sample}.cal.cns', sample = sample_names, cnvkit = config['CNVKIT']),
         expand('{cnvkit}/stats/genemetric/{sample}_genemetric.stat', sample = sample_names, cnvkit = config['CNVKIT']),
@@ -144,7 +145,7 @@ rule plot_scatter:
         cnr = rules.fix.output.corrected,
         cns = rules.segment.output.segmeted
     output:
-        scatter = config['CNVKIT'] + 'plots/scatter/{sample}-scatter.pdf'
+        scatter = config['CNVKIT'] + '/plots/scatter/{sample}-scatter.pdf'
     conda: 'preprocess'
     shell:
         "cnvkit.py scatter {input.cnr} -s {input.cns} -o {output}"

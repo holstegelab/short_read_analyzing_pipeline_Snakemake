@@ -10,7 +10,8 @@ ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+"
+    readgroup="[\w\d_\-@]+",
+
 
 
 from read_samples import *
@@ -31,12 +32,18 @@ module DBImport:
     config: config
 use rule * from DBImport
 
+bins = config['RES'] + config['bin_file_ref']
+
+
 rule Genotype_all:
     input:
-        rules.gVCF_all.input,
+        rules.DBImport_all.input,
+        # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
         expand("{vcf}/ALL_chrs.vcf.gz", vcf=config['VCF']),
     default_target: True
 
+
+# print(chr_p)
 
 # genotype
 # multiple samplefiles
@@ -44,22 +51,22 @@ rule GenotypeDBI:
     input:
         rules.GenomicDBImport.output.dbi
     output:
-        raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.vcf.gz"
-    log: config['LOG'] + '/' + "GenotypeDBI.{chr}.log"
-    benchmark: config['BENCH'] + "/GenotypeDBI.{chr}.txt"
+        raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
+    log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
+    benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
     params:
-        dbsnp = config['RES'] + config['dbsnp']
+        dbsnp = config['RES'] + config['dbsnp'],
+        intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
     conda: "preprocess"
     priority: 40
     shell:
-            "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {wildcards.chr} 2> {log}"
-
+            "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
 
 rule Mergechrs:
     input:
-        expand(config['VCF'] + "/Merged_raw_DBI_{chr}.vcf.gz", chr = chr)
+        expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = config['VCF'])
     params:
-        vcfs = expand("-I {dir}/Merged_raw_DBI_{chr}.vcf.gz", dir = config['VCF'], chr = chr)
+        vcfs = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = config['VCF'])
     conda: "preprocess"
     log: config['LOG'] + '/' + "Mergechrs.log"
     benchmark: config['BENCH'] + "/Mergechrs.txt"

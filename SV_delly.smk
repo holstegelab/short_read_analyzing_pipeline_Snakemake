@@ -30,7 +30,10 @@ module Aligner:
 use rule * from Aligner
 
 rule SV_delly_all:
-    input: expand("{delly}/Filtred_SV.vcf", delly = config['DELLY'])
+    input:
+            config['DELLY'] + 'Filtred_SV.vcf',
+            rules.Aligner_all.input,
+    # input: expand("{delly}/Filtred_SV.vcf", delly = config['DELLY'])
     default_target: True
 
 rule delly_call:
