@@ -31,7 +31,7 @@ use rule * from Aligner
 
 rule SV_delly_all:
     input:
-            config['DELLY'] + 'Filtred_SV.vcf',
+            config['DELLY'] + '/Filtred_SV.vcf',
             rules.Aligner_all.input,
     # input: expand("{delly}/Filtred_SV.vcf", delly = config['DELLY'])
     default_target: True
@@ -60,9 +60,10 @@ rule delly_genotype:
 
 rule bcf_merge:
     input: expand('{delly}/geno_call/{sample}_geno.bcf', delly = config['DELLY'], sample = sample_names)
-    output: bcf_merge  = config['DELLY'] + '/Merged_Genotyped.bcf'
+    output:
+        bcf_merge  = config['DELLY'] + '/Merged_Genotyped.bcf',
     conda: 'preprocess'
-    shell: "bcftools merge -m id -O b -o {output.bcf_merge} {input}"
+    shell: "bcftools merge -m id -O b -o {output.bcf_merge} {input} && bcftools index {output.bcf_merge}"
 
 rule filter:
     input: rules.bcf_merge.output.bcf_merge

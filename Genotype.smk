@@ -64,9 +64,9 @@ rule GenotypeDBI:
 
 rule Mergechrs:
     input:
-        expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = config['VCF'])
+        expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*99)
     params:
-        vcfs = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = config['VCF'])
+        vcfs = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*99)
     conda: "preprocess"
     log: config['LOG'] + '/' + "Mergechrs.log"
     benchmark: config['BENCH'] + "/Mergechrs.txt"
