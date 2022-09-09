@@ -1,6 +1,7 @@
 import pandas as pd
 import read_stats
 import os
+import getpass
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
@@ -11,6 +12,13 @@ dragmap = os.path.join(config['miniconda'], config['dragmap'])
 cutadapt = os.path.join(config['miniconda'], config['cutadapt'])
 verifybamid2 = os.path.join(config['miniconda'], config['verifybamid2'])
 ref = os.path.join(config['RES'], config['ref'])
+
+
+
+tmpdir = os.path.join(config['TMPDIR'], getpass.getuser())
+
+
+os.makedirs(tmpdir, mode=0o700, exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -48,38 +56,39 @@ def get_fastqpaired(wildcards):
     return [file1, file2]
 
 # cut adapters from inout
-# DRAGMAP doesn;t work well with uBAM, so use fq as input
-rule cutadapter:
+
+def get_readgroup_params(wildcards):
+    res = [rg for rg in SAMPLEINFO[wildcards['sample']]['readgroups'] if rg['info']['ID'] == wildcards['readgroup']][0]['info']
+    
+    return {'ID':res['ID'], 'LB':res.get('LB','unknown'), 'PL':res.get('PL','unknown'), 'PU':res.get('PU','unknown'), \
+            'CN':res.get('CN','unknown'), 'DT':res.get('DT','unknown')}
+
+rule create_unaligned_bam_fastq:
     input:
         get_fastqpaired
     output:
-        forr_f=os.path.join(config['FQ'], "{sample}._{readgroup}.cut_1.fq.gz"),
-        rev_f=os.path.join(config['FQ'], "{sample}._{readgroup}.cut_2.fq.gz")
-    # log file in this case contain some stats about removed seqs
+        bam=os.path.join(config['BAM'], "{sample}.{readgroup}.unaligned.bam")
     log:
-        cutadapt_log= os.path.join(config['STAT'], "{sample}._{readgroup}.cutadapt.log"),
+        markadapters=os.path.join(config['LOG'], "{sample}.{readgroup}.markilluminaadapers.log")
     benchmark:
-        os.path.join(config['BENCH'], "{sample}._{readgroup}.cutadapt.txt")
-    priority: 10
-    conda: "preprocess"
-    threads: config["cutadapter"]["n"]
+        os.path.join(config['BENCH'], "{sample}.{readgroup}.create_unaliged_bam_fastq.txt")
+    conda: "picard"
+    params: 
+        dname=lambda wildcards, output: os.path.dirname(output.bam),
+        lb = lambda wildcards: get_readgroup_params(wildcards).get('LB','unknown'),
+        pl = lambda wildcards: get_readgroup_params(wildcards).get('PL','unknown'),
+        pu = lambda wildcards: get_readgroup_params(wildcards).get('PU','unknown'),
+        cn = lambda wildcards: get_readgroup_params(wildcards).get('CN','unknown'),
+        dt = lambda wildcards: get_readgroup_params(wildcards).get('DT','unknown')
+    threads: config['create_unaligned_bam_fastq']['n']
+    resources:
+        tmpdir=tmpdir
     shell:
-        "{cutadapt} -j {threads} -m 35 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}"
-    # run:
-    #     sinfo = SAMPLEINFO[wildcards['sample']]
-    #     rgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]['info']
-    #     rgroupid = rgroup['ID']
-    #     rgrouplib = rgroup.get('LB','unknown')
-    #     rgroupplat = rgroup.get('PL','unknown')
-    #     rgrouppu = rgroup.get('PU','unknown')
-    #     rgroupsc = rgroup.get('CN','unknown')
-    #     rgrouprd = rgroup.get('DT','unknown')
-    #     # cut standard Illumina adapters
-    #     cmd="""
-    #     {cutadapt} -j {threads} -m 100 -a AGATCGGAAGAG -A AGATCGGAAGAG -o {output.forr_f} -p {output.rev_f} {input[0]} {input[1]} &> {log.cutadapt_log}
-    #     """
-    #     shell(cmd)
-
+        """
+        mkdir -p {params.dname}
+        picard -XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g FastqToSam TMP_DIR={resources.tmpdir} FASTQ="{input[0]}" FASTQ2="{input[1]}" OUTPUT=/dev/stdout READ_GROUP_NAME={wildcards.readgroup} MAX_RECORDS_IN_RAM=10000000 SAMPLE_NAME={wildcards.sample} LIBRARY_NAME={params.lb} PLATFORM={params.pl} PLATFORM_UNIT={params.pu} SEQUENCING_CENTER={params.cn} RUN_DATE={params.dt} COMPRESSION_LEVEL=0 QUIET=true | \
+        picard -XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g MarkIlluminaAdapters METRICS={log.markadapters} COMPRESSION_LEVEL=1 VALIDATION_STRINGENCY=SILENT  INPUT=/dev/stdin OUTPUT={output.bam}
+        """
 # rule to align reads from cutted fq on hg38 ref
 # use dragmap aligner
 # samtools fixmate for future step with samtools mark duplicates
@@ -89,13 +98,9 @@ def get_mem_mb_align_reads(wildcrads, attempt):
 
 rule align_reads:
     input:
-        # ubam = rules.sort_ubam.output.sortubam
-        for_r = rules.cutadapter.output.forr_f,
-        rev_r = rules.cutadapter.output.rev_f
-        # for_r = rules.uBAM_to_fq.output.f1_masked,
-        # rev_r = rules.uBAM_to_fq.output.f2_masked
+        in_bam=rules.create_unaligned_bam_fastq.output.bam
     output:
-        bam=config['BAM'] + "/{sample}._{readgroup}.bam"
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.aligned.bam")
     params:
         ref_dir = os.path.join(config['RES'], config['ref_dir']),
         # mask bed for current reference genome
@@ -104,22 +109,94 @@ rule align_reads:
     conda: "preprocess"
     threads: config["align_reads"]["n"]
     log:
-        dragmap_log=os.path.join(config['LOG'], "{sample}._{readgroup}_dragmap.log"),
-        samtools_fixmate=os.path.join(config['LOG'], "{sample}._{readgroup}_samtools_fixamte.log"),
-        samtools_sort=os.path.join(config['LOG'], "{sample}._{readgroup}_samtools_sort.log"),
-        samtools_markdup=os.path.join(config['LOG'], "{sample}._{readgroup}_samtools_markdup.log"),
-        samtools_index = os.path.join(config['LOG'], "{sample}._{readgroup}_samtools_index.log")
+        dragmap_log=os.path.join(config['LOG'], "{sample}.{readgroup}.dragmap.log"),
     benchmark:
-        os.path.join(config['BENCH'], "{sample}._{readgroup}.dragmap.txt")
+        os.path.join(config['BENCH'], "{sample}.{readgroup}.dragmap.txt")
     priority: 15
     resources:
         mem_mb = get_mem_mb_align_reads
     shell:
+        "{dragmap} -r {params.ref_dir} -b {input.in_bam} --interleaved 1 --input-qname-suffix-delimiter / --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | samtools view -@ {threads} -o {output.bam}" 
+        #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (thread synchronization). But reduces performance by 1/3.  Better to let mergebamalignment deal with the issue.
+
+rule merge_bam_alignment:
+    input:
+        in_bam_unaligned = rules.create_unaligned_bam_fastq.output.bam,
+        in_bam_aligned = rules.align_reads.output.bam
+    output:
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.merged.bam")
+    params:
+        ref_dir = os.path.join(config['RES'], config['ref_dir']),
+        # mask bed for current reference genome
+        mask_bed = os.path.join(config['RES'], config['mask_bed']),
+        temp_sort = os.path.join("sort_temporary_{sample}_{readgroup}")
+    conda: "picard"
+    threads: config["merge_bam_alignment"]["n"]
+    benchmark:
+        os.path.join(config['BENCH'], "{sample}.{readgroup}.mergebam.txt")
+    priority: 15
+    resources:
+        mem_mb = get_mem_mb_align_reads,
+        tmpdir=tmpdir
+    shell:
         # "{dragmap} -r {params.ref_dir} -b {input.ubam} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} |"
-        "{dragmap} -r {params.ref_dir} -1 {input.for_r} -2 {input.rev_r} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | " 
-        "{samtools} fixmate -@ {threads} -m - -  2> {log.samtools_fixmate} | "
-        "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 500M -o {output.bam} 2> {log.samtools_sort} && "
-        "{samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}"
+       """
+            picard -XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g MergeBamAlignment \
+                TMP_DIR={resources.tmpdir} \
+                VALIDATION_STRINGENCY=SILENT \
+                EXPECTED_ORIENTATIONS=FR \
+                ATTRIBUTES_TO_RETAIN=XS \
+                ATTRIBUTES_TO_REMOVE=MD \
+                ALIGNED_BAM={input.in_bam_aligned} \
+                UNMAPPED_BAM={input.in_bam_unaligned} \
+                OUTPUT={output.bam} \
+                REFERENCE_SEQUENCE={ref} \
+                PAIRED_RUN=true \
+                COMPRESSION_LEVEL=0 \
+                SORT_ORDER="unsorted" \
+                IS_BISULFITE_SEQUENCE=false \
+                ALIGNED_READS_ONLY=false \
+                CLIP_ADAPTERS=true \
+                CLIP_OVERLAPPING_READS=true \
+                HARD_CLIP_OVERLAPPING_READS=true \
+                MAX_RECORDS_IN_RAM=2000000 \
+                ADD_MATE_CIGAR=false \
+                MAX_INSERTIONS_OR_DELETIONS=-1 \
+                PRIMARY_ALIGNMENT_STRATEGY=MostDistant \
+                UNMAPPED_READ_STRATEGY=COPY_TO_TAG \
+                ALIGNER_PROPER_PAIR_FLAGS=true \
+                UNMAP_CONTAMINANT_READS=true \
+                ADD_PG_TAG_TO_READS=false
+        """
+
+rule sort_bam_alignment:
+    input:
+        in_bam = rules.merge_bam_alignment.output.bam
+    output:
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam")
+    params:
+        # mask bed for current reference genome
+        temp_sort = os.path.join("sort_temporary_{sample}_{readgroup}")
+    conda: "preprocess"
+    threads: config["sort_bam_alignment"]["n"]
+    log:
+        samtools_fixmate=os.path.join(config['LOG'], "{sample}.{readgroup}.samtools_fixmate.log"),
+        samtools_sort=os.path.join(config['LOG'], "{sample}.{readgroup}.samtools_sort.log"),
+        samtools_index = os.path.join(config['LOG'], "{sample}.{readgroup}.samtools_index.log")
+    benchmark:
+        os.path.join(config['BENCH'], "{sample}.{readgroup}.mergebam.txt")
+    priority: 15
+    resources:
+        mem_mb = get_mem_mb_align_reads,
+        tmpdir=tmpdir
+    shell:
+        """
+            {samtools} fixmate -@ {threads} -u -m {input.in_bam} -  2> {log.samtools_fixmate} |\
+            {samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 2000M -o {output.bam} 2> {log.samtools_sort} && \
+            {samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}
+        """
+
+
 
 # # function to get information about reaadgroups
 # # needed if sample contain more than 1 fastq files
@@ -127,7 +204,7 @@ def get_readgroups_bam(wildcards):
     readgroups_b = SAMPLEINFO[wildcards['sample']]['readgroups']
     files = []
     for readgroup in readgroups_b:
-        files.append(os.path.join(config['BAM'],  wildcards['sample'] + '._' + readgroup['info']['ID'] + '.bam'))
+        files.append(os.path.join(config['BAM'],  wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam'))
     return files
 
 # merge different readgroups bam files for same sample
@@ -139,8 +216,13 @@ rule merge_rgs:
     log: os.path.join(config['LOG'], "{sample}.mergereadgroups.log")
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     threads: config['merge_rgs']['n']
-    conda: "preprocess"
-    shell: "{samtools} merge -@ {threads} {output} {input} 2> {log}"
+    run: 
+        if len(input) > 1:
+            cmd = "{samtools} merge -@ {threads} {output} {input} 2> {log}"
+            shell(cmd,conda_env='preprocess')
+        else:
+            cmd = "ln {input} {output}"
+            shell(cmd)
 
     # run:
     #     inputs = ' '.join(f for f in input if f.endswith('.bam'))
@@ -191,6 +273,8 @@ rule resort_by_readname:
     params: temp_sort = "resort_temporary_{sample}"
     threads: config['resort_by_readname']['n']
     conda: "preprocess"
+    resources:
+        tmpdir=tmpdir
     shell: "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -n -@ {threads} -o  {output} {input}"
 # additional cleanup with custom script
 rule declip:
@@ -214,6 +298,8 @@ rule sort_back:
         py_stats= config['BAMSTATS'],
         temp_sort = "resort_back_temporary_{sample}"
     conda: "preprocess"
+    resources:
+        tmpdir=tmpdir
     shell:
         "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -o {output.ready_bams} {input} &&"
         "{samtools} index -@ {threads} {output.ready_bams} &&"

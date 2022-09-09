@@ -38,6 +38,7 @@ dragmap: 'bin/dragen-os'
 cutadapt: 'bin/cutadapt'
 verifybamid2: 'bin/verifybamid2'
 
+TMPDIR: '/scratch-shared/'
 #custom scripts
 BAMSTATS: 'bam_stats.py'
 DECLIP: 'bam_clean_v2.py'

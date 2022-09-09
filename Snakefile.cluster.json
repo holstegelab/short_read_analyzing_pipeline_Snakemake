@@ -9,14 +9,27 @@ __default__:
     partition: compute
 mCRAM:
         n: 15
-cutadapter:
-        n: 32
-        mem: 12000
-        time: 3000
+
+create_unaligned_bam_fastq:
+    n: 2
+    mem: 18000
+    time: 1000
+
 align_reads:
         n: 32
-        mem: 60000
+        mem: 40000
         time: 1400
+
+merge_bam_alignment:
+    n: 1
+    mem: 6000
+    time: 1500
+
+sort_bam_alignment:
+    n: 8
+    mem: 18000
+    time: 1500
+
 merge_rgs:
         n: 1
         mem: 200
