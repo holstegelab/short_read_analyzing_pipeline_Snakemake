@@ -1,11 +1,11 @@
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['miniconda'] + config['gatk']
-samtools = config['miniconda'] + config['samtools']
-bcftools = config['miniconda'] + config['bcftools']
-dragmap = config['miniconda'] + config['dragmap']
-cutadapt = config['miniconda'] + config['cutadapt']
-verifybamid2 = config['miniconda'] + config['verifybamid2']
+gatk = config['gatk']
+samtools = config['samtools']
+bcftools = config['bcftools']
+dragmap = config['dragmap']
+verifybamid2 = config['verifybamid2']
+
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -60,7 +60,7 @@ rule GenomicDBImport:
         #gvcfs = lambda wildcards expand(" -V {gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, chr = wildcards.chr),
         intervals = config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
     priority: 30
-    # conda: "preprocess"
+    # conda: "envs/preprocess.yaml"
     shell:
             # "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && "
             # "{gatk} GenomicsDBImport --reader-threads {threads} -V {input.glist} \
@@ -80,7 +80,7 @@ rule GenomicDBImport:
 #         batches='75',
 #         intervals=config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
 #     priority: 30
-#     conda: "preprocess"
+#     conda: "envs/preprocess.yaml"
 #     shell: "{gatk} GenomicsDBImport --genomicsdb-update-workspace-path {input.dir} -V {?} --intervals {params.intervals} -R {ref} \ "
 #             " --batch-size {params.batches} --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
 

@@ -5,5 +5,4 @@ channels:
   - default
   - defaults
 dependencies:
-  - verifybamid2=2.0.1=h7a88ad0_7
-prefix: ~/miniconda3/envs/verifybamid
+  - verifybamid2

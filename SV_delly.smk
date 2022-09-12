@@ -4,12 +4,12 @@ import os
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
-gatk = config['miniconda'] + config['gatk']
-samtools = config['miniconda'] + config['samtools']
-bcftools = config['miniconda'] + config['bcftools']
-dragmap = config['miniconda'] + config['dragmap']
-cutadapt = config['miniconda'] + config['cutadapt']
-verifybamid2 = config['miniconda'] + config['verifybamid2']
+gatk = config['gatk']
+samtools = config['samtools']
+bcftools = config['bcftools']
+dragmap = config['dragmap']
+verifybamid2 = config['verifybamid2']
+
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -41,13 +41,13 @@ rule delly_call:
         bam = rules.markdup.output.mdbams
     output:
         call = config['DELLY'] + '/first_call/{sample}.bcf'
-    conda: 'preprocess'
+    conda: 'envs/preprocess.yaml'
     shell: "delly call -g {ref} -o {output} {input}"
 
 rule delly_merge:
     input: expand('{delly}/first_call/{sample}.bcf', delly = config['DELLY'], sample = sample_names)
     output: config['DELLY'] + 'Merged_sites.bcf'
-    conda: 'preprocess'
+    conda: 'envs/preprocess.yaml'
     shell: "delly merge -o {output} {input}"
 
 rule delly_genotype:
@@ -55,26 +55,26 @@ rule delly_genotype:
         bam = rules.markdup.output.mdbams,
         sites = rules.delly_merge.output
     output: calls = config['DELLY'] + '/geno_call/{sample}_geno.bcf'
-    conda: 'preprocess'
+    conda: 'envs/preprocess.yaml'
     shell: "delly call -g {ref} -v {input.sites} -o {output.calls} {input.bam}"
 
 rule bcf_merge:
     input: expand('{delly}/geno_call/{sample}_geno.bcf', delly = config['DELLY'], sample = sample_names)
     output:
         bcf_merge  = config['DELLY'] + '/Merged_Genotyped.bcf',
-    conda: 'preprocess'
+    conda: 'envs/preprocess.yaml'
     shell: "bcftools merge -m id -O b -o {output.bcf_merge} {input} && bcftools index {output.bcf_merge}"
 
 rule filter:
     input: rules.bcf_merge.output.bcf_merge
     output: bcf_filter = os.path.join(config['DELLY'], 'Filtred_SV.bcf')
-    conda: 'preprocess'
+    conda: 'envs/preprocess.yaml'
     shell: "delly filter -f germline -o {output} {input}"
 
 rule vcf_prod:
     input: rules.filter.output
     output: os.path.join(config['DELLY'], 'Filtred_SV.vcf')
-    conda: 'preprocess'
+    conda: 'envs/preprocess.yaml'
     shell: "bcftools convert -O z -o {output} {input}"
 
 

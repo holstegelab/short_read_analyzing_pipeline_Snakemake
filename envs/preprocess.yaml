@@ -1,0 +1,17 @@
+channels:
+- conda-forge
+- bioconda
+- default
+- defaults
+dependencies:
+- samtools
+- dragmap
+- gatk4
+- bedtools
+- bcftools
+- scipy
+- delly
+- cnvkit
+- r-data.table
+- r-ggplot2
+name: preprocess

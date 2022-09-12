@@ -1,0 +1,14 @@
+name: pypy
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - numpy
+  - scipy
+  - pandas
+  - pypy
+  - pypy3.9
+  - python
+  - samtools
+  - swalign

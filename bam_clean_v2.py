@@ -1018,7 +1018,7 @@ def process_querygroup(querygroup, loose_ends, adapters):
     if modified1:
         modified_counter += 1
     if modified2:
-        modified_counter += 2
+        modified_counter += 1
 
 
     return (querygroup,[])
@@ -1207,7 +1207,7 @@ if __name__ == '__main__':
                         #   sys.stdout.flush()
                         #   raise e
 
-                        if len(res_kept) < 2 and len(res_kept) < len(querygroup):
+                        if len(res_kept) < 2:
                             sys.stderr.write(str(querygroup) + '\n\n')
                             sys.stderr.write(str(res_kept) + '\n\n')
                             sys.stderr.flush()

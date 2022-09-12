@@ -9,8 +9,8 @@ RES: '/projects/0/qtholstg/hg38_res/'
 kit_folder: 'intervals/'
 
 #conda env's paths
-CONDA_VERIFYBAMID: 'verifybamid.yaml'
-CONDA_MAIN: 'preprocess.yaml'
+CONDA_VERIFYBAMID: 'envs/verifybamid.yaml'
+CONDA_MAIN: 'envs/preprocess.yaml'
 
 #OUTPUT FOLDERS
 LOG: 'logs'
@@ -29,14 +29,13 @@ CNVKIT: 'cnvkit'
 DELLY: 'SV_delly'
 
 #programs
-gatk: 'bin/gatk'
-samtools: 'bin/samtools'
-bwa2: 'bin/bwa-mem2'
-bwa: 'bin/bwa'
-bcftools: 'bin/bcftools'
-dragmap: 'bin/dragen-os'
-cutadapt: 'bin/cutadapt'
-verifybamid2: 'bin/verifybamid2'
+gatk: 'gatk'
+samtools: 'samtools'
+bwa2: 'bwa-mem2'
+bwa: 'bwa'
+bcftools: 'bcftools'
+dragmap: 'dragen-os'
+verifybamid2: 'verifybamid2'
 
 TMPDIR: '/scratch-shared/'
 #custom scripts

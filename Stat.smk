@@ -5,12 +5,12 @@ import os
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
-gatk = config['miniconda'] + config['gatk']
-samtools = config['miniconda'] + config['samtools']
-bcftools = config['miniconda'] + config['bcftools']
-dragmap = config['miniconda'] + config['dragmap']
-cutadapt = config['miniconda'] + config['cutadapt']
-verifybamid2 = config['miniconda'] + config['verifybamid2']
+gatk = config['gatk']
+samtools = config['samtools']
+bcftools = config['bcftools']
+dragmap = config['dragmap']
+verifybamid2 = config['verifybamid2']
+
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -68,7 +68,7 @@ rule Basic_stats:
     log: config['LOG'] + '/' + "VCF_stats.log"
     benchmark: config['BENCH'] + "/VCF_stats.txt"
     params: dbsnp = config['RES'] + config['dbsnp']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     threads: config['Basic_stats']['n']
     shell:
         "{gatk} CollectVariantCallingMetrics \
@@ -112,7 +112,7 @@ rule HS_stats:
         #minimin Mapping Quality for a read to contribute cov
         #def is 20
         MQ=10,
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{gatk} CollectHsMetrics \
             -I {input} -R {ref} -BI {params.interval} -TI {params.interval} \
@@ -138,7 +138,7 @@ rule Artifact_stats:
         # params.out define prefix and output define whole outputs' filename
         out = config['STAT'] + "/{sample}.bait_bias",
         dbsnp = config['RES'] + config['dbsnp']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{gatk} CollectSequencingArtifactMetrics -I {input.bam} -O {params.out} \
         -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"
@@ -154,7 +154,7 @@ rule OXOG_metrics:
     params:
         interval = get_capture_kit_interval_list,
         dbsnp = config['RES'] + config['dbsnp']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{gatk} CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
          --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"
@@ -167,7 +167,7 @@ rule samtools_stat:
     log: config['LOG'] + '/' + "samtools_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_{sample}.txt"
     threads: config['samtools_stat']['n']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{samtools} stat -@ {threads} -r {ref} {input.bam} > {output}"
 
@@ -190,7 +190,7 @@ rule samtools_stat_exome:
     log: config['LOG'] + '/' + "samtools_exome_{sample}.log"
     benchmark: config['BENCH'] + "/samtools_stat_exome_{sample}.txt"
     threads: config['samtools_stat']['n']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{samtools} stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
@@ -207,7 +207,7 @@ rule bamstats_exome:
     params:
         py_stats = srcdir(config['BAMSTATS']),
         bed_interval= get_capture_kit_bed,
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | python3 {params.py_stats} stats > {output}"
 

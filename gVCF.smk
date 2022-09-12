@@ -1,11 +1,11 @@
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['miniconda'] + config['gatk']
-samtools = config['miniconda'] + config['samtools']
-bcftools = config['miniconda'] + config['bcftools']
-dragmap = config['miniconda'] + config['dragmap']
-cutadapt = config['miniconda'] + config['cutadapt']
-verifybamid2 = config['miniconda'] + config['verifybamid2']
+gatk = config['gatk']
+samtools = config['samtools']
+bcftools = config['bcftools']
+dragmap = config['dragmap']
+verifybamid2 = config['verifybamid2']
+
 ref = config['RES'] + config['ref']
 
 
@@ -62,7 +62,7 @@ rule CalibrateDragstrModel:
     priority: 16
     params:
         str_ref = config['RES'] + config['str_ref']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
     shell:
@@ -123,7 +123,7 @@ rule HaplotypeCaller:
         HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_haplotypecaller.log"
     benchmark:
         config['BENCH'] + "/{sample}_{chr}_haplotypecaller.txt"
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     params:
         dbsnp = config['RES'] + config['dbsnp'],
         padding=100,  # extend intervals to this bp

@@ -3,12 +3,12 @@ import read_stats
 import os
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['miniconda'] + config['gatk']
-samtools = config['miniconda'] + config['samtools']
-bcftools = config['miniconda'] + config['bcftools']
-dragmap = config['miniconda'] + config['dragmap']
-cutadapt = config['miniconda'] + config['cutadapt']
-verifybamid2 = config['miniconda'] + config['verifybamid2']
+gatk = config['gatk']
+samtools = config['samtools']
+bcftools = config['bcftools']
+dragmap = config['dragmap']
+verifybamid2 = config['verifybamid2']
+
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -59,7 +59,7 @@ rule SelectSNPs:
     priority: 50
     log: config['LOG'] + '/' + "SelectSNPs.log"
     benchmark: config['BENCH'] + "/SelectSNPs.txt"
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         """
         {gatk} SelectVariants \
@@ -84,7 +84,7 @@ rule VQSR_SNP:
         omni = config['RES'] + config['omni'],
         kilo_g = config['RES'] + config['kilo_g'],
         dbsnp = config['RES'] + config['dbsnp']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     priority: 55
     shell:
         # -an InbreedingCoeff if 10+
@@ -115,7 +115,7 @@ rule ApplyVQSR_SNPs:
     params:
         ts_level='99.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
     priority: 60
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         """
         {gatk} ApplyVQSR -R {ref} -mode SNP \
@@ -132,7 +132,7 @@ rule SelectINDELs:
     log: config['LOG'] + '/' + "SelectINDELS.log"
     benchmark: config['BENCH'] + "/SelectINDELs.txt"
     priority: 50
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         """
         {gatk} SelectVariants \
@@ -154,7 +154,7 @@ rule VQSR_INDEL:
     params:
         mills = config['RES'] + config['mills'],
         dbsnp_indel = config['RES'] + config['dbsnp_indel']
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         # -an InbreedingCoeff if 10+
         """
@@ -179,7 +179,7 @@ rule ApplyVQSR_INDEs:
         recal_vcf_indel=temp(config['VCF_Final'] + "/INDELs_recal_apply_vqsr.vcf")
     params:
         ts_level='97.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     priority: 60
     shell:
         """
@@ -198,7 +198,7 @@ rule combine:
     output:
         filtrVCF=temp(config['VCF_Final'] + "/Merged_after_VQSR.vcf")
     priority: 70
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{gatk} MergeVcfs \
                 -I {input.snps} -I {input.indel} -O {output} 2> {log}"
@@ -213,6 +213,6 @@ rule norm:
     log: config['LOG'] + '/' + "normalization.log"
     benchmark: config['BENCH'] + "/normalization.txt"
     priority: 80
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     shell:
         "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "

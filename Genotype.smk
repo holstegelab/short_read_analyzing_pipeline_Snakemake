@@ -1,11 +1,11 @@
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['miniconda'] + config['gatk']
-samtools = config['miniconda'] + config['samtools']
-bcftools = config['miniconda'] + config['bcftools']
-dragmap = config['miniconda'] + config['dragmap']
-cutadapt = config['miniconda'] + config['cutadapt']
-verifybamid2 = config['miniconda'] + config['verifybamid2']
+gatk = config['gatk']
+samtools = config['samtools']
+bcftools = config['bcftools']
+dragmap = config['dragmap']
+verifybamid2 = config['verifybamid2']
+
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -57,7 +57,7 @@ rule GenotypeDBI:
     params:
         dbsnp = config['RES'] + config['dbsnp'],
         intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     priority: 40
     shell:
             "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
@@ -67,7 +67,7 @@ rule Mergechrs:
         expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*99)
     params:
         vcfs = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*99)
-    conda: "preprocess"
+    conda: "envs/preprocess.yaml"
     log: config['LOG'] + '/' + "Mergechrs.log"
     benchmark: config['BENCH'] + "/Mergechrs.txt"
     output:
