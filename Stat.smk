@@ -46,7 +46,7 @@ module VCF:
 
 rule Stat_all:
     input:
-        config['STAT'] + "/BASIC.variant_calling_detail_metrics",
+        os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
         expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}.OXOG", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
@@ -62,16 +62,16 @@ rule Basic_stats:
     input:
         rules.norm.output.normVCF
     output:
-        config['STAT'] + "/BASIC.variant_calling_detail_metrics",
-        config['STAT'] + "/BASIC.variant_calling_summary_metrics"
+        os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
+        os.path.join(config['STAT'], "/BASIC.variant_calling_summary_metrics")
     priority: 90
-    log: config['LOG'] + '/' + "VCF_stats.log"
-    benchmark: config['BENCH'] + "/VCF_stats.txt"
-    params: dbsnp = config['RES'] + config['dbsnp']
+    log: os.path.join(config['LOG'], "VCF_stats.log")
+    benchmark: os.path.join(config['BENCH'], "VCF_stats.txt")
+    params: dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
     threads: config['Basic_stats']['n']
     shell:
-        "{gatk} CollectVariantCallingMetrics \
+        "gatk CollectVariantCallingMetrics \
         -R {ref} -I {input} -O stats/BASIC \
         --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
 
@@ -100,9 +100,9 @@ rule HS_stats:
     input:
         bam = check_supp
     output:
-        HS_metrics=config['STAT'] + "/{sample}_hs_metrics"
-    log: config['LOG'] + '/' + "HS_stats_{sample}.log"
-    benchmark: config['BENCH'] + "/HS_stats_{sample}.txt"
+        HS_metrics=os.path.join(config['STAT'], "{sample}_hs_metrics")
+    log: os.path.join(config['LOG'], "HS_stats_{sample}.log")
+    benchmark: os.path.join(config['BENCH'],  "HS_stats_{sample}.txt")
     priority: 99
     params:
         interval = get_capture_kit_interval_list,
@@ -114,7 +114,7 @@ rule HS_stats:
         MQ=10,
     conda: "envs/preprocess.yaml"
     shell:
-        "{gatk} CollectHsMetrics \
+        "gatk CollectHsMetrics \
             -I {input} -R {ref} -BI {params.interval} -TI {params.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
@@ -124,52 +124,52 @@ rule Artifact_stats:
     input:
         bam = check_supp
     output:
-        Bait_bias = config['STAT'] + '/{sample}.bait_bias.bait_bias_summary_metrics',
-        Pre_adapter = config['STAT'] + '/{sample}.bait_bias.pre_adapter_summary_metrics',
-        Bait_bias_det = config['STAT'] + '/{sample}.bait_bias.bait_bias_detail_metrics',
-        Pre_adapter_det = config['STAT'] + '/{sample}.bait_bias.pre_adapter_detail_metrics',
+        Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
+        Pre_adapter = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
+        Bait_bias_det = os.path.join(config['STAT'],'{sample}.bait_bias.bait_bias_detail_metrics'),
+        Pre_adapter_det = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_detail_metrics'),
         # Artifact_matrics = config['STAT'] + "/{sample}.bait_bias.bait_bias_detail_metrics"
     priority: 99
-    log: config['LOG'] + '/' + "Artifact_stats_{sample}.log"
-    benchmark: config['BENCH'] + "/Artifact_stats_{sample}.txt"
+    log: os.path.join(config['LOG'], "Artifact_stats_{sample}.log")
+    benchmark: os.path.join(config['BENCH'], "Artifact_stats_{sample}.txt")
     params:
         interval = get_capture_kit_interval_list,
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
-        out = config['STAT'] + "/{sample}.bait_bias",
-        dbsnp = config['RES'] + config['dbsnp']
+        out = os.path.join(config['STAT'], "{sample}.bait_bias"),
+        dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
     shell:
-        "{gatk} CollectSequencingArtifactMetrics -I {input.bam} -O {params.out} \
+        "gatk CollectSequencingArtifactMetrics -I {input.bam} -O {params.out} \
         -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"
 
 rule OXOG_metrics:
     input:
         bam = check_supp
     output:
-        Artifact_matrics = config['STAT'] + "/{sample}.OXOG"
+        Artifact_matrics = os.path.join(config['STAT'], "/{sample}.OXOG")
     priority: 99
-    log: config['LOG'] + '/' + "OXOG_stats_{sample}.log"
-    benchmark: config['BENCH'] + "/OxoG_{sample}.txt"
+    log: os.path.join(config['LOG'], "OXOG_stats_{sample}.log")
+    benchmark: os.path.join(config['BENCH'], "OxoG_{sample}.txt")
     params:
         interval = get_capture_kit_interval_list,
-        dbsnp = config['RES'] + config['dbsnp']
+        dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
     shell:
-        "{gatk} CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
+        "gatk CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
          --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"
 
 rule samtools_stat:
     input:
         bam = check_supp
-    output: samtools_stat = config['STAT'] + "/{sample}_samtools.stat"
+    output: samtools_stat = os.path.join(config['STAT'], "{sample}_samtools.stat")
     priority: 99
-    log: config['LOG'] + '/' + "samtools_{sample}.log"
-    benchmark: config['BENCH'] + "/samtools_stat_{sample}.txt"
+    log: os.path.join(config['LOG'], "samtools_{sample}.log")
+    benchmark: os.path.join(config['BENCH'], "samtools_stat_{sample}.txt")
     threads: config['samtools_stat']['n']
     conda: "envs/preprocess.yaml"
     shell:
-        "{samtools} stat -@ {threads} -r {ref} {input.bam} > {output}"
+        "samtools stat -@ {threads} -r {ref} {input.bam} > {output}"
 
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
@@ -177,13 +177,13 @@ def get_capture_kit_bed(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
     # if capture_kit.strip() == '':
     #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
-    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.bed'
+    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}_hg38.bed'
     return capture_kit_path
 
 rule samtools_stat_exome:
     input:
         bam = check_supp
-    output: samtools_stat_exome = config['STAT'] + "/{sample}_samtools.exome.stat"
+    output: samtools_stat_exome = os.path.join(config['STAT'], "{sample}_samtools.exome.stat")
     priority: 99
     params:
         bed_interval = get_capture_kit_bed
@@ -192,7 +192,7 @@ rule samtools_stat_exome:
     threads: config['samtools_stat']['n']
     conda: "envs/preprocess.yaml"
     shell:
-        "{samtools} stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
+        "samtools stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
 rule bamstats_exome:
     input:
@@ -207,17 +207,17 @@ rule bamstats_exome:
     params:
         py_stats = srcdir(config['BAMSTATS']),
         bed_interval= get_capture_kit_bed,
-    conda: "envs/preprocess.yaml"
+    conda: "envs/pypy.yaml"
     shell:
-        "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | python3 {params.py_stats} stats > {output}"
+        "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | pypy {params.py_stats} stats > {output}"
 
-def check_supp_stats(wildcards):
-    with checkpoints.bamstats_all.get(sample=wildcards).output[0].open() as f:
+def check_supp_stats(sample):
+    with checkpoints.bamstats_all.get(sample=sample).output[0].open() as f:
         lines = f.readlines()
         if float((lines[1].split()[3])) >= float(0.005):
-            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.additional_cleanup.tsv')
+            return os.path.join(os.path.join(config['STAT'],  f'{sample}.bam_all.additional_cleanup.tsv'))
         else:
-            return os.path.join(config['STAT'] + '/' + wildcards + '.bam_all.tsv')
+            return os.path.join(config['STAT'], f'{sample}.bam_all.tsv'))
 
 
 def get_quality_stats(wildcards):
@@ -226,13 +226,13 @@ def get_quality_stats(wildcards):
     samples = list(sampleinfo.keys())
     samples.sort()
     for sample in samples:
-        files.append(config['STAT'] + '/' + sample + "_samtools.stat")
-        files.append(config['STAT'] + '/' + sample + '_samtools.exome.stat')
-        files.append(config['STAT'] + '/contam/' + sample + '_verifybamid.pca2.selfSM')
+        files.append(os.path.join(config['STAT'],  f"{sample}_samtools.stat"))
+        files.append(os.path.join(config['STAT'],  f'{sample}_samtools.exome.stat'))
+        files.append(os.path.join(config['STAT'], 'contam',  f'{sample}_verifybamid.pca2.selfSM'))
         files.append(check_supp_stats(sample))
-        files.append(config['STAT'] + '/' + sample + '.bam_exome.tsv')
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_summary_metrics')
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_summary_metrics')
+        files.append(os.path.join(config['STAT'], f'{sample}.bam_exome.tsv'))
+        files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_summary_metrics'))
+        files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.bait_bias_summary_metrics'))
     return files
 
 rule gatherstats:

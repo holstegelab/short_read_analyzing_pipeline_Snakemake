@@ -83,7 +83,7 @@ rule verifybamid:
     params:
         VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
         SVD = config['RES'] + config['verifybamid_exome']
-    conda: config['CONDA_VERIFYBAMID']
+    conda: 'envs/verifybamid.yaml'
     shell:
         """
         verifybamid2 --BamFile {input} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}

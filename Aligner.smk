@@ -5,15 +5,7 @@ import getpass
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
-gatk = config['gatk']
-samtools = config['samtools']
-bcftools = config['bcftools']
-dragmap = config['dragmap']
-verifybamid2 = config['verifybamid2']
 ref = os.path.join(config['RES'], config['ref'])
-
-
-
 tmpdir = os.path.join(config['TMPDIR'], getpass.getuser())
 
 
@@ -85,8 +77,8 @@ rule create_unaligned_bam_fastq:
     shell:
         """
         mkdir -p {params.dname}
-        {gatk} --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" FastqToSam TMP_DIR={resources.tmpdir} FASTQ="{input[0]}" FASTQ2="{input[1]}" OUTPUT=/dev/stdout READ_GROUP_NAME={wildcards.readgroup} MAX_RECORDS_IN_RAM=10000000 SAMPLE_NAME={wildcards.sample} LIBRARY_NAME={params.lb} PLATFORM={params.pl} PLATFORM_UNIT={params.pu} SEQUENCING_CENTER={params.cn} RUN_DATE={params.dt} COMPRESSION_LEVEL=0 QUIET=true | \
-        {gatk} --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" MarkIlluminaAdapters METRICS={log.markadapters} COMPRESSION_LEVEL=1 VALIDATION_STRINGENCY=SILENT  INPUT=/dev/stdin OUTPUT={output.bam}
+        gatk --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" FastqToSam TMP_DIR={resources.tmpdir} FASTQ="{input[0]}" FASTQ2="{input[1]}" OUTPUT=/dev/stdout READ_GROUP_NAME={wildcards.readgroup} MAX_RECORDS_IN_RAM=10000000 SAMPLE_NAME={wildcards.sample} LIBRARY_NAME={params.lb} PLATFORM={params.pl} PLATFORM_UNIT={params.pu} SEQUENCING_CENTER={params.cn} RUN_DATE={params.dt} COMPRESSION_LEVEL=0 QUIET=true | \
+        gatk --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" MarkIlluminaAdapters METRICS={log.markadapters} COMPRESSION_LEVEL=1 VALIDATION_STRINGENCY=SILENT  INPUT=/dev/stdin OUTPUT={output.bam}
         """
 # rule to align reads from cutted fq on hg38 ref
 # use dragmap aligner
@@ -104,7 +96,7 @@ rule align_reads:
         ref_dir = os.path.join(config['RES'], config['ref_dir']),
         # mask bed for current reference genome
         mask_bed = os.path.join(config['RES'], config['mask_bed']),
-        temp_sort = os.path.join("sort_temporary_{sample}_{readgroup}")
+        temp_sort = os.path.join("sort_temporary_{sample}_{readgroup}"),
     conda: "envs/preprocess.yaml"
     threads: config["align_reads"]["n"]
     log:
@@ -115,7 +107,7 @@ rule align_reads:
     resources:
         mem_mb = get_mem_mb_align_reads
     shell:
-        "{dragmap} -r {params.ref_dir} -b {input.in_bam} --interleaved 1 --input-qname-suffix-delimiter / --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | samtools view -@ {threads} -o {output.bam}" 
+        "dragen-os -r {params.ref_dir} -b {input.in_bam} --interleaved 1 --input-qname-suffix-delimiter / --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | samtools view -@ {threads} -o {output.bam}" 
         #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (thread synchronization). But reduces performance by 1/3.  Better to let mergebamalignment deal with the issue.
 
 rule merge_bam_alignment:
@@ -139,7 +131,7 @@ rule merge_bam_alignment:
         tmpdir=tmpdir
     shell:
        """
-            {gatk} --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" MergeBamAlignment \
+            gatk --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" MergeBamAlignment \
                 TMP_DIR={resources.tmpdir} \
                 VALIDATION_STRINGENCY=SILENT \
                 EXPECTED_ORIENTATIONS=FR \
@@ -189,9 +181,9 @@ rule sort_bam_alignment:
         tmpdir=tmpdir
     shell:
         """
-            {samtools} fixmate -@ {threads} -u -m {input.in_bam} -  2> {log.samtools_fixmate} |\
-            {samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 2000M -o {output.bam} 2> {log.samtools_sort} && \
-            {samtools} index -@ {threads} {output.bam} 2> {log.samtools_index}
+            samtools fixmate -@ {threads} -u -m {input.in_bam} -  2> {log.samtools_fixmate} |\
+            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 2000M -o {output.bam} 2> {log.samtools_sort} && \
+            samtools index -@ {threads} {output.bam} 2> {log.samtools_index}
         """
 
 
@@ -216,7 +208,7 @@ rule merge_rgs:
     threads: config['merge_rgs']['n']
     run: 
         if len(input) > 1:
-            cmd = "{samtools} merge -@ {threads} {output} {input} 2> {log}"
+            cmd = "samtools merge -@ {threads} {output} {input} 2> {log}"
             shell(cmd,conda_env='envs/preprocess.yaml')
         else:
             cmd = "ln {input} {output}"
@@ -244,8 +236,8 @@ rule markdup:
     threads: config['markdup']['n']
     conda: "envs/preprocess.yaml"
     shell:
-        "{samtools} markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && "
-        "{samtools} index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
+        "samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && "
+        "samtools index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
 
 
 # checkpoint cause we ned to check supplemetary ratio
@@ -256,10 +248,10 @@ checkpoint bamstats_all:
     output:
         All_stats = os.path.join(config['STAT'],  '{sample}.bam_all.tsv')
     threads: config['bamstats_all']['n']
-    params: py_stats = config['BAMSTATS']
-    conda: "envs/preprocess.yaml"
+    params: py_stats = srcdir(config['BAMSTATS'])
+    conda: "envs/pypy.yaml"
     shell:
-        "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output}"
+        "samtools view -s 0.05 -h {input} --threads {threads} | pypy {params.py_stats} stats > {output}"
 
 
 # this rule triggers in case of high supp_ratio
@@ -273,7 +265,7 @@ rule resort_by_readname:
     conda: "envs/preprocess.yaml"
     resources:
         tmpdir=tmpdir
-    shell: "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -n -@ {threads} -o  {output} {input}"
+    shell: "samtools sort -T {resources.tmpdir}/{params.temp_sort} -n -@ {threads} -o  {output} {input}"
 # additional cleanup with custom script
 rule declip:
     input:
@@ -281,9 +273,9 @@ rule declip:
     output: declip_bam = temp(os.path.join(config['BAM'], '{sample}_declip.bam'))
     threads: config['declip']['n']
     params: declip = srcdir(config['DECLIP'])
-    conda: "envs/preprocess.yaml"
+    conda: "envs/pypy.yaml"
     shell:
-        "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.declip} > {output}"
+        "samtools view -s 0.05 -h {input} --threads {threads} | pypy {params.declip} > {output}"
 # back to original sort order after cleanup
 rule sort_back:
     input:
@@ -293,15 +285,15 @@ rule sort_back:
         All_stats= os.path.join(config['STAT'],  '{sample}.bam_all.additional_cleanup.tsv')
     threads: config['sort_back']['n']
     params:
-        py_stats= config['BAMSTATS'],
+        py_stats= srcdir(config['BAMSTATS']),
         temp_sort = "resort_back_temporary_{sample}"
-    conda: "envs/preprocess.yaml"
+    conda: "envs/pypy.yaml"
     resources:
         tmpdir=tmpdir
     shell:
-        "{samtools} sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -o {output.ready_bams} {input} &&"
-        "{samtools} index -@ {threads} {output.ready_bams} &&"
-        "{samtools} view -s 0.05 -h {input} --threads {threads} | python3 {params.py_stats} stats > {output.All_stats}"
+        "samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -o {output.ready_bams} {input} &&"
+        "samtools index -@ {threads} {output.ready_bams} &&"
+        "samtools view -s 0.05 -h {input} --threads {threads} | pypy {params.py_stats} stats > {output.All_stats}"
 
 # mapped cram
 rule mCRAM:
@@ -313,4 +305,4 @@ rule mCRAM:
     benchmark: os.path.join(config['BENCH'], '{sample}_mCRAM.txt')
     conda: "envs/preprocess.yaml"
     shell:
-        "{samtools} view --cram -T {ref} -@ {threads} -o {output.CRAM} {input}"
+        "samtools view --cram -T {ref} -@ {threads} -o {output.CRAM} {input}"
