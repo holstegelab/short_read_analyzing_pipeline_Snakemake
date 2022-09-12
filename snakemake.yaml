@@ -12,3 +12,4 @@ dependencies:
   - scipy
   - pandas
   - mamba
+  - pyyaml

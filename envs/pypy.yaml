@@ -4,11 +4,11 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - numpy
-  - scipy
-  - pandas
-  - pypy
-  - pypy3.9
-  - python
-  - samtools
-  - swalign
+  - numpy=1.23.3
+  - scipy=1.8.1
+  - pandas=1.4.4
+  - pypy=7.3.9
+  - pypy3.9=7.3.9
+  - python=3.9.12
+  - samtools=1.6
+  - swalign=0.3.6

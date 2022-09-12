@@ -5,4 +5,4 @@ channels:
   - default
   - defaults
 dependencies:
-  - verifybamid2
+  - verifybamid2=2.0.1
