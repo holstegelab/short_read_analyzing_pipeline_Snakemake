@@ -147,7 +147,7 @@ rule OXOG_metrics:
     input:
         bam = check_supp
     output:
-        Artifact_matrics = os.path.join(config['STAT'], "/{sample}.OXOG")
+        Artifact_matrics = os.path.join(config['STAT'], "{sample}.OXOG")
     priority: 99
     log: os.path.join(config['LOG'], "OXOG_stats_{sample}.log")
     benchmark: os.path.join(config['BENCH'], "OxoG_{sample}.txt")
@@ -177,7 +177,7 @@ def get_capture_kit_bed(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
     # if capture_kit.strip() == '':
     #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
-    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}_hg38.bed'
+    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}_hg38.bed')
     return capture_kit_path
 
 rule samtools_stat_exome:
@@ -187,8 +187,8 @@ rule samtools_stat_exome:
     priority: 99
     params:
         bed_interval = get_capture_kit_bed
-    log: config['LOG'] + '/' + "samtools_exome_{sample}.log"
-    benchmark: config['BENCH'] + "/samtools_stat_exome_{sample}.txt"
+    log: os.path.join(config['LOG'], "samtools_exome_{sample}.log")
+    benchmark: os.path.join(config['BENCH'],"samtools_stat_exome_{sample}.txt")
     threads: config['samtools_stat']['n']
     conda: "envs/preprocess.yaml"
     shell:
@@ -215,9 +215,9 @@ def check_supp_stats(sample):
     with checkpoints.bamstats_all.get(sample=sample).output[0].open() as f:
         lines = f.readlines()
         if float((lines[1].split()[3])) >= float(0.005):
-            return os.path.join(os.path.join(config['STAT'],  f'{sample}.bam_all.additional_cleanup.tsv'))
+            return os.path.join(config['STAT'],  f'{sample}.bam_all.additional_cleanup.tsv')
         else:
-            return os.path.join(config['STAT'], f'{sample}.bam_all.tsv'))
+            return os.path.join(config['STAT'], f'{sample}.bam_all.tsv')
 
 
 def get_quality_stats(wildcards):
@@ -260,8 +260,8 @@ def get_oxo_stats(wildcards):
     samples = list(sampleinfo.keys())
     samples.sort()
     for sample in samples:
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.pre_adapter_detail_metrics')
-        files.append(config['STAT'] + '/' + sample + '.bait_bias.bait_bias_detail_metrics')
+        files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_detail_metrics'))
+        files.append(os.path.join(config['STAT'],f'{sample}.bait_bias.bait_bias_detail_metrics'))
     return files
 
 rule gatherosostats:

@@ -6,12 +6,13 @@ import sys
 import gzip
 import re
 
-#Poly-A, Illumina, PCR primer illumina/nextera 1, PCR primer illumina/nextera 2, Nextera transposon 
-adapter_finder = re.compile('AAAAAAAA|AGATCGGAAGAGC|AATGATACGGCGACCACC|CAAGCAGAAGACGGCA|AGATGTGTATAAGAGACAG')
+#Poly-A, Poly-G, Illumina, PCR primer illumina/nextera 1, PCR primer illumina/nextera 2, Nextera transposon 
+adapter_finder = re.compile('AAAAAAAA|GGGGGGGG|AGATCGGAAGAGC|AATGATACGGCGACCACC|CAAGCAGAAGACGGCA|AGATGTGTATAAGAGACAG')
 
 
 def detect_adapter(seq):
     poly_a = 0
+    poly_g = 0
     illumina = 0
     pcr_illumina_1 = 0
     pcr_illumina_2 = 0
@@ -21,6 +22,8 @@ def detect_adapter(seq):
     for e in res:
         if e == 'AAAAAAAA':
             poly_a += 1
+        elif e == 'GGGGGGGG':
+            poly_g += 1
         elif e == 'AGATCGGAAGAGC':
             illumina += 1
         elif e == 'AATGATACGGCGACCACC':
@@ -30,7 +33,7 @@ def detect_adapter(seq):
         else:
             nextera += 1
 
-    return (poly_a, illumina, pcr_illumina_1, pcr_illumina_2, nextera)
+    return (poly_a, poly_g, illumina, pcr_illumina_1, pcr_illumina_2, nextera)
 
 def soft_clipped_region(splitted_cigar):
     clipped_region = 0
@@ -592,6 +595,7 @@ if __name__ == '__main__':
             sup_diffchrom_count = 0
 
             poly_a = 0
+            poly_g = 0
             illumina_adapter = 0
             pcr_illumina_adapter_1 = 0
             pcr_illumina_adapter_2 = 0
@@ -648,8 +652,9 @@ if __name__ == '__main__':
                     duplicate_supplement_count += int(supplementary > 0)
                
                
-                pa, il, pcril1, pcril2, n = detect_adapter(seq)
+                pa, pg, il, pcril1, pcril2, n = detect_adapter(seq)
                 poly_a += (pa > 0)
+                poly_g += (pg > 0)
                 illumina_adapter += (il > 0)
                 pcr_illumina_adapter_1 += (pcril1 > 0)
                 pcr_illumina_adapter_2 += (pcril2 > 0)
@@ -670,14 +675,14 @@ if __name__ == '__main__':
                 w = csv.writer(f,delimiter='\t')
                 w.writerow(('#unmapped_ratio','mqual20_ratio','secondary_ratio', 'supplementary_ratio','sup_diffchrom_ratio','duplicate_ratio','duplicate_supplement_ratio','soft_clipped_bp_ratio', 'aligned_bp_ratio', 'inserted_bp_ratio', 'deleted_bp_ratio', 'total_bp',\
                                 'soft_clipped_bp_ratio_filter_50', 'soft_clipped_bp_ratio_filter_60', 'soft_clipped_bp_ratio_filter_70',
-                                'aligned_bp_ratio_filter_50', 'aligned_bp_ratio_filter_60', 'aligned_bp_ratio_filter_70', 'poly_a', 'illumina_adapter', 'pcr_adapter_1', 'pcr_adapter_2', 'nextera'
+                                'aligned_bp_ratio_filter_50', 'aligned_bp_ratio_filter_60', 'aligned_bp_ratio_filter_70', 'poly_a', 'poly_g', 'illumina_adapter', 'pcr_adapter_1', 'pcr_adapter_2', 'nextera'
                                 ))
                 
                 w.writerow((float(unmapped_count)/ float(total_count), mqual20_count / float(total_count), secondary_count / float(total_count), supplementary_count / float(total_count),float(sup_diffchrom_count) / max(float(supplementary_count),1.0), duplicate_count / float(total_count), duplicate_supplement_count / max(float(supplementary_count),1.0),\
                         softclipped_base_count/float(base_count), aligned_base_count/float(base_count), inserted_base_count/float(base_count), deleted_base_count/float(base_count), base_count,
                         (softclipped_base_count - soft_clipped_50)/float(base_count), (softclipped_base_count - soft_clipped_60) / float(base_count), (softclipped_base_count - soft_clipped_70)/float(base_count) ,
                         (aligned_base_count - aligned_50)/float(base_count), (aligned_base_count - aligned_60) / float(base_count), (aligned_base_count - aligned_70)/float(base_count) ,
-                        poly_a / float(total_count), illumina_adapter / float(total_count), pcr_illumina_adapter_1 / float(total_count), pcr_illumina_adapter_2 / float(total_count), nextera / float(total_count)
+                        poly_a / float(total_count), poly_g / float(total_count), illumina_adapter / float(total_count), pcr_illumina_adapter_1 / float(total_count), pcr_illumina_adapter_2 / float(total_count), nextera / float(total_count)
                         ))
                     
                     

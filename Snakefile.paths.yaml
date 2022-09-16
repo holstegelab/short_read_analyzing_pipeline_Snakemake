@@ -39,6 +39,7 @@ verifybamid2: 'verifybamid2'
 
 TMPDIR: '/scratch-shared/'
 #custom scripts
+BAMMERGE: 'bam_merge.py'
 BAMSTATS: 'bam_stats.py'
 DECLIP: 'bam_clean_v2.py'
 

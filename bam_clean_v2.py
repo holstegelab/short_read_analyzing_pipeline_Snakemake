@@ -241,16 +241,18 @@ def rg_prune(readgroup):
     
     cigars = [cigar_split(readgroup['primary'][5])] + [cigar_split(r[5]) for r in readgroup['supplementary']]
     reverse = [int(readgroup['primary'][1]) & 0x10] + [int(r[1]) & 0x10 for r in readgroup['supplementary']]
-     
+    
+    length = max([get_orig_read_length(cigar) for cigar in cigars])
     #part of read that is in-use
     inuse = []  #filter per alignment
-    sequse = [0] * get_orig_read_length(cigars[0])
+    sequse = [0] * length
     for scigar,rev in zip(cigars,reverse):
+        print('X',scigar)
         pos = 0
         w = []
         #numpy.zeros(len(sequse),dtype=bool)
         for ctype, length in scigar:
-            if ctype == 'S':
+            if ctype == 'S' or ctype == 'H':
                 pos += length
             elif ctype == 'M' or ctype == 'I' or ctype == '=' or ctype == 'X':
                 if rev:
@@ -261,14 +263,12 @@ def rg_prune(readgroup):
                         sequse[p]+=1
                 w.extend(range(pos,  pos+length))
                 pos += length
-            elif ctype == 'H' or ctype == 'D' or ctype == 'N' or ctype == 'P':
+            elif ctype == 'D' or ctype == 'N' or ctype == 'P':
                 pass
         if rev:
             w = [pos - e - 1 for e in w[::-1]]
         inuse.append(w)
 
-
-    
     #determine first and last part of alignment that is aligned more than once
     shift = []
     pruning_required=False
@@ -279,10 +279,10 @@ def rg_prune(readgroup):
         drop = False
 
 
-        while begin_shift < len(usecount) and usecount[begin_shift] > 1: 
+        while begin_shift < (len(usecount)-1) and usecount[begin_shift] > 1: 
             begin_shift += 1
         reverse_usecount = usecount[::-1]
-        while end_shift < len(usecount) and reverse_usecount[end_shift] > 1: 
+        while end_shift < (len(usecount)-1) and reverse_usecount[end_shift] > 1: 
             end_shift += 1
 
         #drop if whole read sequence is double used
@@ -559,7 +559,7 @@ def get_position_order(readgroup):
 
     scigars = [cigar_split(readgroup['primary'][5])] + [cigar_split(r[5]) for r in readgroup.get('supplementary',[])]
     reverse = [int(readgroup['primary'][1]) & 0x10] + [int(r[1]) & 0x10 for r in readgroup.get('supplementary',[])]
-    seq_length = len(readgroup['primary'][10]) 
+    seq_length = max([get_orig_read_length(cigar) for cigar in cigars])
     
     read_startpos = []  
     read_endpos = []
@@ -574,7 +574,7 @@ def get_position_order(readgroup):
         maxpos = []
         #numpy.zeros(len(sequse),dtype=bool)
         for ctype, length in scigar:
-            if ctype == 'S':
+            if ctype == 'S' or ctype == 'H':
                 pos += length
             elif ctype == 'M' or ctype == 'I' or ctype == '=' or ctype == 'X':
                 if rev:
@@ -588,7 +588,7 @@ def get_position_order(readgroup):
                 if type != 'I':
                     alength += length
                     
-            elif ctype == 'H' or ctype == 'D' or ctype == 'N' or ctype == 'P':
+            elif type == 'D' or ctype == 'N' or ctype == 'P':
                 if ctype == 'D' or ctype == 'N':
                     alength += length
                 pass
@@ -603,7 +603,7 @@ def get_position_order(readgroup):
     pos = [int(readgroup['primary'][3])] + [int(e[3]) for e in readgroup.get('supplementary',[])]
     seq = [readgroup['primary'][9]] + [e[9] for e in readgroup.get('supplementary',[])]
 
-
+    #better handle seq: either merge or use hard-clip offset
     sortidx = sorted(range(len(read_startpos)), key=read_startpos.__getitem__)
     chrom_sorted = [chrom[e] for e in sortidx]
     pos_sorted = [pos[e] for e in sortidx]

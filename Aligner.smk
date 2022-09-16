@@ -47,6 +47,37 @@ def get_fastqpaired(wildcards):
     return [file1, file2]
 
 # cut adapters from inout
+# DRAGMAP doesn;t work well with uBAM, so use fq as input
+rule adapter_removal:
+    input:
+        get_fastqpaired
+    output:
+        for_f=os.path.join(config['FQ'], "{sample}.{readgroup}.cut_1.fq.gz"),
+        rev_f=os.path.join(config['FQ'], "{sample}.{readgroup}.cut_2.fq.gz")
+    # log file in this case contain some stats about removed seqs
+    log:
+        adapter_removal= os.path.join(config['STAT'], "{sample}.{readgroup}.adapter_removal.log"),
+    benchmark:
+        os.path.join(config['BENCH'], "{sample}.{readgroup}.adapter_removal.txt")
+    priority: 10
+    conda: "envs/preprocess.yaml"
+    threads: config["adapter_removal"]["n"]
+    shell: """
+		AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40  --threads {threads} 
+		"""
+
+rule adapter_removal_identify:
+    input:
+        get_fastqpaired
+    output:
+        stats=os.path.join(config['STAT'], "{sample}.{readgroup}.adapters"),
+    priority: 10
+    conda: "envs/preprocess.yaml"
+    threads: config["adapter_removal_identify"]["n"]
+    shell: """
+		AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]}  --threads {threads} > {output.stats}
+		"""
+
 
 def get_readgroup_params(wildcards):
     res = [rg for rg in SAMPLEINFO[wildcards['sample']]['readgroups'] if rg['info']['ID'] == wildcards['readgroup']][0]['info']
@@ -54,32 +85,6 @@ def get_readgroup_params(wildcards):
     return {'ID':res['ID'], 'LB':res.get('LB','unknown'), 'PL':res.get('PL','unknown'), 'PU':res.get('PU','unknown'), \
             'CN':res.get('CN','unknown'), 'DT':res.get('DT','unknown')}
 
-rule create_unaligned_bam_fastq:
-    input:
-        get_fastqpaired
-    output:
-        bam=os.path.join(config['BAM'], "{sample}.{readgroup}.unaligned.bam")
-    log:
-        markadapters=os.path.join(config['LOG'], "{sample}.{readgroup}.markilluminaadapers.log")
-    benchmark:
-        os.path.join(config['BENCH'], "{sample}.{readgroup}.create_unaliged_bam_fastq.txt")
-    conda: "envs/preprocess.yaml"
-    params: 
-        dname=lambda wildcards, output: os.path.dirname(output.bam),
-        lb = lambda wildcards: get_readgroup_params(wildcards).get('LB','unknown'),
-        pl = lambda wildcards: get_readgroup_params(wildcards).get('PL','unknown'),
-        pu = lambda wildcards: get_readgroup_params(wildcards).get('PU','unknown'),
-        cn = lambda wildcards: get_readgroup_params(wildcards).get('CN','unknown'),
-        dt = lambda wildcards: get_readgroup_params(wildcards).get('DT','unknown')
-    threads: config['create_unaligned_bam_fastq']['n']
-    resources:
-        tmpdir=tmpdir
-    shell:
-        """
-        mkdir -p {params.dname}
-        gatk --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" FastqToSam TMP_DIR={resources.tmpdir} FASTQ="{input[0]}" FASTQ2="{input[1]}" OUTPUT=/dev/stdout READ_GROUP_NAME={wildcards.readgroup} MAX_RECORDS_IN_RAM=10000000 SAMPLE_NAME={wildcards.sample} LIBRARY_NAME={params.lb} PLATFORM={params.pl} PLATFORM_UNIT={params.pu} SEQUENCING_CENTER={params.cn} RUN_DATE={params.dt} COMPRESSION_LEVEL=0 QUIET=true | \
-        gatk --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" MarkIlluminaAdapters METRICS={log.markadapters} COMPRESSION_LEVEL=1 VALIDATION_STRINGENCY=SILENT  INPUT=/dev/stdin OUTPUT={output.bam}
-        """
 # rule to align reads from cutted fq on hg38 ref
 # use dragmap aligner
 # samtools fixmate for future step with samtools mark duplicates
@@ -89,7 +94,8 @@ def get_mem_mb_align_reads(wildcrads, attempt):
 
 rule align_reads:
     input:
-        in_bam=rules.create_unaligned_bam_fastq.output.bam
+        for_f=rules.adapter_removal.output.for_f,
+        rev_f=rules.adapter_removal.output.rev_f
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.aligned.bam")
     params:
@@ -107,57 +113,29 @@ rule align_reads:
     resources:
         mem_mb = get_mem_mb_align_reads
     shell:
-        "dragen-os -r {params.ref_dir} -b {input.in_bam} --interleaved 1 --input-qname-suffix-delimiter / --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | samtools view -@ {threads} -o {output.bam}" 
-        #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (thread synchronization). But reduces performance by 1/3.  Better to let mergebamalignment deal with the issue.
+        "dragen-os -r {params.ref_dir} -1 {input.for_f} -2 {input.rev_f} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | samtools view -@ {threads} -o {output.bam}" 
+        #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
 rule merge_bam_alignment:
     input:
-        in_bam_unaligned = rules.create_unaligned_bam_fastq.output.bam,
-        in_bam_aligned = rules.align_reads.output.bam
+        get_fastqpaired,
+        rules.align_reads.output.bam
     output:
-        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.merged.bam")
-    params:
-        ref_dir = os.path.join(config['RES'], config['ref_dir']),
-        # mask bed for current reference genome
-        mask_bed = os.path.join(config['RES'], config['mask_bed']),
-        temp_sort = os.path.join("sort_temporary_{sample}_{readgroup}")
-    conda: "envs/preprocess.yaml"
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.merged.bam"),
+        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.merge_stats.tsv")
+    conda: "envs/pypy.yaml"
     threads: config["merge_bam_alignment"]["n"]
     benchmark:
         os.path.join(config['BENCH'], "{sample}.{readgroup}.mergebam.txt")
+    params:
+        bam_merge=srcdir(config['BAMMERGE'])
     priority: 15
-    resources:
-        mem_mb = get_mem_mb_align_reads,
-        tmpdir=tmpdir
     shell:
        """
-            gatk --java-options "-XX:+UseParallelGC -XX:ParallelGCThreads=4 -Xmx16g -Xms8g" MergeBamAlignment \
-                TMP_DIR={resources.tmpdir} \
-                VALIDATION_STRINGENCY=SILENT \
-                EXPECTED_ORIENTATIONS=FR \
-                ATTRIBUTES_TO_RETAIN=XS \
-                ATTRIBUTES_TO_REMOVE=MD \
-                ALIGNED_BAM={input.in_bam_aligned} \
-                UNMAPPED_BAM={input.in_bam_unaligned} \
-                OUTPUT={output.bam} \
-                REFERENCE_SEQUENCE={ref} \
-                PAIRED_RUN=true \
-                COMPRESSION_LEVEL=0 \
-                SORT_ORDER="unsorted" \
-                IS_BISULFITE_SEQUENCE=false \
-                ALIGNED_READS_ONLY=false \
-                CLIP_ADAPTERS=true \
-                CLIP_OVERLAPPING_READS=true \
-                HARD_CLIP_OVERLAPPING_READS=true \
-                MAX_RECORDS_IN_RAM=2000000 \
-                ADD_MATE_CIGAR=false \
-                MAX_INSERTIONS_OR_DELETIONS=-1 \
-                PRIMARY_ALIGNMENT_STRATEGY=MostDistant \
-                UNMAPPED_READ_STRATEGY=COPY_TO_TAG \
-                ALIGNER_PROPER_PAIR_FLAGS=true \
-                UNMAP_CONTAMINANT_READS=true \
-                ADD_PG_TAG_TO_READS=false
-        """
+		samtools view -h --threads 4 {input[2]} | \
+		pypy {params.bam_merge} -a  {input[0]} -b {input[1]} -s {output.stats}  |\
+	    samtools view --threads 4 -o {output.bam}
+	   """
 
 rule sort_bam_alignment:
     input:
@@ -174,14 +152,13 @@ rule sort_bam_alignment:
         samtools_sort=os.path.join(config['LOG'], "{sample}.{readgroup}.samtools_sort.log"),
         samtools_index = os.path.join(config['LOG'], "{sample}.{readgroup}.samtools_index.log")
     benchmark:
-        os.path.join(config['BENCH'], "{sample}.{readgroup}.mergebam.txt")
+        os.path.join(config['BENCH'], "{sample}.{readgroup}.sort.txt")
     priority: 15
     resources:
-        mem_mb = get_mem_mb_align_reads,
         tmpdir=tmpdir
     shell:
         """
-            samtools fixmate -@ {threads} -u -m {input.in_bam} -  2> {log.samtools_fixmate} |\
+            samtools fixmate -@ {threads} -u -O SAM  -m {input.in_bam} -  2> {log.samtools_fixmate} |\
             samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 2000M -o {output.bam} 2> {log.samtools_sort} && \
             samtools index -@ {threads} {output.bam} 2> {log.samtools_index}
         """

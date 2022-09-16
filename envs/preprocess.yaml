@@ -5,6 +5,8 @@ channels:
 - defaults
 dependencies:
 - samtools=1.15.1
+- adapterremoval=2.3.3
+- pigz=2.6
 - bcftools=1.15.1
 - bedtools=2.30.0
 - dragmap=1.2.1
