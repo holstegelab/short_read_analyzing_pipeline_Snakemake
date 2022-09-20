@@ -1,13 +1,15 @@
 import sys
 import re
 import os
+import copy
 
+from Bio.Seq import Seq
 
 convert_tag_type = {'i':int, 'f': float, 'A':str, 'Z':str}
 extract_tag_type = {int:'i', float:'f', str:'Z'}
 
 MAX_READ_LENGTH = 1000
-
+MIN_ALIGN_LENGTH = 30
 class BamRecord:
     def __init__(self, row):
         self.row = row
@@ -25,6 +27,9 @@ class BamRecord:
         tags = [e.split(':') for e in row[11:]]
         self.tags = {e[0]: convert_tag_type[e[1]](':'.join(e[2:])) for e in tags}
 
+    def __repr__(self):
+        return self.toSamRecord()
+
     def toSamRecord(self):
         tags = ['%s:%s:%s' % (tag, extract_tag_type[tag_value.__class__], tag_value)  for tag, tag_value in self.tags.items()]
         return '\t'.join([self.qname, str(self.flag), self.rname, self.pos, self.mapq, self.cigar, self.rnext, self.pnext, self.tlen, self.seq, self.qual] + tags)
@@ -37,13 +42,52 @@ class BamRecord:
 
     def setTagValues(self, **kwargs):
         self.tags.update(kwargs)
-    
+   
+    def is_primary(self):
+        return not bool(self.flag & 0x900)
+
+    def is_supplementary(self):
+        return bool(self.flag & 0x800)
+
     def is_unmapped(self):
-        return (self.cigar == '*')
+        if self.flag & 0x4:
+            return True
+        else:
+            return False
     
     def is_reversed(self):
         return bool(self.flag & 0x10)
+
+    def unmap(self):
+        if not self.is_unmapped():
+            read = self.copy()
+            read.cigar = '*'
+            read.pos = '0'
+            read.flag = read.flag | 0x4
+            read.mapq = '0'
+            read.rname = '*'
+            if read.is_reversed():
+                read.seq = str(Seq(read.orig_seq()).reverse_complement())
+                read.qual = read.orig_qual()[::-1]
+                read.flag = read.flag & (~0x10)
+            else:
+                read.seq = read.orig_seq()
+                read.qual = read.orig_qual()
+
+            for k in ['YB','YQ','ZB','ZQ']:
+                if k in read.tags:
+                    del read.tags[k]
+
+            return read
+        return self            
+
+            
     
+    def gen_sa_tag(self):
+        nm = self.tags.get('NM',0)
+        strand = '-' if self.is_reversed() else '+'
+        return '%s,%s,%s,%s,%s,%d;' % (self.rname, self.pos, strand, self.cigar, self.mapq, nm)
+   
 
     def get_aligned_read_length(self):
         if self.cigar == '*':
@@ -66,11 +110,27 @@ class BamRecord:
                     pos += length
             return pos 
 
-    def split_cigar(self):
+    def split_cigar(self, orig_orientation=False, merge_clips=False):
+        #orig_orientation=True:  return cigar that is un-reversed
+        #merge_clips: merge S and H clips into a unified SH clip.
         if self.cigar == '*':
             return []
         cigar = re.split('([MIDNSHP=X]{1,1})',self.cigar)
-        return [(ctype, int(length)) for length, ctype in zip(cigar[::2], cigar[1::2])]
+        res = [(ctype, int(length)) for length, ctype in zip(cigar[::2], cigar[1::2])]
+        if orig_orientation and self.is_reversed():
+            res = res[::-1]
+        if merge_clips:
+            pos = 0
+            while res[-1][0] in ['S','H']:
+                pos += res.pop()[1]
+            res.append(('SH',pos))
+            pos = 0
+            while res[0][0] in ['S','H']:
+                pos += res[0][1]
+                res = res[1:]
+            res = [('SH',pos)] + res
+        return res
+            
     
     def get_read_position(self, orig_orientation=False):
         #get alignment start and end position on read and alignment start and end position on reference.
@@ -88,7 +148,7 @@ class BamRecord:
         maxpos = []
         #numpy.zeros(len(sequse),dtype=bool)
         for ctype, length in scigar:
-            if ctype == 'S':
+            if ctype == 'S' or ctype == 'H':
                 pos += length
             elif ctype == 'M' or ctype == 'I' or ctype == '=' or ctype == 'X':
                 if reverse and orig_orientation:
@@ -96,7 +156,7 @@ class BamRecord:
                     maxpos.append(seq_length - pos)
                 else:
                     minpos.append(pos)
-                    maxpos.append(pos + length - 1)
+                    maxpos.append(pos + length)
                 pos += length
                 
                 if ctype != 'I':
@@ -113,7 +173,109 @@ class BamRecord:
 
         return {'read_spos':read_startpos, 'read_epos':read_endpos, 'ref_spos':ref_startpos, 'ref_epos':ref_endpos, 'rname':self.rname, 'reverse':reverse, 'seq_length':seq_length}
 
+
+    def clip_start(self, read_start_pos, orig_orientation=True):
+        if not orig_orientation and self.is_reversed():
+            return self.clip_end(self.get_orig_read_length() - read_start_pos, orig_orientation=True)
+
+        scigar = self.split_cigar()
+        scigar = scigar[::-1] if self.is_reversed() else scigar
+
+        scigar, ref_pos_shift, read_pos = prune_cigar_end(scigar[::-1], read_start_pos)
+
+        if all([e[0] in ['S','H'] for e in scigar]):
+            return self.unmap()
+        else:
+            scigar = [('H', read_pos)] + scigar[::-1]
+            read = self.copy()
+            if not self.is_reversed():
+                read.pos = str(int(self.pos) + ref_pos_shift)
+                read.cigar = join_cigar(scigar)
+                read.tags['YB'] = read.orig_seq()[:read_pos]
+                read.tags['YQ'] = read.orig_qual()[:read_pos]
+            else:
+                read.cigar = join_cigar(scigar[::-1])
+                read.tags['ZB'] = read.orig_seq()[-read_pos:]
+                read.tags['ZQ'] = read.orig_qual()[-read_pos:]
+        return read
+    
+    def clip_end(self, read_end_pos, orig_orientation=True):
+        if not orig_orientation and self.is_reversed():
+            return self.clip_start(self.get_orig_read_length() - read_end_pos, orig_orientation=True)
+        
+        scigar = self.split_cigar()
+        scigar = scigar[::-1] if self.is_reversed() else scigar
+
+        scigar, ref_pos_shift, read_pos = prune_cigar_end(scigar, self.get_orig_read_length() - read_end_pos)
+
+        if all([e[0] in ['S','H'] for e in scigar]):
+            return self.unmap()
+        else:
+            scigar = scigar + [('H', read_pos)]
+            read = self.copy()
+            if not self.is_reversed():
+                read.cigar = join_cigar(scigar)
+                read.tags['ZB'] = read.orig_seq()[-read_pos:]
+                read.tags['ZQ'] = read.orig_qual()[-read_pos:]
+            else:
+                read.pos = str(int(self.pos) + ref_pos_shift)
+                read.cigar = join_cigar(scigar[::-1])
+                read.tags['YB'] = read.orig_seq()[:read_pos]
+                read.tags['YQ'] = read.orig_qual()[:read_pos]
+        return read
+
+    def copy(self):
+        read = copy.copy(self)
+        read.tags = dict(self.tags)
+        return read
+
+
+    def annotate_orig_sequence(self, seq, qual):
+        read = self.copy()
+
+        scigar = read.split_cigar()
+        reverse = read.is_reversed()
+
+        if reverse:
+            seq = str(Seq(seq).reverse_complement())
+            qual = qual[::-1]
+        
+        startpos = 0
+        endpos = 0
+        if scigar[0][0] == 'H':
+            startpos = scigar[0][1]
+        if scigar[-1][0] == 'H':
+            endpos = scigar[-1][1]
+        assert seq[startpos:self.get_orig_read_length() -endpos]  == read.seq
+        assert qual[startpos:self.get_orig_read_length() - endpos] == read.qual
+        
+        if startpos:
+            read.tags['YB'] = seq[:startpos]
+            read.tags['YQ'] = qual[:startpos]
+        if endpos:
+            read.tags['ZB'] = seq[-endpos:]
+            read.tags['ZQ'] = qual[-endpos:]
+        return read
+
+
+    def orig_seq(self, orig_orientation=False):
+        res = ''.join([self.tags.get('YB',''), self.seq, self.tags.get('ZB','')])
+        if orig_orientation and self.is_reversed():
+            res = str(Seq(res).reverse_complement())
+        return res            
+    
+    def orig_qual(self, orig_orientation=False):
+        res = ''.join([self.tags.get('YQ',''), self.qual, self.tags.get('ZQ','')])
+        if orig_orientation and self.is_reversed():
+            res = res[::-1]
+        return res
+
+
+        
+
     def ref_to_read_pos(self, start, stop):
+        # get read positions and cigar corresponding to a reference range
+        #FIXME: check handling of hard clipping
         scigar = self.split_cigar()
         reverse = self.is_reversed()
 
@@ -133,7 +295,7 @@ class BamRecord:
         pcigar = []
         mcigar = []
         acigar = []
-        scigar = scigar[::-1]
+        scigar = scigar[::-1] #reverse, so we can use it as a a stack to pop from and append to
         while scigar:
             ctype, length = scigar.pop()
             if ctype == 'S' or ctype == 'I':
@@ -254,9 +416,50 @@ def generate_simple_consensus(seq1, seq2, qual1, qual2):
             else:
                 ef = (1 - e2) * e1
                 sf = s2
-        q = chr(min(int(round(-(math.log10(ef) * 10.0) + 33)),73))
+        q = chr(max(min(int(round(-(math.log10(ef) * 10.0) + 33)),73),2))
         sq.append(sf)
         mq.append(q)
     return (''.join(sq), ''.join(mq), mismatch, mismatch + match)
 
+
+def prune_cigar_end(scigar, pos):
+    read_pos = 0
+    ref_pos = 0
+    #pop till we are at read pos, then readd clip
+    while scigar and read_pos < pos:
+        ctype, length = scigar.pop()
+        if ctype == 'S' or ctype == 'H':
+            read_pos += length
+        elif ctype == 'M' or ctype == "I" or ctype == '=' or ctype == 'X':
+            if read_pos + length <= pos: #complete removal
+                read_pos += length
+                if not ctype == 'I':
+                    ref_pos += length
+
+            else:    #partial removal
+                remove_length = pos - read_pos
+                if not ctype == 'I':
+                    ref_pos += remove_length
+                read_pos += remove_length
+
+                scigar.append((ctype, length - remove_length))
+        elif ctype == 'D' or ctype == 'N':
+            ref_pos += length
+        elif ctype == 'P':
+            pass
+
+    while scigar:
+        ctype,length = scigar.pop()
+        if ctype == 'D' or ctype == 'N':
+            ref_pos += length
+        elif ctype == 'P':
+            pass
+        elif ctype == 'I':
+            ref_pos += length
+            read_pos += length
+        else:
+            scigar.append((ctype,length))
+            break
+
+    return (scigar, ref_pos, read_pos)
    

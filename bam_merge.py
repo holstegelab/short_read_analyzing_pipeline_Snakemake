@@ -127,10 +127,10 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
     if (read.flag & 0x900) != 0.0: # not a primary read
         if (read.flag & 0x800):
             stats['supplementary_alignments'] = stats.get('supplementary_alignments',0) + 1
-            stats['supplementary_aligned_bp'] = stats.get('supplementary_bp',0) + read.get_aligned_read_length()
+            stats['supplementary_aligned_bp'] = stats.get('supplementary_aligned_bp',0) + read.get_aligned_read_length()
         elif (read.flag & 0x100):            
             stats['secondary_alignments'] = stats.get('secondary_alignments',0) + 1
-            stats['secondary_aligned_bp'] = stats.get('secondary_bp',0) + read.get_aligned_read_length()
+            stats['secondary_aligned_bp'] = stats.get('secondary_aligned_bp',0) + read.get_aligned_read_length()
         return (read.cigar,{})
 
     
@@ -142,18 +142,19 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
     if clipping_length == 0: #nothing is missing w.r.t. fastq sequence
         return (read.cigar,{})
     
-    #reverse to check/match sequence in record 
-    tag_seq = seq[len(read.seq):]    #hardclip tags XB/XQ are w.r.t. to non-reverse-complemented sequence
+    #get missing sequence/qualities
+    tag_seq = seq[len(read.seq):]   
     tag_qual = qual[len(read.seq):] 
 
-    stats['size'][len(tag_seq)] = stats['size'].get(len(tag_seq),0) + 1
 
     if (read.flag & 0x40):
         stats['restored_read1s'] = stats.get('restored_read1s',0) + 1
         stats['restored_bp_read1'] = stats.get('restored_bp_read1',0) + clipping_length
+        stats['size_r1'][len(tag_seq)] = stats['size_r1'].get(len(tag_seq),0) + 1
     else:            
         stats['restored_read2s'] = stats.get('restored_read2s',0) + 1
         stats['restored_bp_read2'] = stats.get('restored_bp_read2',0) + clipping_length
+        stats['size_r2'][len(tag_seq)] = stats['size_r2'].get(len(tag_seq),0) + 1
     
     if read.cigar != '*':
         cigars = read.split_cigar()
@@ -162,6 +163,12 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
             rqual = qual[::-1]
             assert rseq[-len(read.seq):] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}"
             assert rqual[-len(read.qual):] == read.qual, f"Quality score mismatch BAM-FASTQ in fragment {read.qname}"
+
+            tag_seq = str(Seq(tag_seq).reverse_complement())
+            tag_qual = tag_qual[::-1]
+            assert tag_seq == rseq[:-len(read.seq)]
+            new_tags = {'YB': tag_seq, 'YQ': tag_qual} #YB/YQ tags for hard clips at beginnning of record
+
             while cigars[0][0] == 'H': #remove all hard clipping cigar elements
                 cigars = cigars[1:]
             cigars = [('H', clipping_length)] + cigars #re-add with correct length
@@ -173,14 +180,17 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
                 cigars.pop()
             cigars.append(('H', clipping_length)) #re-add with correct length
             assert not any([x == 'H' for x,y in cigars[:-1]]), 'Hard clipping found, but not at end of read'
+            new_tags = {'ZB': tag_seq, 'ZQ': tag_qual}  #ZB/ZQ tags for hard clips at end of record
 
         ncigar = join_cigar(cigars)
     else:
         stats['restored_unaligned_reads'] = stats.get('restored_unaligned_reads',0) + 1
+        assert seq[:len(read.seq)] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}"
+        assert qual[:len(read.seq)] == read.qual, f"Quality score mismatch BAM-FASTQ in fragment {read.qname}"
+        new_tags = {'ZB': tag_seq, 'ZQ': tag_qual}
         ncigar = '*'
 
-    return (ncigar, {'XB':tag_seq, 'XZ':tag_qual})        #XQ is also used by dragmap, need to rename before running revertsam
-        
+    return (ncigar, new_tags)                
 
 def process(querygroup, fastqrecord, stats):
     name, seq1, seq2, qual1, qual2 = fastqrecord
@@ -211,8 +221,8 @@ def fastqtosam(fastqrecord, rg, stats):
     stats['readded_fragments'] = stats.get('readded_fragments',0) + 1
 
 
-    stats['size'][len(seq1)] = stats['size'].get(len(seq1),0) + 1
-    stats['size'][len(seq2)] = stats['size'].get(len(seq2),0) + 1
+    stats['size_r1'][len(seq1)] = stats['size_r1'].get(len(seq1),0) + 1
+    stats['size_r2'][len(seq2)] = stats['size_r2'].get(len(seq2),0) + 1
 
     flag1 = 0x1 |  0x4 | 0x8| 0x40 | 0x200  #(PAIRED | UNMAP | MUNMAP | READ1 | QCFAIL)
     flag2 = 0x1 | 0x4 | 0x8| 0x80 | 0x200  #(PAIRED | UNMAP | MUNMAP | READ2 | QCFAIL)
@@ -239,7 +249,8 @@ if __name__ == '__main__':
     alignment_counter = 0
     stats = {}
 
-    stats['size'] = {}
+    stats['size_r1'] = {}
+    stats['size_r2'] = {}
     last_time = time.time()
     with sys.stdin as f:
         reader = csv.reader(f,delimiter='\t', quoting=csv.QUOTE_NONE)
@@ -305,19 +316,20 @@ if __name__ == '__main__':
                 pass
         
         #process size stats
-        size_stats = numpy.zeros(max(stats['size'].keys()) + 1,dtype=int)
-        for key,value in stats['size'].items():
-            size_stats[key] = value
-        del stats['size']
+        size_stats = numpy.zeros((max(max(stats['size_r1'].keys()), max(stats['size_r2'].keys()))+ 1,2),dtype=int)
+        for key,value in stats['size_r1'].items():
+            size_stats[key,0] = value
+        for key,value in stats['size_r2'].items():
+            size_stats[key,1] = value
+        del stats['size_r1']
+        del stats['size_r2']
 
         with open(args.s,'wt') as f:            
             for key, value in stats.items():
                 f.write('%s\t %d\n' % (key,value))
-            f.write('\nadapter_length\tcount\n')
-            for pos, s in enumerate(size_stats):
-                f.write('%d\t%d\n' % (pos,s))
-                
-
+            f.write('\nadapter_length\tcount_read1\tcount_read2\n')
+            for pos in range(1,size_stats.shape[0]):
+                f.write('%d\t%d\t%d\n' % (pos,size_stats[pos,0], size_stats[pos,1]))
             f.flush()
             
         
