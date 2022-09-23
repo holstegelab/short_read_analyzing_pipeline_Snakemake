@@ -36,15 +36,16 @@ Analyzing include several steps:
 # HOW TO USE
 1. clone this repo on server
 2. *If you want use Zslurm*
-  2.1 install Zslurm according to the manual page
-  2.2 Open Zslurm
-  2.3 run pipeline with **snakezcluster** command
+    1. install Zslurm according to the manual page
+    2. Open Zslurm
+    3. run pipeline with **snakezcluster** command
   
-    > example code
-    > NB! edit command
-    > snakezcluster --snakefile Snakefile
+      > example code
+      > NB! edit command
+      > snakezcluster --snakefile Snakefile
     
-  2.4 If you want to run just several steps (for example only Aligment step) - choose suitible **smk** file as **--snakefile**
+    4. If you want to run just several steps (for example only Aligment step) - 
+    choose suitible **smk** file as **--snakefile**
 
 ## Additional notes
 
