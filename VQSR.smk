@@ -47,12 +47,26 @@ rule VQSR_all:
 
 
 
+rule norm:
+    input:
+        rules.Mergechrs.output.vcf
+    output:
+        normVCF=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf",
+        idx=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf.idx"
+    log: config['LOG'] + '/' + "normalization.log"
+    benchmark: config['BENCH'] + "/normalization.txt"
+    priority: 80
+    conda: "envs/preprocess.yaml"
+    shell:
+        "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "
+
+
 # VQSR
 #select SNPs for VQSR
 # SNPs and INDELs require different options
 rule SelectSNPs:
     input:
-        rules.Mergechrs.output.vcf
+        rules.norm.output.normVCF
     output:
         SNP_vcf = temp(config['VCF_Final'] + "/Merged_SNPs.vcf")
         # SNP_vcf=temp(config['VCF'] + "/Merged_SNPs.vcf")
@@ -95,7 +109,7 @@ rule VQSR_SNP:
          -resource:omni,known=false,training=true,truth=true,prior=12.0 {params.omni} \
          -resource:1000G,known=false,training=true,truth=false,prior=10.0 {params.kilo_g} \
          -resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {params.dbsnp} \
-         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -mode SNP --trust-all-polymorphic -AS TRUE \
+         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -mode SNP --trust-all-polymorphic -AS TRUE -an InbreedingCoeff \
          -tranche 100.0 -tranche 99.95 -tranche 99.9 -tranche 99.8 -tranche 99.6 -tranche 99.5 -tranche 99.4 -tranche 99.3 -tranche 99.0 -tranche 98.0 -tranche 97.0 -tranche 90.0 \
          -O {output.recal_snp} \
          --tranches-file {output.tranches_file_snp} \
@@ -126,7 +140,7 @@ rule ApplyVQSR_SNPs:
 # select INDELs for VQSR
 rule SelectINDELs:
     input:
-        rules.Mergechrs.output.vcf
+        rules.norm.output.normVCF
     output:
         INDEL_vcf=temp(config['VCF_Final'] + "/Merged_INDELs.vcf")
     log: config['LOG'] + '/' + "SelectINDELS.log"
@@ -164,7 +178,7 @@ rule VQSR_INDEL:
          -tranche 100.0 -tranche 99.95 -tranche 99.9 -tranche 99.8 -tranche 99.6 -tranche 99.5 -tranche 99.4 -tranche 99.3 -tranche 99.0 -tranche 98.0 -tranche 97.0 -tranche 90.0 \
          -resource:mills,known=false,training=true,truth=true,prior=12.0 {params.mills} \
          -resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {params.dbsnp_indel} \
-         -an QD -an DP -an FS -an SOR -an ReadPosRankSum -an MQRankSum -mode INDEL \
+         -an QD -an DP -an FS -an SOR -an ReadPosRankSum -an MQRankSum -mode INDEL -an InbreedingCoeff \
          --trust-all-polymorphic 2> {log}
         """
 
@@ -188,11 +202,29 @@ rule ApplyVQSR_INDEs:
         -O {output} -V {input.indel_variants} -ts-filter-level {params.ts_level} -AS TRUE 2> {log}
         """
 
+rule select_norsnp_nor_indels:
+    input:
+        rules.norm.output.normVCF
+    output:
+        MIX_vcf=temp(config['VCF_Final'] + "/merged_mix.vcf")
+    log: config['LOG'] + '/' + "SelectMix.log"
+    benchmark: config['BENCH'] + "/SelectMix.txt"
+    priority: 50
+    conda: "envs/preprocess.yaml"
+    shell:
+        """
+        {gatk} SelectVariants \
+                --select-type-to-include INDEL --select-type-to-include INDEL --invertSelect \
+                -V {input} -O {output} 2> {log}
+        """
+
+
 #combine filtr results
 rule combine:
     input:
         snps=rules.ApplyVQSR_SNPs.output.recal_vcf_snp,
-        indel=rules.ApplyVQSR_INDEs.output.recal_vcf_indel
+        indel=rules.ApplyVQSR_INDEs.output.recal_vcf_indel,
+        mix = rules.select_norsnp_nor_indels.output.MIX_vcf
     log: config['LOG'] + '/' + "combine.log"
     benchmark: config['BENCH'] + "/combine.txt"
     output:
@@ -201,18 +233,18 @@ rule combine:
     conda: "envs/preprocess.yaml"
     shell:
         "{gatk} MergeVcfs \
-                -I {input.snps} -I {input.indel} -O {output} 2> {log}"
+                -I {input.snps} -I {input.indel} -I {input.mix} -O {output} 2> {log}"
 
-# normalization with bcftools
-rule norm:
-    input:
-        rules.combine.output.filtrVCF
-    output:
-        normVCF=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf",
-        idx=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf.idx"
-    log: config['LOG'] + '/' + "normalization.log"
-    benchmark: config['BENCH'] + "/normalization.txt"
-    priority: 80
-    conda: "envs/preprocess.yaml"
-    shell:
-        "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "
+# # normalization with bcftools
+# rule norm:
+#     input:
+#         rules.combine.output.filtrVCF
+#     output:
+#         normVCF=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf",
+#         idx=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf.idx"
+#     log: config['LOG'] + '/' + "normalization.log"
+#     benchmark: config['BENCH'] + "/normalization.txt"
+#     priority: 80
+#     conda: "envs/preprocess.yaml"
+#     shell:
+#         "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "

@@ -132,9 +132,9 @@ rule merge_bam_alignment:
     priority: 15
     shell:
        """
-		samtools view -h --threads 4 {input[2]} | \
+		samtools view -h --threads {threads} {input[2]} | \
 		pypy {params.bam_merge} -a  {input[0]} -b {input[1]} -s {output.stats}  |\
-	    samtools view --threads 4 -o {output.bam}
+	    samtools view --threads {threads} -o {output.bam}
 	   """
 
 rule sort_bam_alignment:

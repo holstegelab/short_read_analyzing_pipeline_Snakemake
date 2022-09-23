@@ -81,6 +81,10 @@ SelectINDELs:
         n: 1
         mem: 7500
         time: 200
+select_norsnp_nor_indels:
+        n: 1
+        mem: 7500
+        time: 200
 VQSR_INDEL:
         n: 1
         mem: 5500
