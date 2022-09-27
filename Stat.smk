@@ -63,7 +63,7 @@ rule Basic_stats:
         rules.norm.output.normVCF
     output:
         os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
-        os.path.join(config['STAT'], "/BASIC.variant_calling_summary_metrics")
+        os.path.join(config['STAT'], "BASIC.variant_calling_summary_metrics")
     priority: 90
     log: os.path.join(config['LOG'], "VCF_stats.log")
     benchmark: os.path.join(config['BENCH'], "VCF_stats.txt")

@@ -40,6 +40,7 @@ rule Genotype_all:
         rules.DBImport_all.input,
         # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
         expand("{vcf}/ALL_chrs.vcf.gz", vcf=config['VCF']),
+        expand("{vcf}/Merged_norm.vcf", vcf=config['VCF_Final']),
     default_target: True
 
 
@@ -75,3 +76,17 @@ rule Mergechrs:
     priority: 45
     shell:
         "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log} && {gatk} IndexFeatureFile -I {output} "
+
+rule norm:
+    input:
+        rules.Mergechrs.output.vcf
+    output:
+        normVCF=config['VCF_Final'] + "/Merged_norm.vcf",
+        idx=config['VCF_Final'] + "/Merged_norm.vcf.idx"
+    log: config['LOG'] + '/' + "normalization.log"
+    benchmark: config['BENCH'] + "/normalization.txt"
+    priority: 80
+    conda: "envs/preprocess.yaml"
+    shell:
+        "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "
+

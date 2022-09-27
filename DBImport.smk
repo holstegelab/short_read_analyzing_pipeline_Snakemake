@@ -39,7 +39,7 @@ rule DBImport_all:
 
 rule make_glist:
     input: g= expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,chr=main_chrs),
-    output: glist = temp("{chr}_gvcfs.list"),
+    output: glist = ("{chr}_gvcfs.list"),
     shell: "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.glist}"
 
 

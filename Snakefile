@@ -53,18 +53,40 @@ use rule * from SV_delly
 use rule * from CNV_with_cnvkit_Module
 use rule * from DBImport
 use rule * from Genotype
-use rule * from VQSR
 use rule * from Stat
+use rule * from VQSR
 
+VQSR = config.get("VQSR", "RUN_VQSR")
+if VQSR == "RUN_VQSR":
+    VQSR_rule = rules.VQSR_all.input,
+else:
+    VQSR_rule = []
+SV = config.get("SV", "RUN_SV")
+if SV == "RUN_SV":
+    SV_rule = rules.SV_delly_all.input
+else:
+    SV_rule = []
+CNV = config.get("CNV", "RUN_CNV")
+if CNV == "RUN_CNV":
+    CNV_rule = rules.CNV_with_cnvkit_Module_all.input
+else:
+    CNV_rule = []
 
 rule all:
     input:
         rules.Aligner_all.input,
         rules.gVCF_all.input,
         rules.Genotype_all.input,
-        rules.VQSR_all.input,
+        VQSR_rule,
+        # rules.VQSR_all.input,
         rules.Stat_all.input,
-        rules.SV_delly_all.input,
-        rules.CNV_with_cnvkit_Module_all.input
+        SV_rule,
+        CNV_rule
+        # rules.SV_delly_all.input,
+        # rules.CNV_with_cnvkit_Module_all.input
     default_target: True
+
+
+
+
 

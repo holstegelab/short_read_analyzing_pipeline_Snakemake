@@ -42,23 +42,9 @@ use rule * from Genotype
 rule VQSR_all:
     input:
         rules.Genotype_all.input,
-        expand("{vcf}/ALL_chrs.vcf.gz",vcf=config['VCF']),
+        expand("{vcf}/Merged_after_VQSR.vcf",vcf=config['VCF_Final']),
     default_target: True
 
-
-
-rule norm:
-    input:
-        rules.Mergechrs.output.vcf
-    output:
-        normVCF=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf",
-        idx=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf.idx"
-    log: config['LOG'] + '/' + "normalization.log"
-    benchmark: config['BENCH'] + "/normalization.txt"
-    priority: 80
-    conda: "envs/preprocess.yaml"
-    shell:
-        "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "
 
 
 # VQSR
@@ -228,7 +214,7 @@ rule combine:
     log: config['LOG'] + '/' + "combine.log"
     benchmark: config['BENCH'] + "/combine.txt"
     output:
-        filtrVCF=temp(config['VCF_Final'] + "/Merged_after_VQSR.vcf")
+        filtrVCF=(config['VCF_Final'] + "/Merged_after_VQSR.vcf")
     priority: 70
     conda: "envs/preprocess.yaml"
     shell:
