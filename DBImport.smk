@@ -43,6 +43,24 @@ rule make_glist:
     shell: "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.glist}"
 
 
+DBImethod = config.get("DBI_method", "new")
+DBIpath = config.get("DBIpath", "")
+if DBImethod == "new":
+    DBI_method_params = "--genomicsdb-workspace-path "
+    path_to_dbi = "genomicsdb_"
+elif DBImethod == "update" and len(DBIpath) != 0:
+    DBI_method_params = "--genomicsdb-update-workspace-path "
+    path_to_dbi = DBIpath
+elif DBImethod == "update" and len(DBIpath) == 0:
+    raise ValueError(
+        "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_'"
+        "Don't provide {chr}.p{chr_p} part of path!"
+    )
+else:
+    raise ValueError(
+        "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
+    )
+
 #Genomics DBImport instead CombineGVCFs
 rule GenomicDBImport:
     input:
@@ -51,11 +69,13 @@ rule GenomicDBImport:
     log: config['LOG'] + '/' + "GenomicDBImport.{chr_p}.{chr}.log"
     benchmark: config['BENCH'] + "/GenomicDBImport.{chr_p}.{chr}.txt"
     output:
-        dbi=directory("genomicsdb_{chr}.p{chr_p}"),
+        dbi = directory(os.path.join(path_to_dbi + "{chr}.p{chr_p}")),
+        # dbi=directory("genomicsdb_{chr}.p{chr_p}"),
         # gvcf_list = temp("{chr}_gvcfs.list"),
         ready = touch(temp('done_p{chr_p}.{chr}.txt'))
     threads: config['GenomicDBImport']['n']
     params:
+        method = DBI_method_params,
         batches = '75',
         #gvcfs = lambda wildcards expand(" -V {gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, chr = wildcards.chr),
         intervals = config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
@@ -65,7 +85,7 @@ rule GenomicDBImport:
             # "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && "
             # "{gatk} GenomicsDBImport --reader-threads {threads} -V {input.glist} \
             "{gatk} GenomicsDBImport --reader-threads {threads} -V {input.glist} \
-                --intervals {params.intervals}  -R {ref} --genomicsdb-workspace-path {output.dbi} --batch-size {params.batches} \
+                --intervals {params.intervals}  -R {ref} {params.method} {output.dbi} --batch-size {params.batches} \
              --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
 
 
