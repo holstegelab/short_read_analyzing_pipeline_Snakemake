@@ -65,12 +65,12 @@ def get_capture_kit_antitarget(wildcards):
 
 def get_capture_kit_bed(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.bed'
+    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.uniq.bed'
     return capture_kit_path
 
 rule autobin:
     input:
-        bam = rules.neewBams.output.NBams
+        bam = expand("{bam}/extracted_for_CNV/{sample_name}.extracted.bam", bam = config['BAM'], sample_name = sample_names)
     output:
         target = config['CNVKIT'] + '/target/{sample}_covered.bed',
     params:
