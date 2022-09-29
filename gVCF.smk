@@ -135,9 +135,3 @@ rule HaplotypeCaller:
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  \
                   --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
-
-
-
-
-
-

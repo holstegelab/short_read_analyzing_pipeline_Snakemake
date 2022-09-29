@@ -6,6 +6,7 @@ bcftools = config['bcftools']
 dragmap = config['dragmap']
 verifybamid2 = config['verifybamid2']
 
+
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -44,24 +45,45 @@ rule Genotype_all:
     default_target: True
 
 
-# print(chr_p)
-
+DBImethod = config.get("DBI_method", "new")
 # genotype
 # multiple samplefiles
-rule GenotypeDBI:
-    input:
-        rules.GenomicDBImport.output.dbi
-    output:
-        raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
-    log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
-    benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
-    params:
-        dbsnp = config['RES'] + config['dbsnp'],
-        intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
-    conda: "envs/preprocess.yaml"
-    priority: 40
-    shell:
-            "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
+if DBImethod == "new":
+    rule GenotypeDBI:
+        input:
+            dir = rules.GenomicDBImport.params.dbi,
+            test = rules.GenomicDBImport.output.ready
+        output:
+            raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
+        log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
+        benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
+        params:
+            dbsnp = config['RES'] + config['dbsnp'],
+            intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
+        conda: "envs/preprocess.yaml"
+        priority: 40
+        shell:
+                "{gatk} GenotypeGVCFs -R {ref} -V gendb://{input.dir} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
+elif DBImethod == "update":
+    rule GenotypeDBI:
+        input:
+            gvcf = rules.SelectVariants_For_Genotype.output.gvcf,
+            test = rules.GenomicDBImport.output.ready
+        output:
+            raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
+        log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
+        benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
+        params:
+            dbsnp = config['RES'] + config['dbsnp'],
+            intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
+        conda: "envs/preprocess.yaml"
+        priority: 40
+        shell:
+                "{gatk} GenotypeGVCFs -R {ref} -V {input.gvcf} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
+else:
+    raise ValueError(
+        "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
+    )
 
 rule Mergechrs:
     input:
