@@ -37,10 +37,10 @@ rule DBImport_all:
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
 
-rule make_glist:
-    input: g= expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,chr=main_chrs),
-    output: glist = ("{chr}_gvcfs.list"),
-    shell: "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.glist}"
+# rule make_glist:
+#     input: g= expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,chr=main_chrs),
+#     output: glist = ("{chr}_gvcfs.list"),
+#     shell: "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.glist}"
 
 
 DBImethod = config.get("DBI_method", "new")
@@ -64,8 +64,8 @@ else:
 #Genomics DBImport instead CombineGVCFs
 rule GenomicDBImport:
     input:
-        g = expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, chr = main_chrs),
-        glist = rules.make_glist.output.glist
+        g = expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, allow_missing=True),
+        # glist = rules.make_glist.output.glist
     log: config['LOG'] + '/' + "GenomicDBImport.{chr_p}.{chr}.log"
     benchmark: config['BENCH'] + "/GenomicDBImport.{chr_p}.{chr}.txt"
     conda: "envs/preprocess.yaml"
@@ -76,17 +76,17 @@ rule GenomicDBImport:
         ready = touch(temp('done_p{chr_p}.{chr}.txt'))
     threads: config['GenomicDBImport']['n']
     params:
+        inputs = expand(" -V {gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, allow_missing=True),
         dbi = os.path.join(path_to_dbi + "{chr}.p{chr_p}"),
         method = DBI_method_params,
         batches = '75',
-        #gvcfs = lambda wildcards expand(" -V {gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, chr = wildcards.chr),
         intervals = config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
     priority: 30
     # conda: "envs/preprocess.yaml"
     shell:
             # "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && "
             # "{gatk} GenomicsDBImport --reader-threads {threads} -V {input.glist} \
-            "{gatk} GenomicsDBImport --reader-threads {threads} -V {input.glist} \
+            "{gatk} GenomicsDBImport --reader-threads {threads} {params.inputs} \
                 --intervals {params.intervals}  -R {ref} {params.method} {params.dbi}/ --batch-size {params.batches} \
              --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"
 
@@ -101,5 +101,5 @@ if DBImethod == "update":
         params: SN = expand("-sn {samples}", samples = sample_names)
         conda: "envs/preprocess.yaml"
         shell:
-            "{gatk} SelectVariants -R {ref} -V gendb:///{input.gdbi} {params.SN} -O {output}"
+            "{gatk} SelectVariants -R {ref} -V gendb:///{input.gdbi} {params.SN} -O {output} --call-genotypes "
 

@@ -47,11 +47,14 @@ module SV_delly:
 module CNV_with_cnvkit_Module:
     snakefile: 'CNV_with_cnvkit_Module.smk'
     config: config
+module Combine_gVCF:
+    snakefile: 'Combine_gVCF.smk'
+    config: config
 use rule * from Aligner
 use rule * from gVCF
 use rule * from SV_delly
 use rule * from CNV_with_cnvkit_Module
-use rule * from DBImport
+# use rule * from DBImport
 use rule * from Genotype
 use rule * from Stat
 use rule * from VQSR
@@ -61,29 +64,41 @@ if VQSR == "RUN_VQSR":
     VQSR_rule = rules.VQSR_all.input,
 else:
     VQSR_rule = []
+
 SV = config.get("SV", "RUN_SV")
 if SV == "RUN_SV":
     SV_rule = rules.SV_delly_all.input
 else:
     SV_rule = []
+
 CNV = config.get("CNV", "RUN_CNV")
 if CNV == "RUN_CNV":
     CNV_rule = rules.CNV_with_cnvkit_Module_all.input
 else:
     CNV_rule = []
 
+gVCF_combine_method = config.get("Combine_gVCF_method", "COMBINE_GVCF")
+if gVCF_combine_method == "DBIMPORT":
+    rule_all_combine = rules.DBImport_all.input
+    use rule * from DBImport
+elif gVCF_combine_method == "COMBINE_GVCF":
+    rule_all_combine = rules.Combine_gVCF_all.input
+    use rule * from Combine_gVCF
+else:
+    raise ValueError(
+        "invalid option provided to 'Combine_gVCF_method'; please choose either 'COMBINE_GVCF' or 'DBIMPORT'."
+    )
+
 rule all:
     input:
         rules.Aligner_all.input,
         rules.gVCF_all.input,
         rules.Genotype_all.input,
+        rule_all_combine,
         VQSR_rule,
-        # rules.VQSR_all.input,
         rules.Stat_all.input,
         SV_rule,
         CNV_rule
-        # rules.SV_delly_all.input,
-        # rules.CNV_with_cnvkit_Module_all.input
     default_target: True
 
 
