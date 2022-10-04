@@ -46,6 +46,9 @@ class BamRecord:
     def is_primary(self):
         return not bool(self.flag & 0x900)
 
+    def is_proper(self):
+        return bool(self.flag & 0x2)
+
     def is_supplementary(self):
         return bool(self.flag & 0x800)
 
@@ -54,7 +57,14 @@ class BamRecord:
             return True
         else:
             return False
-    
+   
+    def get_align_length(self):
+        pos = 0
+        for (ctype, length) in self.split_cigar():
+            if ctype == 'M' or ctype == '=' or ctype == 'X':
+                pos += length
+        return pos
+
     def is_reversed(self):
         return bool(self.flag & 0x10)
 
@@ -123,12 +133,14 @@ class BamRecord:
             pos = 0
             while res[-1][0] in ['S','H']:
                 pos += res.pop()[1]
-            res.append(('SH',pos))
+            if pos:
+                res.append(('SH',pos))
             pos = 0
             while res[0][0] in ['S','H']:
                 pos += res[0][1]
                 res = res[1:]
-            res = [('SH',pos)] + res
+            if pos:                
+                res = [('SH',pos)] + res
         return res
             
     
@@ -181,22 +193,42 @@ class BamRecord:
         scigar = self.split_cigar()
         scigar = scigar[::-1] if self.is_reversed() else scigar
 
-        scigar, ref_pos_shift, read_pos = prune_cigar_end(scigar[::-1], read_start_pos)
-
+        scigar, ref_pos_shift, read_pos, hard_clip_start = prune_cigar_end(scigar[::-1], read_start_pos)
+        
         if all([e[0] in ['S','H'] for e in scigar]):
             return self.unmap()
         else:
             scigar = [('H', read_pos)] + scigar[::-1]
+            if hard_clip_start and (not 'YB' in self.tags and not 'ZB' in self.tags):
+                read_pos -= hard_clip_start
             read = self.copy()
             if not self.is_reversed():
+                s = read.orig_seq(include_postfix=False)
+                q = read.orig_qual(include_postfix=False)
                 read.pos = str(int(self.pos) + ref_pos_shift)
                 read.cigar = join_cigar(scigar)
-                read.tags['YB'] = read.orig_seq()[:read_pos]
-                read.tags['YQ'] = read.orig_qual()[:read_pos]
+                
+                if not read.is_supplementary() and s[:read_pos]:
+                    read.tags['YB'] = s[:read_pos]
+                    read.tags['YQ'] = q[:read_pos]
+                else:
+                    read.tags.pop('YB',None)
+                    read.tags.pop('YQ',None)
+                read.seq = s[read_pos:]
+                read.qual = q[read_pos:]
             else:
+                s = read.orig_seq(include_prefix=False)
+                q = read.orig_qual(include_prefix=False)
                 read.cigar = join_cigar(scigar[::-1])
-                read.tags['ZB'] = read.orig_seq()[-read_pos:]
-                read.tags['ZQ'] = read.orig_qual()[-read_pos:]
+                if not read.is_supplementary() and s[-read_pos:]:
+                    read.tags['ZB'] = s[-read_pos:]
+                    read.tags['ZQ'] = q[-read_pos:]
+                else:
+                    read.tags.pop('ZB',None)
+                    read.tags.pop('ZQ',None)
+
+                read.seq = s[:-read_pos]
+                read.qual = q[:-read_pos]
         return read
     
     def clip_end(self, read_end_pos, orig_orientation=True):
@@ -206,22 +238,42 @@ class BamRecord:
         scigar = self.split_cigar()
         scigar = scigar[::-1] if self.is_reversed() else scigar
 
-        scigar, ref_pos_shift, read_pos = prune_cigar_end(scigar, self.get_orig_read_length() - read_end_pos)
+        scigar, ref_pos_shift, read_pos, hard_clip_start = prune_cigar_end(scigar, self.get_orig_read_length() - read_end_pos)
 
         if all([e[0] in ['S','H'] for e in scigar]):
             return self.unmap()
         else:
             scigar = scigar + [('H', read_pos)]
+            if hard_clip_start and (not 'YB' in self.tags and not 'ZB' in self.tags):
+                read_pos -= hard_clip_start
             read = self.copy()
             if not self.is_reversed():
+                s = read.orig_seq(include_prefix=False)
+                q = read.orig_qual(include_prefix=False)
                 read.cigar = join_cigar(scigar)
-                read.tags['ZB'] = read.orig_seq()[-read_pos:]
-                read.tags['ZQ'] = read.orig_qual()[-read_pos:]
+                if not read.is_supplementary() and s[-read_pos:]:
+                    read.tags['ZB'] = s[-read_pos:]
+                    read.tags['ZQ'] = q[-read_pos:]
+                else:
+                    read.tags.pop('ZB',None)
+                    read.tags.pop('ZQ',None)
+
+                read.seq = s[:-read_pos]
+                read.qual = q[:-read_pos]
             else:
+                s = read.orig_seq(include_postfix=False)
+                q = read.orig_qual(include_postfix=False)
                 read.pos = str(int(self.pos) + ref_pos_shift)
                 read.cigar = join_cigar(scigar[::-1])
-                read.tags['YB'] = read.orig_seq()[:read_pos]
-                read.tags['YQ'] = read.orig_qual()[:read_pos]
+                if not read.is_supplementary() and s[:read_pos]:
+                    read.tags['YB'] = s[:read_pos]
+                    read.tags['YQ'] = q[:read_pos]
+                else:
+                    read.tags.pop('YB',None)
+                    read.tags.pop('YQ',None)
+
+                read.seq = s[read_pos:]
+                read.qual = q[read_pos:]
         return read
 
     def copy(self):
@@ -246,8 +298,8 @@ class BamRecord:
             startpos = scigar[0][1]
         if scigar[-1][0] == 'H':
             endpos = scigar[-1][1]
-        assert seq[startpos:self.get_orig_read_length() -endpos]  == read.seq
-        assert qual[startpos:self.get_orig_read_length() - endpos] == read.qual
+        assert seq[startpos:self.get_orig_read_length() -endpos]  == read.seq, f'{self.qname} Mismatching sequence'
+        assert qual[startpos:self.get_orig_read_length() - endpos] == read.qual, f'{self.qname} Mismatching quality'
         
         if startpos:
             read.tags['YB'] = seq[:startpos]
@@ -258,14 +310,16 @@ class BamRecord:
         return read
 
 
-    def orig_seq(self, orig_orientation=False):
-        res = ''.join([self.tags.get('YB',''), self.seq, self.tags.get('ZB','')])
+    def orig_seq(self, orig_orientation=False, include_prefix=True, include_postfix=True):
+        res = ''.join([self.tags.get('YB','') if include_prefix else '', self.seq, 
+                       self.tags.get('ZB','') if include_postfix else ''])
         if orig_orientation and self.is_reversed():
             res = str(Seq(res).reverse_complement())
         return res            
     
-    def orig_qual(self, orig_orientation=False):
-        res = ''.join([self.tags.get('YQ',''), self.qual, self.tags.get('ZQ','')])
+    def orig_qual(self, orig_orientation=False, include_prefix=True, include_postfix=True):
+        res = ''.join([self.tags.get('YQ','') if include_prefix else '', self.qual, 
+                        self.tags.get('ZQ','') if include_postfix else ''])
         if orig_orientation and self.is_reversed():
             res = res[::-1]
         return res
@@ -426,6 +480,11 @@ def prune_cigar_end(scigar, pos):
     read_pos = 0
     ref_pos = 0
     #pop till we are at read pos, then readd clip
+    if scigar[-1][0] == 'H':
+        hard_clip_start = scigar[-1][1]
+    else:
+        hard_clip_start = 0
+
     while scigar and read_pos < pos:
         ctype, length = scigar.pop()
         if ctype == 'S' or ctype == 'H':
@@ -455,11 +514,38 @@ def prune_cigar_end(scigar, pos):
         elif ctype == 'P':
             pass
         elif ctype == 'I':
-            ref_pos += length
             read_pos += length
         else:
             scigar.append((ctype,length))
             break
 
-    return (scigar, ref_pos, read_pos)
-   
+    return (scigar, ref_pos, read_pos, hard_clip_start)
+
+
+def process_readgroup(readgroup):
+    result = {}
+    for row in readgroup:
+        if row.flag & 0x100:
+            if row.flag & 0x800:
+                key = 'supplementary_secondary'
+            else:
+                key = 'secondary'
+        elif row.flag & 0x800:
+            key = 'supplementary'
+        else:
+            key = 'primary'
+
+        if key == 'primary':
+            assert not key in result, str(readgroup)
+            result['primary'] = row
+        else:
+            w = result.get(key,[])
+            w.append(row)
+            result[key] = w
+
+
+    #analysis flags
+
+
+    return result
+  

@@ -112,7 +112,7 @@ rule align_reads:
         os.path.join(config['BENCH'], "{sample}.{readgroup}.dragmap.txt")
     priority: 15
     resources:
-        mem_mb = get_mem_mb_align_reads
+        mem_mb = get_mem_mb_align_reads,
     shell:
         "dragen-os -r {params.ref_dir} -1 {input.for_f} -2 {input.rev_f} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads} 2> {log.dragmap_log} | samtools view -@ {threads} -o {output.bam}" 
         #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
@@ -138,9 +138,36 @@ rule merge_bam_alignment:
 	    samtools view --threads {threads} -o {output.bam}
 	   """
 
+rule dechimer:
+    input:
+        bam=rules.merge_bam_alignment.output.bam,
+        stats=rules.merge_bam_alignment.output.stats
+    output:
+        bam=os.path.join(config['BAM'], "{sample}.{readgroup}.dechimer.bam"),
+        stats=os.path.join(config['STAT'], "{sample}.{readgroup}.dechimer_stats.tsv")
+    params:
+        dechimer=srcdir(config['DECHIMER'])
+    run:
+        with open(output['stats'],'r') as f:
+            stats = [l for l in f.readline()]
+        
+        primary_aligned_bp = [e for e in stats if e.startswith('primary_aligned_bp')][0]
+        primary_soft_clipped_bp = [e for e in stats if e.startswith('primary_soft_clipped_bp')][0]
+        res = float(primary_soft_clipped_bp) / float(primary_aligned_bp + primary_soft_clipped_bp)
+
+        if res > float(config['DECHIMER_THRESHOLD']):
+            cmd = """samtools view -h --threads 4 {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} | samtools view --threads 4 -o {output.bam}"""
+            shell(cmd, conda_env='envs/pypy.yaml')
+        else:
+            cmd = """
+                    ln {input.bam} {output.bam}
+                    touch {output.stats}
+                   """
+            shell(cmd)
+
 rule sort_bam_alignment:
     input:
-        in_bam = rules.merge_bam_alignment.output.bam
+        in_bam = rules.dechimer.output.bam
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam")
     params:
@@ -214,65 +241,10 @@ rule markdup:
     threads: config['markdup']['n']
     conda: "envs/preprocess.yaml"
     shell:
-        "samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && "
-        "samtools index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
-
-
-# checkpoint cause we ned to check supplemetary ratio
-# if supp_ratio is too high run additional clean process
-checkpoint bamstats_all:
-    input:
-        rules.markdup.output.mdbams
-    output:
-        All_stats = os.path.join(config['STAT'],  '{sample}.bam_all.tsv')
-    threads: config['bamstats_all']['n']
-    params: py_stats = srcdir(config['BAMSTATS'])
-    conda: "envs/pypy.yaml"
-    shell:
-        "samtools view -s 0.05 -h {input} --threads {threads} | pypy {params.py_stats} stats > {output}"
-
-
-
-# this rule triggers in case of high supp_ratio
-# resort bam file before additional cleanup
-rule resort_by_readname:
-    input:
-        rules.markdup.output.mdbams
-    output: resort_bams = temp(os.path.join(config['BAM'], '{sample}_resort.bam'))
-    params: temp_sort = "resort_temporary_{sample}"
-    threads: config['resort_by_readname']['n']
-    conda: "envs/preprocess.yaml"
-    resources:
-        tmpdir=tmpdir
-    shell: "samtools sort -T {resources.tmpdir}/{params.temp_sort} -n -@ {threads} -o  {output} {input}"
-# additional cleanup with custom script
-rule declip:
-    input:
-        rules.resort_by_readname.output.resort_bams
-    output: declip_bam = temp(os.path.join(config['BAM'], '{sample}_declip.bam'))
-    threads: config['declip']['n']
-    params: declip = srcdir(config['DECLIP'])
-    conda: "envs/pypy.yaml"
-    shell:
-        "samtools view -s 0.05 -h {input} --threads {threads} | pypy {params.declip} > {output}"
-# back to original sort order after cleanup
-rule sort_back:
-    input:
-        rules.declip.output.declip_bam,
-    output:
-        ready_bams = os.path.join(config['BAM'], '{sample}.DeClipped.bam'),
-        All_stats= os.path.join(config['STAT'],  '{sample}.bam_all.additional_cleanup.tsv')
-    threads: config['sort_back']['n']
-    params:
-        py_stats= srcdir(config['BAMSTATS']),
-        temp_sort = "resort_back_temporary_{sample}"
-    conda: "envs/pypy.yaml"
-    resources:
-        tmpdir=tmpdir
-    shell:
-        "samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -o {output.ready_bams} {input} &&"
-        "samtools index -@ {threads} {output.ready_bams} &&"
-        "samtools view -s 0.05 -h {input} --threads {threads} | pypy {params.py_stats} stats > {output.All_stats}"
+        """
+            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && 
+            samtools index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
+        """            
 
 # mapped cram
 rule mCRAM:

@@ -41,8 +41,8 @@ TMPDIR: '/scratch-shared/'
 #custom scripts
 BAMMERGE: 'bam_merge.py'
 BAMSTATS: 'bam_stats.py'
-DECLIP: 'bam_clean_v2.py'
-
+DECHIMER: 'bam_dechimer.py'
+DECHIMER_THRESHOLD: 0.005
 #path to ref and add ref files
 ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_dir: 'Ref/'

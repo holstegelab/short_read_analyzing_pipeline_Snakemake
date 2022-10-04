@@ -123,24 +123,18 @@ class PairedFastQReader(threading.Thread):
 
 
 def derive_missing_sequence_tags(read, seq, qual, stats):
-
-    if (read.flag & 0x900) != 0.0: # not a primary read
-        if (read.flag & 0x800):
-            stats['supplementary_alignments'] = stats.get('supplementary_alignments',0) + 1
-            stats['supplementary_aligned_bp'] = stats.get('supplementary_aligned_bp',0) + read.get_aligned_read_length()
-        elif (read.flag & 0x100):            
-            stats['secondary_alignments'] = stats.get('secondary_alignments',0) + 1
-            stats['secondary_aligned_bp'] = stats.get('secondary_aligned_bp',0) + read.get_aligned_read_length()
-        return (read.cigar,{})
-
     
     stats['primary_reads'] = stats.get('primary_reads',0) + 1
     stats['primary_aligned_bp'] = stats.get('primary_aligned_bp',0) + read.get_aligned_read_length()
 
+    if 'S' in read.cigar:
+        c = sum([e[1] for e in read.split_cigar() if e[0] == 'S'])
+        stats['primary_soft_clipped_bp']  = stats.get('primary_soft_clipped_bp',0) + c
+
     clipping_length = len(seq) - len(read.seq)
 
     if clipping_length == 0: #nothing is missing w.r.t. fastq sequence
-        return (read.cigar,{})
+        return (read.cigar,{}, 0)
     
     #get missing sequence/qualities
     tag_seq = seq[len(read.seq):]   
@@ -190,7 +184,29 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
         new_tags = {'ZB': tag_seq, 'ZQ': tag_qual}
         ncigar = '*'
 
-    return (ncigar, new_tags)                
+    return (ncigar, new_tags, len(tag_seq))                
+
+def adapt_supplementary(read, length, stats):
+    stats['supplementary_alignments'] = stats.get('supplementary_alignments',0) + 1
+    stats['supplementary_aligned_bp'] = stats.get('supplementary_aligned_bp',0) + read.get_aligned_read_length()
+    if length == 0:
+        return
+
+    stats['supplementary_alignments_cigar_adapted'] = stats.get('supplementary_alignments_cigar_adapted',0) + 1
+    cigar = read.split_cigar(orig_orientation=True)
+    
+    if cigar[-1][0] == 'H':
+        clip_length = cigar[-1][1]
+        cigar = cigar[:-1]
+    else:
+        clip_length = 0
+    cigar.append(('H', clip_length + length))
+
+
+    if read.is_reversed():
+        cigar = cigar[::-1]
+    read.cigar = join_cigar(cigar)
+    read.tags['XT'] = length
 
 def process(querygroup, fastqrecord, stats):
     name, seq1, seq2, qual1, qual2 = fastqrecord
@@ -199,19 +215,31 @@ def process(querygroup, fastqrecord, stats):
     stats['fragments'] = stats.get('fragments',0) + 1
 
     stats['total_bp'] = stats.get('total_bp',0) + len(seq1) + len(seq2)
+    
+    reads1 = process_readgroup([row for row in querygroup if row.flag & 0x40])
+    reads2 = process_readgroup([row for row in querygroup if row.flag & 0x80])
+
+
+    r1_ncigar, r1_tags, r1_len = derive_missing_sequence_tags(reads1['primary'], seq1, qual1, stats)
+    reads1['primary'].cigar = r1_ncigar
+    reads1['primary'].setTagValues(**r1_tags)
+    if r1_len:
+        reads1['primary'].tags['XT'] = r1_len
+
+    r2_ncigar, r2_tags, r2_len = derive_missing_sequence_tags(reads2['primary'], seq2, qual2, stats)
+    reads2['primary'].cigar = r2_ncigar
+    reads2['primary'].setTagValues(**r2_tags)
+    if r2_len:
+        reads2['primary'].tags['XT'] = r2_len
    
-    for read in querygroup:
-        tags = []
-        if (read.flag & 0x40): # r1
-            ncigar, tags = derive_missing_sequence_tags(read, seq1, qual1, stats)
-        elif (read.flag & 0x80):
-            ncigar, tags = derive_missing_sequence_tags(read, seq2, qual2, stats)
-        if tags:
-            read.cigar = ncigar
-            read.setTagValues(**tags)
+    for r in reads1.get('supplementary',[]):
+        adapt_supplementary(r, r1_len, stats)
+    for r in reads2.get('supplementary',[]):
+        adapt_supplementary(r, r2_len, stats)
 
     rg = querygroup[0].getTagValue('RG')
     return (querygroup,rg)
+
 
 
 def fastqtosam(fastqrecord, rg, stats):
@@ -324,9 +352,14 @@ if __name__ == '__main__':
         del stats['size_r1']
         del stats['size_r2']
 
+        stats['primary_soft_clipped_bp_ratio'] = float(stats.get('primary_soft_clipped_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('primary_soft_clipped_bp',0.0))
+        stats['supplementary_bp_ratio'] = float(stats.get('supplementary_aligned_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('supplementary_aligned_bp',0.0))
         with open(args.s,'wt') as f:            
             for key, value in stats.items():
-                f.write('%s\t %d\n' % (key,value))
+                if isinstance(value, float):
+                    f.write('%s\t %.5f\n' % (key,value))
+                else:
+                    f.write('%s\t %d\n' % (key,value))
             f.write('\nadapter_length\tcount_read1\tcount_read2\n')
             for pos in range(1,size_stats.shape[0]):
                 f.write('%d\t%d\t%d\n' % (pos,size_stats[pos,0], size_stats[pos,1]))

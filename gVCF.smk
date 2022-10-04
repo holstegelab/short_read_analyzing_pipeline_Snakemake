@@ -34,29 +34,12 @@ rule gVCF_all:
 
 
 
-# check amount of supplementary reads
-# if value higher than 0.5% - run additional cleanup steps
-# from checkpoint step
-# trigger this additional steps only in case if these steps necessary
-def check_supp(wildcards):
-    with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
-        lines = f.readlines()
-        # 4th column (3rd if 0-based) is column with supplementary fraction
-        if float((lines[1].split()[3])) >= float(0.005):
-            # return cleaned bam in case if clean up necessary
-            return rules.sort_back.output.ready_bams
-            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.DeClipped.bam')
-        else:
-            # return original MD bam if clean up not necessary
-            return rules.markdup.output.mdbams
-            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.markdup.bam')
-
 # calibrate model
 # step for HaplotypeCaller in dragen mode
 # for better resolution in complex regions
 rule CalibrateDragstrModel:
     input:
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output:
         dragstr_model = config['BAM'] + "/{sample}-dragstr.txt"
     priority: 16
@@ -74,7 +57,7 @@ rule CalibrateDragstrModel:
 #
 rule verifybamid:
     input:
-        check_supp
+        rules.markdup.output.mdbams
     output:
         VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
     # end of this file hardcoded in Haplotypecaller and read_contam_w
@@ -112,7 +95,7 @@ def read_contam_w(wildcards):
 rule HaplotypeCaller:
     input:
         # check what bam file we need to use (with or without additional cleanup)
-        bams = check_supp,
+        bams = rules.markdup.output.mdbams,
         model = rules.CalibrateDragstrModel.output.dragstr_model,
         contam= rules.verifybamid.output.VBID_stat,
         interval= get_chrom_capture_kit,

@@ -58,7 +58,7 @@ rule Stat_all:
 
 # basic stats
 # include hom-het ratio, titv ratio, etc.
-rule Basic_stats:
+rule basic_stats:
     input:
         rules.norm.output.normVCF
     output:
@@ -69,7 +69,7 @@ rule Basic_stats:
     benchmark: os.path.join(config['BENCH'], "VCF_stats.txt")
     params: dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
-    threads: config['Basic_stats']['n']
+    threads: config['basic_stats']['n']
     shell:
         "gatk CollectVariantCallingMetrics \
         -R {ref} -I {input} -O stats/BASIC \
@@ -78,27 +78,15 @@ rule Basic_stats:
 # return interval_list file instead of bed file
 def get_capture_kit_interval_list(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.interval_list'
+    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.interval_list')
     return capture_kit_path
 
-def check_supp(wildcards):
-    with checkpoints.bamstats_all.get(sample=wildcards.sample).output[0].open() as f:
-        lines = f.readlines()
-        # 4th column (3rd if 0-based) is column with supplementary fraction
-        if float((lines[1].split()[3])) >= float(0.005):
-            # return cleaned bam in case if clean up necessary
-            return rules.sort_back.output.ready_bams
-            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.DeClipped.bam')
-        else:
-            # return original MD bam if clean up not necessary
-            return rules.markdup.output.mdbams
-            # return os.path.join(config['BAM'] + '/' + str(wildcards) + '.markdup.bam')
 
 #hsmetrics
 #include off-target metrics
-rule HS_stats:
+rule hs_stats:
     input:
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output:
         HS_metrics=os.path.join(config['STAT'], "{sample}_hs_metrics")
     log: os.path.join(config['LOG'], "HS_stats_{sample}.log")
@@ -122,7 +110,7 @@ rule HS_stats:
 
 rule Artifact_stats:
     input:
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output:
         Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
         Pre_adapter = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
@@ -145,7 +133,7 @@ rule Artifact_stats:
 
 rule OXOG_metrics:
     input:
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output:
         Artifact_matrics = os.path.join(config['STAT'], "{sample}.OXOG")
     priority: 99
@@ -161,7 +149,7 @@ rule OXOG_metrics:
 
 rule samtools_stat:
     input:
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output: samtools_stat = os.path.join(config['STAT'], "{sample}_samtools.stat")
     priority: 99
     log: os.path.join(config['LOG'], "samtools_{sample}.log")
@@ -182,7 +170,7 @@ def get_capture_kit_bed(wildcards):
 
 rule samtools_stat_exome:
     input:
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output: samtools_stat_exome = os.path.join(config['STAT'], "{sample}_samtools.exome.stat")
     priority: 99
     params:
@@ -194,15 +182,31 @@ rule samtools_stat_exome:
     shell:
         "samtools stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
+rule bamstats_all:
+    input:
+        # very annoying bug here
+        # if in input 2 functions and one of them is check chekpoint (rules.markdup.output.mdbams and get_capture_kit_bed here was as example)
+        # first command has not been executed
+        # and in shell wildcard (instead of iutput of function) has putted
+        bam = rules.markdup.output.mdbams
+    output:
+        All_exome_stats = os.path.join(config['STAT'],'{sample}.bam_all.tsv')
+    threads: config['bamstats_all']['n']
+    params:
+        py_stats = srcdir(config['BAMSTATS'])
+    conda: "envs/pypy.yaml"
+    shell:
+        "samtools view -s 0.05 -h {input.bam} --threads {threads}  | pypy {params.py_stats} stats > {output}"
+
 rule bamstats_exome:
     input:
         # very annoying bug here
-        # if in input 2 functions and one of them is check chekpoint (check_supp and get_capture_kit_bed here was as example)
+        # if in input 2 functions and one of them is check chekpoint (rules.markdup.output.mdbams and get_capture_kit_bed here was as example)
         # first command has not been executed
         # and in shell wildcard (instead of iutput of function) has putted
-        bam = check_supp
+        bam = rules.markdup.output.mdbams
     output:
-        All_exome_stats = config['STAT'] + '/{sample}.bam_exome.tsv'
+        All_exome_stats = os.path.join(config['STAT'], '{sample}.bam_exome.tsv')
     threads: config['bamstats_exome']['n']
     params:
         py_stats = srcdir(config['BAMSTATS']),
@@ -210,14 +214,6 @@ rule bamstats_exome:
     conda: "envs/pypy.yaml"
     shell:
         "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | pypy {params.py_stats} stats > {output}"
-
-def check_supp_stats(sample):
-    with checkpoints.bamstats_all.get(sample=sample).output[0].open() as f:
-        lines = f.readlines()
-        if float((lines[1].split()[3])) >= float(0.005):
-            return os.path.join(config['STAT'],  f'{sample}.bam_all.additional_cleanup.tsv')
-        else:
-            return os.path.join(config['STAT'], f'{sample}.bam_all.tsv')
 
 
 def get_quality_stats(wildcards):
@@ -229,7 +225,7 @@ def get_quality_stats(wildcards):
         files.append(os.path.join(config['STAT'],  f"{sample}_samtools.stat"))
         files.append(os.path.join(config['STAT'],  f'{sample}_samtools.exome.stat'))
         files.append(os.path.join(config['STAT'], 'contam',  f'{sample}_verifybamid.pca2.selfSM'))
-        files.append(check_supp_stats(sample))
+        files.append(os.path.join(config['STAT'], f'{sample}.bam_all.tsv'))
         files.append(os.path.join(config['STAT'], f'{sample}.bam_exome.tsv'))
         files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_summary_metrics'))
         files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.bait_bias_summary_metrics'))

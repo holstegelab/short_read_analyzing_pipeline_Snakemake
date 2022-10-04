@@ -101,10 +101,10 @@ norm:
         n: 1
         mem: 5000
         time: 600
-Basic_stats:
+basic_stats:
         n: 2
         mem: 4500
-HS_stats:
+hs_stats:
         n: 1
         mem: 7500
         time: 1000
