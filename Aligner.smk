@@ -243,7 +243,7 @@ rule markdup:
     shell:
         """
             samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup} && 
-            samtools index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}"
+            samtools index -@ {threads} {output.mdbams} 2> {log.samtools_index_md}
         """            
 
 # mapped cram
