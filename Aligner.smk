@@ -147,7 +147,7 @@ rule dechimer:
         stats=os.path.join(config['STAT'], "{sample}.{readgroup}.dechimer_stats.tsv")
     params:
         dechimer=srcdir(config['DECHIMER'])
-    threads: config['dechimer']
+    threads: config['dechimer']['n']
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]
