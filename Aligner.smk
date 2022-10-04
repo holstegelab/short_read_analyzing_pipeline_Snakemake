@@ -148,11 +148,11 @@ rule dechimer:
     params:
         dechimer=srcdir(config['DECHIMER'])
     run:
-        with open(output['stats'],'r') as f:
-            stats = [l for l in f.readline()]
-        
-        primary_aligned_bp = [e for e in stats if e.startswith('primary_aligned_bp')][0]
-        primary_soft_clipped_bp = [e for e in stats if e.startswith('primary_soft_clipped_bp')][0]
+        with open(input['stats'],'r') as f:
+            stats = [l for l in f.readlines()]
+        print(stats)            
+        primary_aligned_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_aligned_bp')][0]
+        primary_soft_clipped_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp')][0]
         res = float(primary_soft_clipped_bp) / float(primary_aligned_bp + primary_soft_clipped_bp)
 
         if res > float(config['DECHIMER_THRESHOLD']):
