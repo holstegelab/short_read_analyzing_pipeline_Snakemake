@@ -49,6 +49,6 @@ Analyzing include several steps:
 
 ## Additional notes
 
-First step (**Aligner.smk**) require high amount of RAM. Make sure you run this step on suitable computing node (usually it's *fat* on Snellius cluster).
+First step (**Aligner.smk**) require high amount of RAM and runs unstable on **PARTIAL** thin nodes. To avoid bugs please use **exclusive thin nodes** or **fat (part or exclusive)** node
 You can run this step on *fat* node with option **--snakefile Aligner.smk** and after it's finish run all other steps on *thin* nodes with option **--snakefile Snakefile**
 
