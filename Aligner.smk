@@ -147,6 +147,7 @@ rule dechimer:
         stats=os.path.join(config['STAT'], "{sample}.{readgroup}.dechimer_stats.tsv")
     params:
         dechimer=srcdir(config['DECHIMER'])
+    threads: config['dechimer']
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]
@@ -156,7 +157,7 @@ rule dechimer:
         res = float(primary_soft_clipped_bp) / float(primary_aligned_bp + primary_soft_clipped_bp)
 
         if res > float(config['DECHIMER_THRESHOLD']):
-            cmd = """samtools view -h --threads 4 {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} | samtools view --threads 4 -o {output.bam}"""
+            cmd = """samtools view -h --threads {threads} {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} | samtools view --threads {threads} -o {output.bam}"""
             shell(cmd, conda_env='envs/pypy.yaml')
         else:
             cmd = """
