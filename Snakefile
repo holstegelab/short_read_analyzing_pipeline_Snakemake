@@ -59,11 +59,15 @@ use rule * from Genotype
 use rule * from Stat
 use rule * from VQSR
 
-VQSR = config.get("VQSR", "RUN_VQSR")
+VQSR = config.get("VQSR", "NO")
 if VQSR == "RUN_VQSR":
     VQSR_rule = rules.VQSR_all.input,
-else:
+elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
     VQSR_rule = []
+else:
+    raise ValueError(
+        "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR'."
+    )
 
 SV = config.get("SV", "RUN_SV")
 if SV == "RUN_SV":

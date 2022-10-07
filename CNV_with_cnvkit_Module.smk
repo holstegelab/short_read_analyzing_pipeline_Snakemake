@@ -48,7 +48,8 @@ rule CNV_with_cnvkit_Module_all:
 # bams that align only on "main" chromosomes
 rule neewBams:
     input:
-        bam_files = rules.markdup.output.mdbams
+        bam_files = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         NBams = config['BAM'] + '/extracted_for_CNV/{sample}.extracted.bam'
     params: interval = config['RES'] + config['main_chr_bed']
@@ -56,7 +57,7 @@ rule neewBams:
     threads: config['neewBams']['n']
 
     shell:
-        "{samtools} view -@ {threads} -L {params.interval} -b -o {output} {input}"
+        "{samtools} view -@ {threads} -L {params.interval} -b -o {output} {input.bam_files}"
 
 def get_capture_kit_antitarget(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
@@ -70,7 +71,8 @@ def get_capture_kit_bed(wildcards):
 
 rule autobin:
     input:
-        bam = expand("{bam}/extracted_for_CNV/{sample_name}.extracted.bam", bam = config['BAM'], sample_name = sample_names)
+        bam = expand("{bam}/extracted_for_CNV/{sample_name}.extracted.bam", bam = config['BAM'], sample_name = sample_names),
+        bai = expand("{bam}/extracted_for_CNV/{sample_name}.extracted.bam.bai", bam = config['BAM'], sample_name = sample_names),
     output:
         target = config['CNVKIT'] + '/target/{sample}_covered.bed',
     params:

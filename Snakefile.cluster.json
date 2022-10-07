@@ -37,6 +37,10 @@ markdup:
         n: 2
         mem: 200
         time: 1100
+index_sort:
+        n: 4
+markdup_index:
+        n: 4
 bamstats_all:
         n: 4
         mem: 6000

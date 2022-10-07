@@ -33,7 +33,9 @@ rule Combine_gVCF_all:
     default_target: True
 
 rule reblock_gvcf:
-    input: gvcf = rules.HaplotypeCaller.output.gvcf
+    input:
+        gvcf = rules.HaplotypeCaller.output.gvcf,
+        vcfidx= rules.norm_idx.output.idx
     output: gvcf_reblock = config['gVCF'] + "/reblock/{chr}/{sample}.{chr}.g.vcf.gz"
     log: Reblock=config['LOG'] + "/{sample}_{chr}_reblock.log"
     benchmark:

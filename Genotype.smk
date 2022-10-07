@@ -127,18 +127,43 @@ rule Mergechrs:
         vcf = config['VCF'] + "/ALL_chrs.vcf.gz"
     priority: 45
     shell:
-        "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log} && {gatk} IndexFeatureFile -I {output} "
+        "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log}"
+
+rule index_mergechrs:
+    input: rules.Mergechrs.output.vcf
+    conda: "envs/preprocess.yaml"
+    log: config['LOG'] + '/' + "Mergechrsed_index.log"
+    benchmark: config['BENCH'] + "/Mergechrsed_index.txt"
+    output:
+        vcfidx = config['VCF'] + "/ALL_chrs.vcf.gz.idx"
+    priority: 45
+    shell:
+        "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
+
 
 rule norm:
     input:
-        rules.Mergechrs.output.vcf
+        vcf = rules.Mergechrs.output.vcf,
+        idx = rules.index_mergechrs.output.vcfidx
     output:
         normVCF=config['VCF_Final'] + "/Merged_norm.vcf",
-        idx=config['VCF_Final'] + "/Merged_norm.vcf.idx"
     log: config['LOG'] + '/' + "normalization.log"
     benchmark: config['BENCH'] + "/normalization.txt"
     priority: 80
     conda: "envs/preprocess.yaml"
     shell:
-        "{bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF} 2> {log} && {gatk} IndexFeatureFile -I {output.normVCF} -O {output.idx} "
+        "({bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF}) 2> {log}"
+
+rule norm_idx:
+    input:
+        normVCF = rules.norm.output.normVCF
+    output:
+        idx=config['VCF_Final'] + "/Merged_norm.vcf.idx"
+    log: config['LOG'] + '/' + "normalization.log"
+    benchmark: config['BENCH'] + "/idx_normalizated.txt"
+    priority: 80
+    conda: "envs/preprocess.yaml"
+    shell:
+        "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
+
 

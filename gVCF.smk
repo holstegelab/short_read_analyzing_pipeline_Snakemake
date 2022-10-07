@@ -39,7 +39,8 @@ rule gVCF_all:
 # for better resolution in complex regions
 rule CalibrateDragstrModel:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         dragstr_model = config['BAM'] + "/{sample}-dragstr.txt"
     priority: 16
@@ -49,7 +50,7 @@ rule CalibrateDragstrModel:
     log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
     shell:
-        "{gatk} CalibrateDragstrModel -R {ref} -I {input} -O {output} -str {params.str_ref} 2>{log}"
+        "{gatk} CalibrateDragstrModel -R {ref} -I {input.bam} -O {output} -str {params.str_ref} 2>{log}"
 
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
@@ -57,11 +58,13 @@ rule CalibrateDragstrModel:
 #
 rule verifybamid:
     input:
-        rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
     # end of this file hardcoded in Haplotypecaller and read_contam_w
     threads: config['verifybamid']['n']
+    benchmark: config['BENCH'] + "/{sample}_verifybamid.txt"
     priority: 35
     params:
         VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
@@ -69,7 +72,7 @@ rule verifybamid:
     conda: 'envs/verifybamid.yaml'
     shell:
         """
-        verifybamid2 --BamFile {input} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
+        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
         """
 
 def get_chrom_capture_kit(wildcards):
@@ -99,6 +102,7 @@ rule HaplotypeCaller:
         model = rules.CalibrateDragstrModel.output.dragstr_model,
         contam= rules.verifybamid.output.VBID_stat,
         interval= get_chrom_capture_kit,
+        bai = rules.markdup_index.output.mdbams_bai
         # command to get path to capture_kit interval list from SAMPLEFILE
     output:
         gvcf= config['gVCF'] + "/{chr}/{sample}.{chr}.g.vcf.gz"

@@ -86,7 +86,8 @@ def get_capture_kit_interval_list(wildcards):
 #include off-target metrics
 rule hs_stats:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         HS_metrics=os.path.join(config['STAT'], "{sample}_hs_metrics")
     log: os.path.join(config['LOG'], "HS_stats_{sample}.log")
@@ -103,14 +104,15 @@ rule hs_stats:
     conda: "envs/preprocess.yaml"
     shell:
         "gatk CollectHsMetrics \
-            -I {input} -R {ref} -BI {params.interval} -TI {params.interval} \
+            -I {input.bam} -R {ref} -BI {params.interval} -TI {params.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"
 
 rule Artifact_stats:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
         Pre_adapter = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
@@ -133,7 +135,8 @@ rule Artifact_stats:
 
 rule OXOG_metrics:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         Artifact_matrics = os.path.join(config['STAT'], "{sample}.OXOG")
     priority: 99
@@ -149,7 +152,8 @@ rule OXOG_metrics:
 
 rule samtools_stat:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output: samtools_stat = os.path.join(config['STAT'], "{sample}_samtools.stat")
     priority: 99
     log: os.path.join(config['LOG'], "samtools_{sample}.log")
@@ -170,7 +174,8 @@ def get_capture_kit_bed(wildcards):
 
 rule samtools_stat_exome:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output: samtools_stat_exome = os.path.join(config['STAT'], "{sample}_samtools.exome.stat")
     priority: 99
     params:
@@ -188,7 +193,8 @@ rule bamstats_all:
         # if in input 2 functions and one of them is check chekpoint (rules.markdup.output.mdbams and get_capture_kit_bed here was as example)
         # first command has not been executed
         # and in shell wildcard (instead of iutput of function) has putted
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         All_exome_stats = os.path.join(config['STAT'],'{sample}.bam_all.tsv')
     threads: config['bamstats_all']['n']
@@ -204,7 +210,8 @@ rule bamstats_exome:
         # if in input 2 functions and one of them is check chekpoint (rules.markdup.output.mdbams and get_capture_kit_bed here was as example)
         # first command has not been executed
         # and in shell wildcard (instead of iutput of function) has putted
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai
     output:
         All_exome_stats = os.path.join(config['STAT'], '{sample}.bam_exome.tsv')
     threads: config['bamstats_exome']['n']
