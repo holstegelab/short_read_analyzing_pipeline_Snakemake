@@ -243,7 +243,7 @@ rule merge_rgs:
             cmd = "samtools merge -@ {threads} {output} {input.bam} 2> {log}"
             shell(cmd,conda_env='envs/preprocess.yaml')
         else:
-            cmd = "ln {input} {output}"
+            cmd = "ln {input.bam} {output}"
             shell(cmd)
 
 rule markdup:
