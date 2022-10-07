@@ -42,12 +42,14 @@ rule delly_call:
     output:
         call = config['DELLY'] + '/first_call/{sample}.bcf'
     conda: 'envs/preprocess.yaml'
+    benchmark: os.path.join(config['BENCH'],'{sample}_dellycall.txt')
     shell: "delly call -g {ref} -o {output} {input}"
 
 rule delly_merge:
     input: expand('{delly}/first_call/{sample}.bcf', delly = config['DELLY'], sample = sample_names)
     output: config['DELLY'] + 'Merged_sites.bcf'
     conda: 'envs/preprocess.yaml'
+    benchmark: os.path.join(config['BENCH'],'{sample}_dellymerge.txt')
     shell: "delly merge -o {output} {input}"
 
 rule delly_genotype:
@@ -56,6 +58,7 @@ rule delly_genotype:
         sites = rules.delly_merge.output
     output: calls = config['DELLY'] + '/geno_call/{sample}_geno.bcf'
     conda: 'envs/preprocess.yaml'
+    benchmark: os.path.join(config['BENCH'],'{sample}_dellygenotype.txt')
     shell: "delly call -g {ref} -v {input.sites} -o {output.calls} {input.bam}"
 
 rule bcf_merge:
@@ -63,18 +66,21 @@ rule bcf_merge:
     output:
         bcf_merge  = config['DELLY'] + '/Merged_Genotyped.bcf',
     conda: 'envs/preprocess.yaml'
-    shell: "bcftools merge -m id -O b -o {output.bcf_merge} {input} && bcftools index {output.bcf_merge}"
+    benchmark: os.path.join(config['BENCH'],'{sample}_dbcfmerge.txt')
+    shell: "(bcftools merge -m id -O b -o {output.bcf_merge} {input} && bcftools index {output.bcf_merge})"
 
 rule filter:
     input: rules.bcf_merge.output.bcf_merge
     output: bcf_filter = os.path.join(config['DELLY'], 'Filtred_SV.bcf')
     conda: 'envs/preprocess.yaml'
+    benchmark: os.path.join(config['BENCH'],'{sample}_svfilter.txt')
     shell: "delly filter -f germline -o {output} {input}"
 
 rule vcf_prod:
     input: rules.filter.output
     output: os.path.join(config['DELLY'], 'Filtred_SV.vcf')
     conda: 'envs/preprocess.yaml'
+    benchmark: os.path.join(config['BENCH'],'{sample}_svvcf_prod.txt')
     shell: "bcftools convert -O z -o {output} {input}"
 
 

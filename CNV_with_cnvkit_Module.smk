@@ -53,6 +53,7 @@ rule neewBams:
     output:
         NBams = config['BAM'] + '/extracted_for_CNV/{sample}.extracted.bam'
     params: interval = config['RES'] + config['main_chr_bed']
+    benchmark: os.path.join(config['BENCH'],'{sample}_newBaams.txt')
     conda: 'envs/preprocess.yaml'
     threads: config['neewBams']['n']
 
@@ -80,6 +81,7 @@ rule autobin:
             iBED = get_capture_kit_bed,
             antitarget = get_capture_kit_antitarget,
             anno = config['RES'] + config['refflat']
+    benchmark: os.path.join(config['BENCH'], 'autobin.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py autobin {params.inputs} --annotate {params.anno} --target-output-bed {output.target} -f {ref} -t {params.iBED} --antitarget-output-bed {params.antitarget}"
@@ -91,7 +93,7 @@ rule coverage_target:
         target_cov = config['CNVKIT'] + '/coverage/{sample}.targetcoverage.cnn'
     params:
         iBED = get_capture_kit_bed,
-    benchmark: 'bench/{sample}_target_cov.txt'
+    benchmark: os.path.join(config['BENCH'],'{sample}_coverage_target.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py coverage {input.bam} {params.iBED} -o {output.target_cov}"
@@ -104,7 +106,7 @@ rule coverage_antitarget:
         antitarget_cov = config['CNVKIT'] + '/coverage/{sample}.antitargetcoverage.cnn'
     params:
         anti_BED = get_capture_kit_antitarget
-    benchmark: 'bench/{sample}_antitarget_cov.txt'
+    benchmark: os.path.join(config['BENCH'],'{sample}_coverage_antitarget.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py coverage {input.bam} {params.anti_BED} -o {output.antitarget_cov}"
@@ -116,6 +118,7 @@ rule reference:
     output:
         cnv_ref = config['CNVKIT'] + '/Reference.cnn'
     params: cnvkit = config['CNVKIT']
+    benchmark: os.path.join(config['BENCH'],'ReferenceCNN.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py reference {params.cnvkit}/coverage/*coverage.cnn -f {ref} -o {output}"
@@ -127,7 +130,7 @@ rule fix:
         Ref = rules.reference.output.cnv_ref
     output:
         corrected = config['CNVKIT'] + '/fix/{sample}.cnr'
-    benchmark: 'bench/{sample}_fix.txt'
+    benchmark: os.path.join(config['BENCH'],'{sample}_fixcnn.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py fix {input.target_cov} {input.antitarget_cov} {input.Ref} -o {output}"
@@ -137,7 +140,7 @@ rule segment:
         rules.fix.output.corrected
     output:
         segmeted = config['CNVKIT'] + '/seg/{sample}.cns'
-    benchmark: 'bench/{sample}_seg.txt'
+    benchmark: os.path.join(config['BENCH'],'{sample}_seg.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py segment {input} -o {output}"
@@ -148,6 +151,7 @@ rule plot_scatter:
         cns = rules.segment.output.segmeted
     output:
         scatter = config['CNVKIT'] + '/plots/scatter/{sample}-scatter.pdf'
+    benchmark: os.path.join(config['BENCH'],'{sample}_plotscatter.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py scatter {input.cnr} -s {input.cns} -o {output}"
@@ -158,6 +162,7 @@ rule plot_diagram:
         cns = rules.segment.output.segmeted
     output:
         scatter = config['CNVKIT'] + '/plots/diagram/{sample}-diagram.pdf'
+    benchmark: os.path.join(config['BENCH'],'{sample}_plotdiagram.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py diagram {input.cnr} -s {input.cns} -o {output}"
@@ -167,7 +172,7 @@ rule call:
         rules.segment.output.segmeted
     output:
         call = config['CNVKIT'] + '/call/{sample}.cal.cns'
-    benchmark:'bench/{sample}_call.txt'
+    benchmark: os.path.join(config['BENCH'],'{sample}_call_cnv.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py call {input} -o {output}"
@@ -180,6 +185,7 @@ rule define_sex:
         antitarget = expand('{cnvkit}/coverage/{sample}.antitargetcoverage.cnn',sample=sample_names, cnvkit = config['CNVKIT']),
     output:
         config['CNVKIT'] + '/stats/Sex_sample_table.tsv'
+    benchmark: os.path.join(config['BENCH'],'sexdefine.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py sex {input.ref} {input.target} {input.antitarget} -o {output}"
@@ -191,6 +197,7 @@ rule annotate_cns:
         a_cns = 'cnvkit/annotate/{sample}_annotate_call.cns'
     params:
         anno = config['RES'] + config['refflat']
+    benchmark: os.path.join(config['BENCH'],'{sample}_annotatecns.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnv_annotate.py {params.anno} {input} -o {output}"
@@ -202,6 +209,7 @@ rule annotate_cnr:
         a_cnr = config['CNVKIT'] + '/annotate/{sample}_annotate_fix.cnr'
     params:
         anno = config['RES'] + config['refflat']
+    benchmark: os.path.join(config['BENCH'],'{sample}_annotatecnr.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnv_annotate.py {params.anno} {input} -o {output}"
@@ -213,6 +221,7 @@ rule genemetrics:
         cnr = rules.annotate_cnr.output.a_cnr
     output:
         config['CNVKIT'] + '/stats/genemetric/{sample}_genemetric.stat'
+    benchmark: os.path.join(config['BENCH'],'{sample}_genemetrics.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py genemetrics {input.cnr} -s {input.cns} -o {output}"
@@ -223,6 +232,7 @@ rule metrics:
         cns = expand('{cnvkit}/call/{sample}.cal.cns', sample = sample_names, cnvkit = config['CNVKIT']),
     output:
         config['CNVKIT'] + '/stats/Metrics_table.tsv'
+    benchmark: os.path.join(config['BENCH'],'{sample}_cnvmetrics.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py metrics {input.cnr} -s {input.cns} -o {output}"
@@ -234,6 +244,7 @@ rule breaks:
     output:
         config['CNVKIT'] + '/breaks/{sample}_breaks'
     conda: 'envs/preprocess.yaml'
+    benchmark: os.path.join(config['BENCH'],'{sample}_breaks.txt')
     shell:
         "cnvkit.py breaks {input.cnr} {input.cns} -o {output}"
 
@@ -242,6 +253,7 @@ rule export_as_vcf:
         cns = rules.annotate_cns.output.a_cns,
     output:
         config['CNVKIT'] + '/VCF/{sample}_cnv.vcf'
+    benchmark: os.path.join(config['BENCH'],'{sample}_export_as_vcf.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         """cnvkit.py export vcf {input.cns} -i "{wildcards.sample}" -o {output}"""
