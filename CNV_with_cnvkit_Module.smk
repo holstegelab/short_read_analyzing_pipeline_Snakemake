@@ -73,7 +73,6 @@ def get_capture_kit_bed(wildcards):
 rule autobin:
     input:
         bam = expand("{bam}/extracted_for_CNV/{sample_name}.extracted.bam", bam = config['BAM'], sample_name = sample_names),
-        bai = expand("{bam}/extracted_for_CNV/{sample_name}.extracted.bam.bai", bam = config['BAM'], sample_name = sample_names),
     output:
         target = config['CNVKIT'] + '/target/{sample}_covered.bed',
     params:
@@ -81,7 +80,7 @@ rule autobin:
             iBED = get_capture_kit_bed,
             antitarget = get_capture_kit_antitarget,
             anno = config['RES'] + config['refflat']
-    benchmark: os.path.join(config['BENCH'], 'autobin.txt')
+    benchmark: os.path.join(config['BENCH'], '{sample}_autobin.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py autobin {params.inputs} --annotate {params.anno} --target-output-bed {output.target} -f {ref} -t {params.iBED} --antitarget-output-bed {params.antitarget}"
@@ -232,7 +231,7 @@ rule metrics:
         cns = expand('{cnvkit}/call/{sample}.cal.cns', sample = sample_names, cnvkit = config['CNVKIT']),
     output:
         config['CNVKIT'] + '/stats/Metrics_table.tsv'
-    benchmark: os.path.join(config['BENCH'],'{sample}_cnvmetrics.txt')
+    benchmark: os.path.join(config['BENCH'],'cnvmetrics.txt')
     conda: 'envs/preprocess.yaml'
     shell:
         "cnvkit.py metrics {input.cnr} -s {input.cns} -o {output}"

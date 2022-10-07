@@ -26,7 +26,7 @@ sample_names = SAMPLEINFO.keys()
 rule Aligner_all:
     input:
         expand("{bams}/{sample}.merged.bam",sample=sample_names,bams=config['BAM']),
-        expand("{bams}/{sample}.merged.bam.bai", sample=sample_names, bams=config['BAM']),
+        expand("{bams}/{sample}.markdup.bam.bai", sample=sample_names, bams=config['BAM']),
         expand("{cram}/{sample}_mapped_hg38.cram",cram=config['CRAM'],sample=sample_names),
         # expand('{stat}/{sample}.bam_all.tsv',stat=config['STAT'],sample=sample_names)
     default_target: True
