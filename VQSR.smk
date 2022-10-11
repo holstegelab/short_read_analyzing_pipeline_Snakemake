@@ -203,7 +203,7 @@ rule select_norsnp_nor_indels:
     shell:
         """
         {gatk} SelectVariants \
-                --select-type-to-include INDEL --select-type-to-include INDEL --invertSelect \
+                --select-type-to-include INDEL --select-type-to-include SNP --invertSelect \
                 -V {input.vcf} -O {output} 2> {log}
         """
 
