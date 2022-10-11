@@ -233,7 +233,7 @@ rule gatherstats:
     # rm -r stats/*samtools*
     input:
         get_quality_stats
-    benchmark: os.path.join(config['BENCH'],"gatherstat.txt")
+    benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherstat.txt")
     output:
         '{samplefile}.bam_quality.tab'
     run:
@@ -262,7 +262,7 @@ rule gatherosostats:
         get_oxo_stats
     output:
         '{samplefile}.oxo_quality.tab'
-    benchmark: os.path.join(config['BENCH'],"gatherOXOstat.txt")
+    benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherOXOstat.txt")
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
