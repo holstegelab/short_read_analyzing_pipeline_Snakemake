@@ -48,7 +48,7 @@ rule delly_call:
 
 rule delly_merge:
     input: expand('{delly}/first_call/{sample}.bcf', delly = config['DELLY'], sample = sample_names)
-    output: config['DELLY'] + 'Merged_sites.bcf'
+    output: config['DELLY'] + '/Merged_sites.bcf'
     conda: 'envs/preprocess.yaml'
     benchmark: os.path.join(config['BENCH'],'dellymerge.txt')
     shell: "delly merge -o {output} {input}"
