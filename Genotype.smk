@@ -55,6 +55,7 @@ rule Genotype_all:
         # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
         expand("{vcf}/ALL_chrs.vcf.gz", vcf=config['VCF']),
         expand("{vcf}/Merged_norm.vcf", vcf=config['VCF_Final']),
+        expand("{vcf}/Merged_norm.vcf.tbi", vcf=config['VCF_Final']),
     default_target: True
 
 if gVCF_combine_method == "DBIMPORT":
@@ -135,7 +136,7 @@ rule index_mergechrs:
     log: config['LOG'] + '/' + "Mergechrsed_index.log"
     benchmark: config['BENCH'] + "/Mergechrsed_index.txt"
     output:
-        vcfidx = config['VCF'] + "/ALL_chrs.vcf.gz.idx"
+        vcfidx = config['VCF'] + "/ALL_chrs.vcf.gz.tbi"
     priority: 45
     shell:
         "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"

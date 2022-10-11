@@ -38,12 +38,13 @@ rule SV_delly_all:
 
 rule delly_call:
     input:
-        bam = rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams,
+        bai = rules.markdup_index.output.mdbams_bai
     output:
         call = config['DELLY'] + '/first_call/{sample}.bcf'
     conda: 'envs/preprocess.yaml'
     benchmark: os.path.join(config['BENCH'],'{sample}_dellycall.txt')
-    shell: "delly call -g {ref} -o {output} {input}"
+    shell: "delly call -g {ref} -o {output} {input.bam}"
 
 rule delly_merge:
     input: expand('{delly}/first_call/{sample}.bcf', delly = config['DELLY'], sample = sample_names)

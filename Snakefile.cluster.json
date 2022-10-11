@@ -8,50 +8,52 @@ __default__:
     active_use_remove: 0
     partition: compute
 mCRAM:
-        n: 15
+        n: 4
+        mem: 1000
 adapter_removal:
-    n: 8
-    mem: 12000
+    n: 4
+    mem: 1000
 adapter_removal_identify:
     n: 8
     mem: 12000
 dechimer:
     n: 4
 align_reads:
-        n: 32
+        n: 30
         mem: 40000
         time: 1400
 merge_bam_alignment:
     n: 3
-    mem: 6000
-    time: 1500
+    mem: 10000
+    time: 3000
 sort_bam_alignment:
-    n: 8
+    n: 3
     mem: 18000
     time: 1500
+index_sort:
+        n: 2
+        mem: 100
 merge_rgs:
         n: 1
-        mem: 200
+        mem: 2000
         time: 800
 markdup:
         n: 2
-        mem: 200
-        time: 1100
-index_sort:
-        n: 4
+        mem: 500
 markdup_index:
-        n: 4
+        n: 2
+        mem: 500
 bamstats_all:
-        n: 4
+        n: 1
         mem: 6000
 CalibrateDragstrModel:
-        n: 1
+        n: 2
         mem: 7500
         time: 400
 HaplotypeCaller:
         n: 2
-        mem: 15000
-        time: 15500
+        mem: 7500
+        time: 2500
 GenomicDBImport:
         n: 2
         mem: 7000
@@ -105,47 +107,39 @@ basic_stats:
         mem: 4500
 hs_stats:
         n: 1
-        mem: 7500
-        time: 1000
+        mem: 15000
+        time: 2000
 samtools_stat:
-        n: 2
+        n: 1
         mem: 200
+        time: 600
 samtools_stat_exome:
-        n: 4
+        n: 1
         mem: 200
+        time: 1200
 Artifact_stats:
         n: 1
         mem: 15000
-        time: 1000
+        time: 2000
 OXOG_metrics:
         n: 1
-        mem: 15000
-        time: 1000
+        mem: 7500
+        time: 1500
 verifybamid:
-        n: 4
+        n: 2
+        mem: 500
 resort_by_readname:
         n: 16
 declip:
         n: 16
 sort_back:
         n: 16
-uBAM_to_fq:
-        n: 1
-convert_to_uBAM:
-        n: 1
-        mem: 12000
-merge_ubams:
-        n: 2
-convert_to_uCRAM:
-        n: 15
-convert_fq_to_uCRAM:
-        n: 15
 mask_adapters:
         n: 2
         mem: 12000
         time: 3000
 bamstats_exome:
-        n: 4
+        n: 1
         mem: 6000
 neewBams:
         n: 16

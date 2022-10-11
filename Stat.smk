@@ -17,20 +17,6 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     readgroup="[\w\d_\-@]+"
 
-# main chromosomes from GRCh38 splitted into 99 bins
-# bins = config['RES'] + config['bin_file_ref']
-# import csv
-# chrs = []
-# with open(bins) as file:
-#     tsv_file = csv.reader(file, delimiter="\t")
-#     for line in tsv_file:
-#         if line[1] == str('0'):
-#             out = line[0] + ':' + str('1') + '-' + line[2]
-#         else:
-#             out = line[0] + ':' + line[1] + '-' + line[2]
-#         chrs.append(out)
-# print(chrs)
-
 from read_samples import *
 from common import *
 SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
@@ -60,7 +46,8 @@ rule Stat_all:
 # include hom-het ratio, titv ratio, etc.
 rule basic_stats:
     input:
-        rules.norm.output.normVCF
+        vcf = rules.norm.output.normVCF,
+        tbi = rules.norm_idx.output.idx
     output:
         os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
         os.path.join(config['STAT'], "BASIC.variant_calling_summary_metrics")
@@ -72,7 +59,7 @@ rule basic_stats:
     threads: config['basic_stats']['n']
     shell:
         "gatk CollectVariantCallingMetrics \
-        -R {ref} -I {input} -O stats/BASIC \
+        -R {ref} -I {input.vcf} -O stats/BASIC \
         --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
 
 # return interval_list file instead of bed file
@@ -197,6 +184,7 @@ rule bamstats_all:
         bai= rules.markdup_index.output.mdbams_bai
     output:
         All_exome_stats = os.path.join(config['STAT'],'{sample}.bam_all.tsv')
+    benchmark: os.path.join(config['BENCH'],"bamstats_all_{sample}.txt")
     threads: config['bamstats_all']['n']
     params:
         py_stats = srcdir(config['BAMSTATS'])
@@ -214,6 +202,7 @@ rule bamstats_exome:
         bai= rules.markdup_index.output.mdbams_bai
     output:
         All_exome_stats = os.path.join(config['STAT'], '{sample}.bam_exome.tsv')
+    benchmark: os.path.join(config['BENCH'],"bamstats_exome_{sample}.txt")
     threads: config['bamstats_exome']['n']
     params:
         py_stats = srcdir(config['BAMSTATS']),
@@ -244,6 +233,7 @@ rule gatherstats:
     # rm -r stats/*samtools*
     input:
         get_quality_stats
+    benchmark: os.path.join(config['BENCH'],"gatherstat.txt")
     output:
         '{samplefile}.bam_quality.tab'
     run:
@@ -272,6 +262,7 @@ rule gatherosostats:
         get_oxo_stats
     output:
         '{samplefile}.oxo_quality.tab'
+    benchmark: os.path.join(config['BENCH'],"gatherOXOstat.txt")
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())

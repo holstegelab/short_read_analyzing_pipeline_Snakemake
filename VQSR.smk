@@ -52,7 +52,8 @@ rule VQSR_all:
 # SNPs and INDELs require different options
 rule SelectSNPs:
     input:
-        rules.norm.output.normVCF
+        vcf = rules.norm.output.normVCF,
+        tbi= rules.norm_idx.output.idx
     output:
         SNP_vcf = temp(config['VCF_Final'] + "/Merged_SNPs.vcf")
         # SNP_vcf=temp(config['VCF'] + "/Merged_SNPs.vcf")
@@ -64,7 +65,7 @@ rule SelectSNPs:
         """
         {gatk} SelectVariants \
                 --select-type-to-include SNP \
-                -V {input} -O {output} 2> {log}
+                -V {input.vcf} -O {output} 2> {log}
         """
 
 # 1st step of VQSR - calculate scores
@@ -126,7 +127,8 @@ rule ApplyVQSR_SNPs:
 # select INDELs for VQSR
 rule SelectINDELs:
     input:
-        rules.norm.output.normVCF
+        vcf  = rules.norm.output.normVCF,
+        tbi= rules.norm_idx.output.idx
     output:
         INDEL_vcf=temp(config['VCF_Final'] + "/Merged_INDELs.vcf")
     log: config['LOG'] + '/' + "SelectINDELS.log"
@@ -137,7 +139,7 @@ rule SelectINDELs:
         """
         {gatk} SelectVariants \
                 --select-type-to-include INDEL \
-                -V {input} -O {output} 2> {log}
+                -V {input.vcf} -O {output} 2> {log}
         """
 
 # 1st step of VQSR - calculate scores
@@ -190,7 +192,8 @@ rule ApplyVQSR_INDEs:
 
 rule select_norsnp_nor_indels:
     input:
-        rules.norm.output.normVCF
+        vcf = rules.norm.output.normVCF,
+        tbi = rules.norm_idx.output.idx
     output:
         MIX_vcf=temp(config['VCF_Final'] + "/merged_mix.vcf")
     log: config['LOG'] + '/' + "SelectMix.log"
@@ -201,7 +204,7 @@ rule select_norsnp_nor_indels:
         """
         {gatk} SelectVariants \
                 --select-type-to-include INDEL --select-type-to-include INDEL --invertSelect \
-                -V {input} -O {output} 2> {log}
+                -V {input.vcf} -O {output} 2> {log}
         """
 
 
@@ -225,7 +228,7 @@ rule combine:
 # rule norm:
 #     input:
 #         rules.combine.output.filtrVCF
-#     output:
+#     output:CollectVariantCallingMetrics
 #         normVCF=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf",
 #         idx=config['VCF_Final'] + "/Merged_after_VQSR_norm.vcf.idx"
 #     log: config['LOG'] + '/' + "normalization.log"

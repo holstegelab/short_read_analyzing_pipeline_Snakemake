@@ -50,7 +50,7 @@ rule combinegvcfs:
     output: chr_gvcfs = config['gVCF'] + "/MERGED/cohort_{chr}.g.vcf.gz"
     log: combine =config['LOG'] + "/{chr}_combine.log"
     benchmark:
-        config['BENCH'] + "/{chr}_reblock.txt"
+        config['BENCH'] + "/{chr}_combinegvcf.txt"
     conda: "envs/preprocess.yaml"
     params: inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
     shell:

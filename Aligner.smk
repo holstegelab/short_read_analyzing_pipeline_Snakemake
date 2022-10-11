@@ -102,7 +102,7 @@ def get_mem_mb_align_reads(wildcrads, attempt):
 rule align_reads:
     input:
         for_f=rules.adapter_removal.output.for_f,
-        rev_f=rules.adapter_removal.output.rev_f
+        rev_f=rules.adapter_removal.output.rev_f,
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.aligned.bam")
     params:
@@ -127,7 +127,8 @@ rule align_reads:
 rule merge_bam_alignment:
     input:
         get_fastqpaired,
-        rules.align_reads.output.bam
+        rules.align_reads.output.bam,
+        rules.adapter_removal_identify.output.stats
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.merged.bam"),
         stats=os.path.join(config['STAT'],"{sample}.{readgroup}.merge_stats.tsv")
@@ -201,16 +202,16 @@ rule sort_bam_alignment:
             samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 2000M -o {output.bam}) 2> {log.samtools_sort}            
         """
 
+# something here (after re-running snakemake siad that below steps have to run because input was updated by above jobs)
 rule index_sort:
-    input: rules.sort_bam_alignment.output.bam
+    input: bam = ancient(rules.sort_bam_alignment.output.bam)
     output: bai = os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam.bai")
     conda: "envs/preprocess.yaml"
-    log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log")
+    log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log"),
     threads: config["index_sort"]["n"]
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.index_sorted.txt")
-    shell: "samtools index -@ {threads} {input} 2> {log.samtools_index}"
-
+    shell: "samtools index -@ {threads} {input.bam} 2> {log.samtools_index}"
 
 # # function to get information about reaadgroups
 # # needed if sample contain more than 1 fastq files
@@ -220,13 +221,13 @@ def get_readgroups_bam(wildcards):
     for readgroup in readgroups_b:
         files.append(os.path.join(config['BAM'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam'))
     return files
+
 def get_readgroups_bai(wildcards):
     readgroups_b = SAMPLEINFO[wildcards['sample']]['readgroups']
     files = []
     for readgroup in readgroups_b:
         files.append(os.path.join(config['BAM'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam.bai'))
     return files
-
 
 # merge different readgroups bam files for same sample
 rule merge_rgs:
@@ -248,7 +249,7 @@ rule merge_rgs:
 
 rule markdup:
     input:
-        rules.merge_rgs.output.mer_bam
+        bam = rules.merge_rgs.output.mer_bam
     output:
         mdbams=os.path.join(config['BAM'],"{sample}.markdup.bam"),
         MD_stat=os.path.join(config['STAT'],"{sample}.markdup.stat")
@@ -264,12 +265,12 @@ rule markdup:
     conda: "envs/preprocess.yaml"
     shell:
         """
-            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input} {output.mdbams} 2> {log.samtools_markdup}
+            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {threads} {input.bam} {output.mdbams} 2> {log.samtools_markdup}
         """
 
 rule markdup_index:
     input:
-        rules.markdup.output.mdbams
+        bam = rules.markdup.output.mdbams
     output:
         mdbams_bai=os.path.join(config['BAM'],"{sample}.markdup.bam.bai"),
     benchmark: "benchmark/{sample}.index_markduped.txt"
@@ -279,7 +280,7 @@ rule markdup_index:
     conda: "envs/preprocess.yaml"
     shell:
         """
-            samtools index -@ {threads} {input} 2> {log.samtools_index_md}
+            samtools index -@ {threads} {input.bam} 2> {log.samtools_index_md}
         """
 
 # mapped cram
