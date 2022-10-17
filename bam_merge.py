@@ -307,7 +307,7 @@ if __name__ == '__main__':
                 else:
                     
                     if querygroup:
-                        assert len(querygroup) >= 2, 'Reads are not paired'
+                        assert len(querygroup) >= 2, f'Reads are not paired for {querygroup[0]}'
                         fastq_record = freader.popRead(lastname)
                         res_kept, rg = process(querygroup, fastq_record, stats)
                         res_kept = '\n'.join([xrow.toSamRecord() for xrow in res_kept]) + '\n'

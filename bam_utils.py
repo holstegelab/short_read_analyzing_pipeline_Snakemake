@@ -13,7 +13,10 @@ MIN_ALIGN_LENGTH = 30
 class BamRecord:
     def __init__(self, row):
         self.row = row
-        self.qname = row[0]
+        if row[0].endswith('/1') or row[0].endswith('/2'):
+            self.qname = row[0][:-2]
+        else:
+            self.qname = row[0]
         self.flag = int(row[1])
         self.rname = row[2]
         self.pos = row[3]
