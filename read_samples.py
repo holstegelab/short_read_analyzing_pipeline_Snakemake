@@ -45,7 +45,7 @@ def get_bam_readgroups(fname, filetype):
         p = subprocess.Popen('samtools view -H %s | grep ^@RG' % fname, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              shell=True)
     else:
-        p = subprocess.Popen('samtools view -H %s -T /home/hulsmanm/data/genome/ucsc.hg19.fasta | grep ^@RG' % fname,
+        p = subprocess.Popen('samtools view -H %s -T /home/gozhegov/data/hg38_res/Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa   | grep ^@RG' % fname,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
     result, err = p.communicate()

@@ -8,27 +8,27 @@ __default__:
     active_use_remove: 0
     partition: compute
 mCRAM:
-        n: 4
+        n: 2
         mem: 1000
 adapter_removal:
     n: 4
     mem: 1000
 adapter_removal_identify:
-    n: 8
-    mem: 12000
+    n: 4
+    mem: 1000
 dechimer:
     n: 4
 align_reads:
-        n: 30
-        mem: 40000
+        n: 62
+        mem: 62000
         time: 1400
 merge_bam_alignment:
-    n: 3
-    mem: 10000
+    n: 6
+    mem: 12000
     time: 3000
 sort_bam_alignment:
-    n: 3
-    mem: 18000
+    n: 2
+    mem: 7000
     time: 1500
 index_sort:
         n: 2
@@ -38,7 +38,7 @@ merge_rgs:
         mem: 2000
         time: 800
 markdup:
-        n: 2
+        n: 4
         mem: 500
 markdup_index:
         n: 2
@@ -48,11 +48,11 @@ bamstats_all:
         mem: 6000
 CalibrateDragstrModel:
         n: 2
-        mem: 7500
+        mem: 5500
         time: 400
 HaplotypeCaller:
-        n: 2
-        mem: 7500
+        n: 3
+        mem: 6500
         time: 2500
 GenomicDBImport:
         n: 2
@@ -60,7 +60,7 @@ GenomicDBImport:
         time: 25000
 GenotypeDBI:
         n: 2
-        mem: 16500
+        mem: 10000
         time: 18500
 Mergechrs:
         n: 1

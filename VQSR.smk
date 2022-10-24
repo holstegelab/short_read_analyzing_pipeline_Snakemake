@@ -57,7 +57,7 @@ rule SelectSNPs:
     output:
         SNP_vcf = temp(config['VCF_Final'] + "/Merged_SNPs.vcf")
         # SNP_vcf=temp(config['VCF'] + "/Merged_SNPs.vcf")
-    priority: 50
+    priority: 56
     log: config['LOG'] + '/' + "SelectSNPs.log"
     benchmark: config['BENCH'] + "/SelectSNPs.txt"
     conda: "envs/preprocess.yaml"
@@ -86,7 +86,7 @@ rule VQSR_SNP:
         kilo_g = config['RES'] + config['kilo_g'],
         dbsnp = config['RES'] + config['dbsnp']
     conda: "envs/preprocess.yaml"
-    priority: 55
+    priority: 58
     shell:
         # -an InbreedingCoeff if 10+
         """
@@ -133,7 +133,7 @@ rule SelectINDELs:
         INDEL_vcf=temp(config['VCF_Final'] + "/Merged_INDELs.vcf")
     log: config['LOG'] + '/' + "SelectINDELS.log"
     benchmark: config['BENCH'] + "/SelectINDELs.txt"
-    priority: 50
+    priority: 56
     conda: "envs/preprocess.yaml"
     shell:
         """
@@ -152,7 +152,7 @@ rule VQSR_INDEL:
         r_indel=config['STAT'] + "/INDELs_vqsr_plots.R"
     log: config['LOG'] + '/' + "VQSR_INDEL.log"
     benchmark: config['BENCH'] + "/VQSR_INDEL.txt"
-    priority: 55
+    priority: 58
     params:
         mills = config['RES'] + config['mills'],
         dbsnp_indel = config['RES'] + config['dbsnp_indel']
@@ -198,12 +198,12 @@ rule select_norsnp_nor_indels:
         MIX_vcf=temp(config['VCF_Final'] + "/merged_mix.vcf")
     log: config['LOG'] + '/' + "SelectMix.log"
     benchmark: config['BENCH'] + "/SelectMix.txt"
-    priority: 50
+    priority: 59
     conda: "envs/preprocess.yaml"
     shell:
         """
         {gatk} SelectVariants \
-                --select-type-to-include INDEL --select-type-to-include SNP --invertSelect \
+                --select-type-to-exclude INDEL --select-type-to-exclude SNP --sites-only-vcf-output TRUE\
                 -V {input.vcf} -O {output} 2> {log}
         """
 

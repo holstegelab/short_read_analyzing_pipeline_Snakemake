@@ -10,7 +10,7 @@ dependencies:
 - bcftools=1.15.1
 - bedtools=2.30.0
 - dragmap=1.2.1
-- gatk4=4.2.6.1
+- gatk4=4.3.0.0
 - scipy=1.9.1
 - delly=1.1.3
 - cnvkit=0.9.9

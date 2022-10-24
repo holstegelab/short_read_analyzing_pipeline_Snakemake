@@ -31,6 +31,9 @@ rule Aligner_all:
         # expand('{stat}/{sample}.bam_all.tsv',stat=config['STAT'],sample=sample_names)
     default_target: True
 
+# Split CRAM ((260G) by readgroups == 374 min and ~ 60 Gig RAM
+
+
 
 #just alignment and convert to bams
 
@@ -73,7 +76,7 @@ rule adapter_removal_identify:
         get_fastqpaired
     output:
         stats=os.path.join(config['STAT'],"{sample}.{readgroup}.adapters"),
-    priority: 10
+    priority: 5
     conda: "envs/preprocess.yaml"
     threads: config["adapter_removal_identify"]["n"]
     benchmark: os.path.join(config['BENCH'],"{sample}.{readgroup}.adapter_removal_identify.txt")
@@ -96,7 +99,7 @@ def get_readgroup_params(wildcards):
 # samtools fixmate for future step with samtools mark duplicates
 
 def get_mem_mb_align_reads(wildcrads, attempt):
-    return attempt * int(config['align_reads']['mem'])
+    return (attempt - 1) * 0.5 * int(config['align_reads']['mem']) + int(config['align_reads']['mem'])
 
 
 rule align_reads:
@@ -154,6 +157,7 @@ rule dechimer:
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.dechimer.bam"),
         stats=os.path.join(config['STAT'],"{sample}.{readgroup}.dechimer_stats.tsv")
+    priority: 16
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.dechimer.txt")
     params:
@@ -178,6 +182,10 @@ rule dechimer:
                    """
             shell(cmd)
 
+
+def get_mem_mb_sort_bam_aligment(wildcrads, attempt):
+    return attempt * int(config['sort_bam_alignment']['mem'])
+
 rule sort_bam_alignment:
     input:
         in_bam=rules.dechimer.output.bam
@@ -193,9 +201,10 @@ rule sort_bam_alignment:
         samtools_sort=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_sort.log"),
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.sort.txt")
-    priority: 15
+    priority: 17
     resources:
-        tmpdir=tmpdir
+        tmpdir=tmpdir,
+        mem_mb = get_mem_mb_sort_bam_aligment
     shell:
         """
             (samtools fixmate -@ {threads} -u -O SAM  -m {input.in_bam} -  |\
@@ -209,6 +218,7 @@ rule index_sort:
     conda: "envs/preprocess.yaml"
     log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log"),
     threads: config["index_sort"]["n"]
+    priority: 18
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.index_sorted.txt")
     shell: "samtools index -@ {threads} {input.bam} 2> {log.samtools_index}"
@@ -239,6 +249,7 @@ rule merge_rgs:
     log: os.path.join(config['LOG'],"{sample}.mergereadgroups.log")
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     threads: config['merge_rgs']['n']
+    priority: 19
     run:
         if len(input.bam) > 1:
             cmd = "samtools merge -@ {threads} {output} {input.bam} 2> {log}"
@@ -254,6 +265,7 @@ rule markdup:
         mdbams=os.path.join(config['BAM'],"{sample}.markdup.bam"),
         MD_stat=os.path.join(config['STAT'],"{sample}.markdup.stat")
     benchmark: "benchmark/{sample}.markdup.txt"
+    priority: 20
     params:
         machine=2500  #change to function
     # 100 for HiSeq and 2500 for NovaSeq
@@ -274,6 +286,7 @@ rule markdup_index:
     output:
         mdbams_bai=os.path.join(config['BAM'],"{sample}.markdup.bam.bai"),
     benchmark: "benchmark/{sample}.index_markduped.txt"
+    priority: 25
     log:
         samtools_index_md=os.path.join(config['LOG'],"{sample}.markdup_index.log")
     threads: config['markdup_index']['n']
@@ -292,6 +305,7 @@ rule mCRAM:
         CRAM=os.path.join(config['CRAM'],"{sample}_mapped_hg38.cram")
     threads: config['mCRAM']['n']
     benchmark: os.path.join(config['BENCH'],'{sample}_mCRAM.txt')
+    priority: 30
     conda: "envs/preprocess.yaml"
     shell:
         "samtools view --cram -T {ref} -@ {threads} -o {output.CRAM} {input.bam}"

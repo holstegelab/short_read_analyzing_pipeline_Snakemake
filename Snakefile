@@ -50,54 +50,79 @@ module CNV_with_cnvkit_Module:
 module Combine_gVCF:
     snakefile: 'Combine_gVCF.smk'
     config: config
-use rule * from Aligner
-use rule * from gVCF
-use rule * from SV_delly
-use rule * from CNV_with_cnvkit_Module
-# use rule * from DBImport
-use rule * from Genotype
 use rule * from Stat
-use rule * from VQSR
 
-VQSR = config.get("VQSR", "NO")
-if VQSR == "RUN_VQSR":
-    VQSR_rule = rules.VQSR_all.input,
-elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
-    VQSR_rule = []
-else:
-    raise ValueError(
-        "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR'."
-    )
+
 
 SV = config.get("SV", "RUN_SV")
 if SV == "RUN_SV":
+    use rule * from SV_delly
     SV_rule = rules.SV_delly_all.input
 else:
     SV_rule = []
 
 CNV = config.get("CNV", "RUN_CNV")
 if CNV == "RUN_CNV":
+    use rule * from CNV_with_cnvkit_Module
     CNV_rule = rules.CNV_with_cnvkit_Module_all.input
 else:
     CNV_rule = []
 
 gVCF_combine_method = config.get("Combine_gVCF_method", "COMBINE_GVCF")
-if gVCF_combine_method == "DBIMPORT":
-    rule_all_combine = rules.DBImport_all.input
-    use rule * from DBImport
-elif gVCF_combine_method == "COMBINE_GVCF":
-    rule_all_combine = rules.Combine_gVCF_all.input
-    use rule * from Combine_gVCF
+
+
+rule_all_combine = []
+VQSR_rule = []
+VQSR = config.get("VQSR","NO")
+end_point = config.get("END_POINT", "gVCF")
+
+if end_point == "gVCF":
+    use rule * from gVCF
+    use rule * from Aligner
+    END_RULE = rules.gVCF_all.input,
+elif end_point == "Align" or end_point == "Aligner":
+    use rule * from Aligner
+    END_RULE = rules.Aligner_all.input
+elif end_point == "Genotype" or end_point == "Genotyper":
+    use rule * from gVCF
+    use rule * from Aligner
+    use rule * from Genotype
+    END_RULE = rules.Genotype_all.input
+elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
+    use rule * from gVCF
+    use rule * from Aligner
+    use rule * from Genotype
+    END_RULE = rules.Genotype_all.input
+    if VQSR == "RUN_VQSR":
+        use rule * from VQSR
+        VQSR_rule = rules.VQSR_all.input,
+    elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
+        VQSR_rule = []
+    else:
+        raise ValueError(
+            "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR'."
+        )
+
+    if gVCF_combine_method == "DBIMPORT":
+        use rule * from DBImport
+        rule_all_combine = rules.DBImport_all.input
+    elif gVCF_combine_method == "COMBINE_GVCF":
+        use rule * from Combine_gVCF
+        rule_all_combine = rules.Combine_gVCF_all.input
+    else:
+        raise ValueError(
+            "invalid option provided to 'Combine_gVCF_method'; please choose either 'COMBINE_GVCF' or 'DBIMPORT'."
+        )
 else:
     raise ValueError(
-        "invalid option provided to 'Combine_gVCF_method'; please choose either 'COMBINE_GVCF' or 'DBIMPORT'."
+        "Invalid option provided to 'END_POINT'; please choose either 'gVCF', 'Align', 'Genotype' or 'Combine'."
     )
+
+
 
 rule all:
     input:
-        rules.Aligner_all.input,
-        rules.gVCF_all.input,
-        rules.Genotype_all.input,
+        END_RULE,
         rule_all_combine,
         VQSR_rule,
         rules.Stat_all.input,

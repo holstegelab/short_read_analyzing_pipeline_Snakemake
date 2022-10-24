@@ -26,13 +26,13 @@ sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
-
-module VCF:
-    snakefile: 'gVCF.smk'
+    config: config
+use rule * from Aligner
+# module VCF:
+#     snakefile: 'gVCF.smk'
 
 rule Stat_all:
     input:
-        os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
         expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}.OXOG", sample=sample_names, stats = config['STAT']),
         expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
@@ -42,25 +42,6 @@ rule Stat_all:
 
 
 
-# basic stats
-# include hom-het ratio, titv ratio, etc.
-rule basic_stats:
-    input:
-        vcf = rules.norm.output.normVCF,
-        tbi = rules.norm_idx.output.idx
-    output:
-        os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
-        os.path.join(config['STAT'], "BASIC.variant_calling_summary_metrics")
-    priority: 90
-    log: os.path.join(config['LOG'], "VCF_stats.log")
-    benchmark: os.path.join(config['BENCH'], "VCF_stats.txt")
-    params: dbsnp = os.path.join(config['RES'], config['dbsnp'])
-    conda: "envs/preprocess.yaml"
-    threads: config['basic_stats']['n']
-    shell:
-        "gatk CollectVariantCallingMetrics \
-        -R {ref} -I {input.vcf} -O stats/BASIC \
-        --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
 
 # return interval_list file instead of bed file
 def get_capture_kit_interval_list(wildcards):

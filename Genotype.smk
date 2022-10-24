@@ -55,8 +55,12 @@ rule Genotype_all:
         # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
         expand("{vcf}/ALL_chrs.vcf.gz", vcf=config['VCF']),
         expand("{vcf}/Merged_norm.vcf", vcf=config['VCF_Final']),
-        expand("{vcf}/Merged_norm.vcf.tbi", vcf=config['VCF_Final']),
+        expand("{vcf}/Merged_norm.vcf.idx", vcf=config['VCF_Final']),
+        os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
     default_target: True
+
+def get_mem_mb_genotype(wildcrads, attempt):
+    return (attempt-1) * 2 * int(config['GenotypeDBI']['mem']) + int(config['GenotypeDBI']['mem'])
 
 if gVCF_combine_method == "DBIMPORT":
     #use rule * from DBImport
@@ -76,6 +80,7 @@ if gVCF_combine_method == "DBIMPORT":
                 dbsnp = config['RES'] + config['dbsnp'],
                 intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
             conda: "envs/preprocess.yaml"
+            resources: mem_mb = get_mem_mb_genotype
             priority: 40
             shell:
                     "{gatk} GenotypeGVCFs -R {ref} -V gendb://{params.dir} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
@@ -92,6 +97,7 @@ if gVCF_combine_method == "DBIMPORT":
                 dbsnp = config['RES'] + config['dbsnp'],
                 intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
             conda: "envs/preprocess.yaml"
+            resources: mem_mb=get_mem_mb_genotype
             priority: 40
             shell:
                     "{gatk} GenotypeGVCFs -R {ref} -V {input.gvcf} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
@@ -111,6 +117,7 @@ elif gVCF_combine_method == "COMBINE_GVCF":
         params:
             dbsnp=config['RES'] + config['dbsnp'],
         conda: "envs/preprocess.yaml"
+        resources: mem_mb = get_mem_mb_genotype
         priority: 40
         shell:
             "{gatk} GenotypeGVCFs -R {ref} -V {input.gvcf} -O {output} -D {params.dbsnp} --intervals {wildcards.chr} 2> {log}"
@@ -137,7 +144,7 @@ rule index_mergechrs:
     benchmark: config['BENCH'] + "/Mergechrsed_index.txt"
     output:
         vcfidx = config['VCF'] + "/ALL_chrs.vcf.gz.tbi"
-    priority: 45
+    priority: 46
     shell:
         "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
 
@@ -150,7 +157,7 @@ rule norm:
         normVCF=config['VCF_Final'] + "/Merged_norm.vcf",
     log: config['LOG'] + '/' + "normalization.log"
     benchmark: config['BENCH'] + "/normalization.txt"
-    priority: 80
+    priority: 50
     conda: "envs/preprocess.yaml"
     shell:
         "({bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF}) 2> {log}"
@@ -162,9 +169,30 @@ rule norm_idx:
         idx=config['VCF_Final'] + "/Merged_norm.vcf.idx"
     log: config['LOG'] + '/' + "normalization.log"
     benchmark: config['BENCH'] + "/idx_normalizated.txt"
-    priority: 80
+    priority: 55
     conda: "envs/preprocess.yaml"
     shell:
         "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
+
+# basic stats
+# include hom-het ratio, titv ratio, etc.
+rule basic_stats:
+    input:
+        vcf = rules.norm.output.normVCF,
+        tbi = rules.norm_idx.output.idx
+    output:
+        os.path.join(config['STAT'], "BASIC.variant_calling_detail_metrics"),
+        os.path.join(config['STAT'], "BASIC.variant_calling_summary_metrics")
+    priority: 90
+    log: os.path.join(config['LOG'], "VCF_stats.log")
+    benchmark: os.path.join(config['BENCH'], "VCF_stats.txt")
+    params: dbsnp = os.path.join(config['RES'], config['dbsnp'])
+    conda: "envs/preprocess.yaml"
+    threads: config['basic_stats']['n']
+    shell:
+        "gatk CollectVariantCallingMetrics \
+        -R {ref} -I {input.vcf} -O stats/BASIC \
+        --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
+
 
 

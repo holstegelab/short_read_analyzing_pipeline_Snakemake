@@ -32,18 +32,6 @@ rule Combine_gVCF_all:
     input: expand("{gvcf}/MERGED/cohort_{chr}.g.vcf.gz", gvcf = config['gVCF'], chr = main_chrs)
     default_target: True
 
-rule reblock_gvcf:
-    input:
-        gvcf = rules.HaplotypeCaller.output.gvcf,
-    output: gvcf_reblock = config['gVCF'] + "/reblock/{chr}/{sample}.{chr}.g.vcf.gz"
-    log: Reblock=config['LOG'] + "/{sample}_{chr}_reblock.log"
-    benchmark:
-        config['BENCH'] + "/{sample}_{chr}_reblock.txt"
-    conda: "envs/preprocess.yaml"
-    params:
-        dbsnp=config['RES'] + config['dbsnp'],
-    shell:
-        "{gatk} ReblockGVCF --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"
 
 rule combinegvcfs:
     input: expand("{gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
@@ -52,6 +40,7 @@ rule combinegvcfs:
     benchmark:
         config['BENCH'] + "/{chr}_combinegvcf.txt"
     conda: "envs/preprocess.yaml"
+    priority: 30
     params: inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
     shell:
         "{gatk} CombineGVCFs -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {ref} 2> {log}"

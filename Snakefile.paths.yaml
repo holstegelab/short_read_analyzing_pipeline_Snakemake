@@ -27,7 +27,7 @@ CRAM: 'CRAM'
 TARGET: 'cnvkit/target'
 CNVKIT: 'cnvkit'
 DELLY: 'SV_delly'
-
+MULTICOHORT: 'Multicohort'
 #programs
 gatk: 'gatk'
 samtools: 'samtools'
