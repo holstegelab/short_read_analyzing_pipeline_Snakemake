@@ -339,7 +339,7 @@ if __name__ == '__main__':
 
                     #write out
                     res = '\n'.join([xrow.toSamRecord() for xrow in res]) + '\n'
-                    out_file.write(res_kept)
+                    out_file.write(res)
             except StopIteration:
                 pass
         
