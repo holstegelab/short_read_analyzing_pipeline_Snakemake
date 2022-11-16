@@ -57,11 +57,19 @@ rule CalibrateDragstrModel:
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
 # to avoid any bugs verifybamid step runs in different conda enviroment
-#
+def get_svd(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]
+    if 'wgs' in sinfo['sample_type']:
+        SVD =  config['RES'] + config['verifybamid_wgs']
+    else:
+        SVD = config['RES'] + config['verifybamid_exome']
+    return SVD
+
 rule verifybamid:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup_index.output.mdbams_bai,
+        SVD = get_svd
     output:
         VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
     # end of this file hardcoded in Haplotypecaller and read_contam_w
@@ -70,11 +78,11 @@ rule verifybamid:
     priority: 27
     params:
         VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
-        SVD = config['RES'] + config['verifybamid_exome']
+        # SVD = config['RES'] + config['verifybamid_exome']
     conda: 'envs/verifybamid.yaml'
     shell:
         """
-        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
+        verifybamid2 --BamFile {input.bam} --SVDPrefix {input.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
         """
 
 def get_chrom_capture_kit(wildcards):
@@ -123,7 +131,7 @@ rule HaplotypeCaller:
     threads: config['HaplotypeCaller']['n']
     params:
         dbsnp = config['RES'] + config['dbsnp'],
-        padding=100,  # extend intervals to this bp
+        padding=300,  # extend intervals to this bp
         contam_frac = read_contam_w, # get contamination fraction per sample
         # command to get path to capture_kit interval list from SAMPLEFILE
         interval= get_chrom_capture_kit,

@@ -37,15 +37,10 @@ rule DBImport_all:
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
 
-# rule make_glist:
-#     input: g= expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,chr=main_chrs),
-#     output: glist = ("{chr}_gvcfs.list"),
-#     shell: "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.glist}"
-
-
 DBImethod = config.get("DBI_method", "new")
 DBIpath = config.get("DBIpath", "")
 if DBImethod == "new":
+    # if want to
     DBI_method_params = "--genomicsdb-workspace-path "
     path_to_dbi = "genomicsdb_"
 elif DBImethod == "update" and len(DBIpath) != 0:
@@ -66,13 +61,10 @@ rule GenomicDBImport:
     input:
         g = expand("{gvcfs}/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs = config['gVCF'], sample = sample_names, allow_missing=True),
         # glist = rules.make_glist.output.glist
-    log: config['LOG'] + '/' + "GenomicDBImport.{chr_p}.{chr}.log"
+    log: config['LOG'] + "/GenomicDBImport.{chr_p}.{chr}.log"
     benchmark: config['BENCH'] + "/GenomicDBImport.{chr_p}.{chr}.txt"
     conda: "envs/preprocess.yaml"
     output:
-        #dbi = directory(os.path.join(path_to_dbi + "{chr}.p{chr_p}")),
-        # dbi=directory("genomicsdb_{chr}.p{chr_p}"),
-        # gvcf_list = temp("{chr}_gvcfs.list"),
         ready = touch(temp('done_p{chr_p}.{chr}.txt'))
     threads: config['GenomicDBImport']['n']
     params:
@@ -82,7 +74,6 @@ rule GenomicDBImport:
         batches = '75',
         intervals = config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
     priority: 30
-    # conda: "envs/preprocess.yaml"
     shell:
             # "ls gvcf/{wildcards.chr}/*.g.vcf.gz > {output.gvcf_list} && "
             # "{gatk} GenomicsDBImport --reader-threads {threads} -V {input.glist} \

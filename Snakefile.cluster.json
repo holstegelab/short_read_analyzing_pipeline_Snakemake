@@ -7,6 +7,7 @@ __default__:
     active_use_add: 0
     active_use_remove: 0
     partition: compute
+
 mCRAM:
         n: 2
         mem: 1000
@@ -19,16 +20,16 @@ adapter_removal_identify:
 dechimer:
     n: 4
 align_reads:
-        n: 62
-        mem: 62000
-        time: 1400
+    n: 50
+    mem: 52000
+    time: 1400
 merge_bam_alignment:
-    n: 6
-    mem: 12000
+    n: 2
+    mem: 13000
     time: 3000
 sort_bam_alignment:
     n: 2
-    mem: 7000
+    mem: 13000
     time: 1500
 index_sort:
         n: 2
@@ -36,7 +37,6 @@ index_sort:
 merge_rgs:
         n: 1
         mem: 2000
-        time: 800
 markdup:
         n: 4
         mem: 500
@@ -45,13 +45,13 @@ markdup_index:
         mem: 500
 bamstats_all:
         n: 1
-        mem: 6000
+        mem: 250
 CalibrateDragstrModel:
         n: 2
         mem: 5500
         time: 400
 HaplotypeCaller:
-        n: 3
+        n: 2
         mem: 6500
         time: 2500
 GenomicDBImport:
@@ -107,23 +107,23 @@ basic_stats:
         mem: 4500
 hs_stats:
         n: 1
-        mem: 15000
+        mem: 8500
         time: 2000
 samtools_stat:
         n: 1
-        mem: 200
+        mem: 100
         time: 600
 samtools_stat_exome:
         n: 1
-        mem: 200
+        mem: 100
         time: 1200
 Artifact_stats:
         n: 1
-        mem: 15000
+        mem: 7000
         time: 2000
 OXOG_metrics:
         n: 1
-        mem: 7500
+        mem: 5500
         time: 1500
 verifybamid:
         n: 2
@@ -140,7 +140,7 @@ mask_adapters:
         time: 3000
 bamstats_exome:
         n: 1
-        mem: 6000
+        mem: 250
 neewBams:
         n: 16
 

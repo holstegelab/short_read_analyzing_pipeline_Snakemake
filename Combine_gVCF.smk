@@ -32,7 +32,12 @@ rule Combine_gVCF_all:
     input: expand("{gvcf}/MERGED/cohort_{chr}.g.vcf.gz", gvcf = config['gVCF'], chr = main_chrs)
     default_target: True
 
+def check_sfile(wildcards):
+    sfile = SAMPLEINFO[wildcards['sample']]['samplefile']
+    return sfile
 
+
+# WGS and WES differ
 rule combinegvcfs:
     input: expand("{gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
     output: chr_gvcfs = config['gVCF'] + "/MERGED/cohort_{chr}.g.vcf.gz"
@@ -41,6 +46,7 @@ rule combinegvcfs:
         config['BENCH'] + "/{chr}_combinegvcf.txt"
     conda: "envs/preprocess.yaml"
     priority: 30
-    params: inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
+    params:
+        inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
     shell:
         "{gatk} CombineGVCFs -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {ref} 2> {log}"

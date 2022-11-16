@@ -10,7 +10,7 @@ samtools = config['samtools']
 bcftools = config['bcftools']
 dragmap = config['dragmap']
 verifybamid2 = config['verifybamid2']
-
+MERGED_CAPTURE_KIT = config['MERGED_CAPTURE_KIT']
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
@@ -45,11 +45,15 @@ rule Stat_all:
 
 # return interval_list file instead of bed file
 def get_capture_kit_interval_list(wildcards):
-    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+    if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
+        capture_kit = MERGED_CAPTURE_KIT
+    else:
+        capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
     capture_kit_path = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.interval_list')
     return capture_kit_path
 
-
+def get_mem_mb_hs_stats(wildcrads, attempt):
+    return (attempt * int(config['hs_stats']['mem']))
 #hsmetrics
 #include off-target metrics
 rule hs_stats:
@@ -70,12 +74,16 @@ rule hs_stats:
         #def is 20
         MQ=10,
     conda: "envs/preprocess.yaml"
+    resources: mem_mb = get_mem_mb_hs_stats
     shell:
-        "gatk CollectHsMetrics \
+        """gatk  CollectHsMetrics --java-options "-Xmx{resources.mem_mb}m" \
             -I {input.bam} -R {ref} -BI {params.interval} -TI {params.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
-            -O stats/{wildcards.sample}_hs_metrics 2> {log}"
+            -O stats/{wildcards.sample}_hs_metrics 2> {log}"""
+
+def get_mem_mb_Artifact_stats(wildcrads, attempt):
+    return (attempt * int(config['Artifact_stats']['mem']))
 
 rule Artifact_stats:
     input:
@@ -97,10 +105,13 @@ rule Artifact_stats:
         out = os.path.join(config['STAT'], "{sample}.bait_bias"),
         dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
+    resources: mem_mb = get_mem_mb_Artifact_stats
     shell:
-        "gatk CollectSequencingArtifactMetrics -I {input.bam} -O {params.out} \
-        -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"
+        """gatk  CollectSequencingArtifactMetrics --java-options "-Xmx{resources.mem_mb}m" -I {input.bam} -O {params.out} \
+        -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"""
 
+def get_mem_mb_OXOG_metrics(wildcrads, attempt):
+    return (attempt * int(config['OXOG_metrics']['mem']))
 rule OXOG_metrics:
     input:
         bam = rules.markdup.output.mdbams,
@@ -114,9 +125,10 @@ rule OXOG_metrics:
         interval = get_capture_kit_interval_list,
         dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
+    resources: mem_mb = get_mem_mb_OXOG_metrics
     shell:
-        "gatk CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
-         --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"
+        """gatk CollectOxoGMetrics --java-options "-Xmx{resources.mem_mb}m" -I {input.bam} -O {output} -R {ref} \
+         --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"""
 
 rule samtools_stat:
     input:
@@ -134,9 +146,13 @@ rule samtools_stat:
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
 def get_capture_kit_bed(wildcards):
-    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    # if capture_kit.strip() == '':
-    #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
+    if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
+        capture_kit = MERGED_CAPTURE_KIT
+    else:
+        capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
+    
+    if capture_kit.strip() == '':
+        capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
     capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}_hg38.bed')
     return capture_kit_path
 
