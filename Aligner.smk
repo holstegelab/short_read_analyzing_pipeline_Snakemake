@@ -127,6 +127,9 @@ rule align_reads:
 
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
+def get_mem_mb_merge_bam_alignment(wildcrads, attempt):
+    return attempt*(config['merge_bam_alignment']['mem'])
+
 rule merge_bam_alignment:
     input:
         get_fastqpaired,
@@ -142,12 +145,13 @@ rule merge_bam_alignment:
     log: os.path.join(config['LOG'],"{sample}.{readgroup}.mergebamaligment.log")
     params:
         bam_merge=srcdir(config['BAMMERGE'])
+    resources: mem_mb = get_mem_mb_merge_bam_alignment
     priority: 15
     shell:
         """
          (samtools view -h --threads {threads} {input[2]} | \
          pypy {params.bam_merge} -a  {input[0]} -b {input[1]} -s {output.stats}  |\
-         samtools view --threads {threads} -o {output.bam}) 2> {log}
+         samtools fixmate -@ {threads} -u -O BAM -m - {output.bam}) 2> {log}
         """
 
 rule dechimer:
@@ -173,7 +177,8 @@ rule dechimer:
         res = float(primary_soft_clipped_bp) / float(primary_aligned_bp + primary_soft_clipped_bp)
 
         if res > float(config['DECHIMER_THRESHOLD']):
-            cmd = """(samtools view -h --threads {threads} {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} | samtools view --threads {threads} -o {output.bam})"""
+            cmd = """(samtools view -h --threads {threads} {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} |
+             samtools fixmate -@ {threads} -u -O BAM -m - {output.bam})"""
             shell(cmd,conda_env='envs/pypy.yaml')
         else:
             cmd = """
@@ -183,9 +188,6 @@ rule dechimer:
             shell(cmd)
 
 
-def get_mem_mb_sort_bam_aligment(wildcrads, attempt):
-    return attempt * int(config['sort_bam_alignment']['mem'])
-
 rule sort_bam_alignment:
     input:
         in_bam=rules.dechimer.output.bam
@@ -193,22 +195,21 @@ rule sort_bam_alignment:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam")
     params:
         # mask bed for current reference genome
-        temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}")
+        temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}"),
+        memory_per_core= int(((config["sort_bam_alignment"]["mem"] * 1000) / (config['sort_bam_alignment']['n'] * 1024))-500)
     conda: "envs/preprocess.yaml"
     threads: config["sort_bam_alignment"]["n"]
     log:
-        # samtools_fixmate=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_fixmate.log"),
         samtools_sort=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_sort.log"),
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.sort.txt")
     priority: 17
     resources:
         tmpdir=tmpdir,
-        mem_mb = get_mem_mb_sort_bam_aligment
+        mem_mb = config['sort_bam_aligment']['mem']
     shell:
         """
-            (samtools fixmate -@ {threads} -u -O SAM  -m {input.in_bam} -  |\
-            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m 2000M -o {output.bam}) 2> {log.samtools_sort}            
+            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m {params.memory_per_core}M -o {output.bam}) 2> {log.samtools_sort}            
         """
 
 # something here (after re-running snakemake siad that below steps have to run because input was updated by above jobs)
