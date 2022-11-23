@@ -7,7 +7,12 @@ __default__:
     active_use_add: 0
     active_use_remove: 0
     partition: compute
-
+collate_cram:
+        n: 30
+        mem: 60000
+cram_to_fastq:
+        n: 30
+        mem: 60000
 mCRAM:
         n: 2
         mem: 1000

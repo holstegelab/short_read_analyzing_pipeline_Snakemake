@@ -13,7 +13,7 @@ os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+"
+    # readgroup="[\w\d_\-@]+"
 
 from read_samples import *
 from common import *
@@ -42,13 +42,62 @@ def get_fastqpaired(wildcards):
     sinfo = SAMPLEINFO[wildcards['sample']]  # SMAPLEINFO comes from common.py, it's dict created from samplefile
     # check readgroups
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
-    file1 = os.path.join(readgroup['prefix'],readgroup['file1'])
-    if file1.endswith('.bz2'):
-        file1 = file1[:-4] + '.gz'
-    file2 = os.path.join(readgroup['prefix'],readgroup['file2'])
-    if file2.endswith('.bz2'):
-        file2 = file2[:-4] + '.gz'
+    if sinfo['file_type'] == 'fastq_paired' or sinfo['file_type'] == 'fastq':
+        file1 = os.path.join(readgroup['prefix'],readgroup['file1'])
+        if file1.endswith('.bz2'):
+            file1 = file1[:-4] + '.gz'
+        file2 = os.path.join(readgroup['prefix'],readgroup['file2'])
+        if file2.endswith('.bz2'):
+            file2 = file2[:-4] + '.gz'
+    elif 'cram' in sinfo['file_type']:
+        file1 = os.path.join('fq_extracted', wildcards['sample'] + '.' + readgroup['info']['ID'] + '.extracted_R1.fq.gz')
+        file2 = os.path.join('fq_extracted', wildcards['sample'] + '.' + readgroup['info']['ID'] + '.extracted_R2.fq.gz')
     return [file1, file2]
+
+
+
+def get_bam_source(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]
+    if 'cram' in sinfo['file_type'] or 'bam' in sinfo['file_type']:
+        readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    return readgroup['file']
+# readgroup['info']['ID']
+
+rule collate_cram:
+    input:
+        cram = get_bam_source
+    threads: 30
+    output:
+        col_cram = "test_cram/{sample}.{readgroup}.col.cram"
+    log:
+        os.path.join(config['LOG'],"{sample}.{readgroup}.col.log"),
+    benchmark:
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.col.txt")
+    priority: 10
+    conda: "envs/preprocess.yaml"
+    shell:
+        """
+        (samtools view --with-header -T {ref} -r '{wildcards.readgroup}' -@ {threads} {input.cram} | samtools collate -u -o {output} -@ {threads} /dev/stdin ) 2> {log}
+        """
+
+rule cram_to_fastq:
+    input:
+        rules.collate_cram.output.col_cram
+    output:
+        fq1 = "fq_extracted/{sample}.{readgroup}.extracted_R1.fq.gz",
+        fq2 = "fq_extracted/{sample}.{readgroup}.extracted_R2.fq.gz",
+        singeltons = "fq_extracted/{sample}.{readgroup}.extracted_singeltons.fq.gz",
+    threads: 30
+    log:
+        os.path.join(config['LOG'],"{sample}.{readgroup}.cram2fq.log"),
+    benchmark:
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.cram2fq.txt")
+    priority: 10
+    conda: "envs/preprocess.yaml"
+    shell:
+            """
+            samtools fastq --reference {ref} -N -t -@ {threads} -1 {output.fq1} -2 {output.fq2} -s {output.singeltons} {input} 2> {log}
+            """
 
 
 # cut adapters from inout
@@ -154,6 +203,14 @@ rule merge_bam_alignment:
          samtools fixmate -@ {threads} -u -O BAM -m - {output.bam}) 2> {log}
         """
 
+
+#########################
+### CRAM as INPUT #######
+### Alternative fastq-s #
+#########################
+
+
+
 rule dechimer:
     input:
         bam=rules.merge_bam_alignment.output.bam,
@@ -206,7 +263,7 @@ rule sort_bam_alignment:
     priority: 17
     resources:
         tmpdir=tmpdir,
-        mem_mb = config['sort_bam_aligment']['mem']
+        mem_mb = config['sort_bam_alignment']['mem']
     shell:
         """
             (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m {params.memory_per_core}M -o {output.bam}) 2> {log.samtools_sort}            
@@ -214,7 +271,7 @@ rule sort_bam_alignment:
 
 # something here (after re-running snakemake siad that below steps have to run because input was updated by above jobs)
 rule index_sort:
-    input: bam = ancient(rules.sort_bam_alignment.output.bam)
+    input: bam = rules.sort_bam_alignment.output.bam
     output: bai = os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam.bai")
     conda: "envs/preprocess.yaml"
     log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log"),
@@ -244,7 +301,7 @@ def get_readgroups_bai(wildcards):
 rule merge_rgs:
     input:
         bam = get_readgroups_bam,
-        bai = get_readgroups_bai
+        bai = get_readgroups_bai,
     output:
         mer_bam=os.path.join(config['BAM'],"{sample}.merged.bam")
     log: os.path.join(config['LOG'],"{sample}.mergereadgroups.log")
