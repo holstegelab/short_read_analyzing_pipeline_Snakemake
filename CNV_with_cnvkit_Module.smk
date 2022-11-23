@@ -8,7 +8,7 @@ samtools = config['samtools']
 bcftools = config['bcftools']
 dragmap = config['dragmap']
 verifybamid2 = config['verifybamid2']
-
+MERGED_CAPTURE_KIT = config['MERGED_CAPTURE_KIT']
 
 ref = config['RES'] + config['ref']
 

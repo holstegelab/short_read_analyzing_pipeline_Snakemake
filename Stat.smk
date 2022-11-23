@@ -146,13 +146,15 @@ rule samtools_stat:
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
 def get_capture_kit_bed(wildcards):
-    if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
+    if SAMPLEINFO[wildcards['sample']]['sample_type'] == 'illumina_wgs':
+        capture_kit = MERGED_CAPTURE_KIT
+    elif SAMPLEINFO[wildcards['sample']]['capture_kit'] == '':
         capture_kit = MERGED_CAPTURE_KIT
     else:
         capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    
-    if capture_kit.strip() == '':
-        capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
+    #
+    # if capture_kit.strip() == '':
+    #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
     capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}_hg38.bed')
     return capture_kit_path
 

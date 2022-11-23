@@ -108,10 +108,10 @@ if gVCF_combine_method == "DBIMPORT":
 elif gVCF_combine_method == "COMBINE_GVCF":
     #use rule * from Combine_gVCF
     merged_input = expand("{dir}/MERGED/cohort_{chr}.g.vcf.gz", dir = config['VCF'], chr = main_chrs)
-    vcfs_to_merge = expand("-I {dir}/MERGED/cohort_{chr}.g.vcf.gz", dir = config['VCF'], chr = main_chrs)
+    vcfs_to_merge = expand("-I {dir}/MERGED/cohort_{chr}.vcf.gz", dir = config['VCF'], chr = main_chrs)
     rule GenotypeDBI:
         input: gvcf = rules.combinegvcfs.output.chr_gvcfs
-        output: raw_vcf = config['VCF'] + "/MERGED/cohort_{chr}.g.vcf.gz"
+        output: raw_vcf = config['VCF'] + "/MERGED/cohort_{chr}.vcf.gz"
         log: config['LOG'] + '/' + "GenotypeDBI_{chr}.log"
         benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.txt"
         params:
