@@ -266,7 +266,7 @@ rule sort_bam_alignment:
         mem_mb = config['sort_bam_alignment']['mem']
     shell:
         """
-            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m {params.memory_per_core}M -o {output.bam}) 2> {log.samtools_sort}            
+            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {threads} -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
         """
 
 # something here (after re-running snakemake siad that below steps have to run because input was updated by above jobs)
