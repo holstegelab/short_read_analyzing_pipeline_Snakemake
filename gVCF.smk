@@ -155,4 +155,4 @@ rule reblock_gvcf:
     params:
         dbsnp=config['RES'] + config['dbsnp'],
     shell:
-        "{gatk} ReblockGVCF --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"
+        "{gatk} ReblockGVCF --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"
