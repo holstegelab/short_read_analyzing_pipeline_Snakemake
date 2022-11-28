@@ -54,7 +54,7 @@ refflat: 'refFlat.txt'
 MERGED_CAPTURE_KIT: 'merged_capturekits_and_CCDS'
 
 # VQSR DBses
-dbsnp: 'databases/Homo_sapiens_assembly38.dbsnp138.vcf.gz'
+dbsnp: 'databases/HG38_dbSNP_v155.vcf.gz'
 hapmap: 'databases/hapmap_3.3.hg38.vcf.gz'
 omni: 'databases/1000G_omni2.5.hg38.vcf.gz'
 kilo_g: 'databases/1000G_phase1.snps.high_confidence.hg38.vcf.gz'
