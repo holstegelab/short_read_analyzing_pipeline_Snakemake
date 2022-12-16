@@ -14,7 +14,7 @@ ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+"
+    # readgroup="[\w\d_\-@]+"
 
 
 from read_samples import *

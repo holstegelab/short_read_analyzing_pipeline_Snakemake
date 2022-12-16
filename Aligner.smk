@@ -150,6 +150,9 @@ def get_readgroup_params(wildcards):
 def get_mem_mb_align_reads(wildcrads, attempt):
     return (attempt - 1) * 0.5 * int(config['align_reads']['mem']) + int(config['align_reads']['mem'])
 
+def check_sfile(wildcards):
+    sfile = SAMPLEINFO[wildcards['sample']]['samplefile']
+    return sfile
 
 rule align_reads:
     input:
@@ -202,14 +205,6 @@ rule merge_bam_alignment:
          pypy {params.bam_merge} -a  {input[0]} -b {input[1]} -s {output.stats}  |\
          samtools fixmate -@ {threads} -u -O BAM -m - {output.bam}) 2> {log}
         """
-
-
-#########################
-### CRAM as INPUT #######
-### Alternative fastq-s #
-#########################
-
-
 
 rule dechimer:
     input:
@@ -271,7 +266,7 @@ rule sort_bam_alignment:
 
 # something here (after re-running snakemake siad that below steps have to run because input was updated by above jobs)
 rule index_sort:
-    input: bam = rules.sort_bam_alignment.output.bam
+    input: bam = ancient(rules.sort_bam_alignment.output.bam)
     output: bai = os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam.bai")
     conda: "envs/preprocess.yaml"
     log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log"),
