@@ -11,7 +11,6 @@ ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+",
 
 
 
@@ -62,53 +61,40 @@ rule Genotype_all:
 def get_mem_mb_genotype(wildcrads, attempt):
     return (attempt-1) * 2 * int(config['GenotypeDBI']['mem']) + int(config['GenotypeDBI']['mem'])
 
+def get_parts_capture_kit(wildcards):
+    chr = wildcards.chr
+    parts = wildcards.chr_p
+    capture_kit_parts_path = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], 'interval_list', config['MERGED_CAPTURE_KIT'] + '_' + chr + '_' + parts + '.interval_list')
+    return capture_kit_parts_path
+
 if gVCF_combine_method == "DBIMPORT":
     #use rule * from DBImport
     DBImethod = config.get("DBI_method", "new")
-    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*99)
-    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 99)
-    if DBImethod == "new":
-        rule GenotypeDBI:
-            input:
-                test = rules.GenomicDBImport.output.ready
-            output:
-                raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
-            log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
-            benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
-            params:
-                dir = rules.GenomicDBImport.params.dbi,
-                dbsnp = config['RES'] + config['dbsnp'],
-                intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
-            conda: "envs/preprocess.yaml"
-            resources: mem_mb = get_mem_mb_genotype
-            priority: 40
-            shell:
-                    "{gatk} GenotypeGVCFs -R {ref} -V gendb://{params.dir} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
-    elif DBImethod == "update":
-        rule GenotypeDBI:
-            input:
-                gvcf = rules.SelectVariants_For_Genotype.output.gvcf,
-                test = rules.GenomicDBImport.output.ready
-            output:
-                raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
-            log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
-            benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
-            params:
-                dbsnp = config['RES'] + config['dbsnp'],
-                intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
-            conda: "envs/preprocess.yaml"
-            resources: mem_mb=get_mem_mb_genotype
-            priority: 40
-            shell:
-                    "{gatk} GenotypeGVCFs -R {ref} -V {input.gvcf} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"
-    else:
-        raise ValueError(
-            "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
-        )
+    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853)
+    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853)
+    rule GenotypeDBI:
+        input:
+            test = rules.GenomicDBImport.output.ready
+        output:
+            raw_vcfDBI=config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"
+        log: config['LOG'] + '/' + "GenotypeDBI_{chr}.p{chr_p}.log"
+        benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.p{chr_p}.txt"
+        params:
+            dir = rules.GenomicDBImport.params.dbi,
+            dbsnp = config['RES'] + config['dbsnp'],
+            intervals = get_parts_capture_kit
+            # intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
+        conda: "envs/preprocess.yaml"
+        resources: mem_mb = get_mem_mb_genotype
+        priority: 40
+        shell:
+                """{gatk} GenotypeGVCFs --java-options "-Xmx{resources.mem_mb}M" -R {ref} -V gendb://{params.dir} -O {output} -D {params.dbsnp} --intervals {params.intervals} 2> {log}"""
+
+
 elif gVCF_combine_method == "COMBINE_GVCF":
     #use rule * from Combine_gVCF
-    merged_input = expand("{dir}/MERGED/cohort_{chr}.g.vcf.gz", dir = config['VCF'], chr = main_chrs)
-    vcfs_to_merge = expand("-I {dir}/MERGED/cohort_{chr}.vcf.gz", dir = config['VCF'], chr = main_chrs)
+    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853)
+    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853)
     rule GenotypeDBI:
         input: gvcf = rules.combinegvcfs.output.chr_gvcfs
         output: raw_vcf = config['VCF'] + "/MERGED/cohort_{chr}.vcf.gz"
@@ -126,7 +112,6 @@ elif gVCF_combine_method == "COMBINE_GVCF":
 rule Mergechrs:
     input:
         merged_input
-        # expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*99)
     params: vcfs = vcfs_to_merge
     conda: "envs/preprocess.yaml"
     log: config['LOG'] + '/' + "Mergechrs.log"

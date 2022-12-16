@@ -61,12 +61,12 @@ HaplotypeCaller:
         time: 2500
 GenomicDBImport:
         n: 2
-        mem: 7000
-        time: 25000
+        mem: 4000
+        time: 500
 GenotypeDBI:
         n: 2
-        mem: 10000
-        time: 18500
+        mem: 4000
+        time: 1500
 Mergechrs:
         n: 1
         mem: 4000
@@ -148,5 +148,8 @@ bamstats_exome:
         mem: 250
 neewBams:
         n: 16
+combinegvcfs:
+        mem: 7000
+        n: 2
 
 

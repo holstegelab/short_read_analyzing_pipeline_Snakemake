@@ -28,25 +28,30 @@ module gVCF:
     config: config
 use rule * from gVCF
 
-rule Combine_gVCF_all:
-    input: expand("{gvcf}/MERGED/cohort_{chr}.g.vcf.gz", gvcf = config['gVCF'], chr = main_chrs)
+# rule all:
+#     expand('{samplefile}.done', samplefile=SAMPLE_FILES)
+
+rule Combine_VCF_all:
+    input:
+        expand(["{gvcf}/MERGED/bin_level/{chr}_{chr_p}.g.vcf.gz"], zip, chr = main_chrs_db, chr_p = chr_p, gvcf = [config['gVCF']]*853),
     default_target: True
 
-def check_sfile(wildcards):
-    sfile = SAMPLEINFO[wildcards['sample']]['samplefile']
-    return sfile
 
+def get_mem_mb_combine_gvcf(wildcrads, attempt):
+    return attempt*(config['combinegvcfs']['mem'])
 
-# WGS and WES differ
 rule combinegvcfs:
-    input: expand("{gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
-    output: chr_gvcfs = config['gVCF'] + "/MERGED/cohort_{chr}.g.vcf.gz"
-    log: combine =config['LOG'] + "/{chr}_combine.log"
+    input:
+        gvcf = expand("{gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
+        intervals = os.path.join(config['RES'], config['kit_folder'], 'BINS', 'interval_list', '{chr}_{chr_p}.interval_list')
+    output: chr_gvcfs = config['gVCF'] + "/MERGED/bin_level/{chr}_{chr_p}.g.vcf.gz"
+    log: combine =config['LOG'] + "/{chr}_{chr_p}_combine.log"
     benchmark:
-        config['BENCH'] + "/{chr}_combinegvcf.txt"
+        config['BENCH'] + "/{chr}_{chr_p}_combinegvcf_NV.txt"
     conda: "envs/preprocess.yaml"
     priority: 30
+    resources: mem_mb = get_mem_mb_combine_gvcf
     params:
-        inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True)
+        inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
     shell:
-        "{gatk} CombineGVCFs -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {ref} 2> {log}"
+        """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {ref} -L {input.intervals} 2> {log}"""

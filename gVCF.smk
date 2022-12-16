@@ -11,7 +11,7 @@ ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+"
+    # readgroup="[\w\d_\-@]+"
 
 
 from read_samples import *
@@ -69,7 +69,6 @@ rule verifybamid:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup_index.output.mdbams_bai,
-        SVD = get_svd
     output:
         VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
     # end of this file hardcoded in Haplotypecaller and read_contam_w
@@ -78,18 +77,19 @@ rule verifybamid:
     priority: 27
     params:
         VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
+        SVD = get_svd
         # SVD = config['RES'] + config['verifybamid_exome']
     conda: 'envs/verifybamid.yaml'
     shell:
         """
-        verifybamid2 --BamFile {input.bam} --SVDPrefix {input.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
+        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
         """
 
 def get_chrom_capture_kit(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
     chr = wildcards.chr
     if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
-        capture_kit_chr_path = chr
+        capture_kit_chr_path = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list'
     else:
         capture_kit_chr_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38/' + capture_kit + '_hg38_' + chr + '.interval_list'
     return capture_kit_chr_path
