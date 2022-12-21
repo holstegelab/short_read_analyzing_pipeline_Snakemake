@@ -13,6 +13,7 @@ os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
+    extension='sam|bam|cram'
     # readgroup="[\w\d_\-@]+"
 
 from read_samples import *
@@ -25,14 +26,112 @@ sample_names = SAMPLEINFO.keys()
 
 rule Aligner_all:
     input:
-        expand("{bams}/{sample}.merged.bam",sample=sample_names,bams=config['BAM']),
-        expand("{bams}/{sample}.markdup.bam.bai", sample=sample_names, bams=config['BAM']),
         expand("{cram}/{sample}_mapped_hg38.cram",cram=config['CRAM'],sample=sample_names),
-        # expand('{stat}/{sample}.bam_all.tsv',stat=config['STAT'],sample=sample_names)
+        #expand('{stat}/{sample}.bam_all.tsv',stat=config['STAT'],sample=sample_names)
+        #expand("{bams}/{sample}.markdup.bam.bai", sample=sample_names, bams=config['BAM']),
+        #expand("{bams}/{sample}.merged.bam",sample=sample_names,bams=config['BAM']),
     default_target: True
 
-# Split CRAM ((260G) by readgroups == 374 min and ~ 60 Gig RAM
 
+
+#utility function to get cram reference file option for samtools
+def get_cram_ref(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    if readgroup['file_type'] == 'cram':
+        cram_options = '--reference ' + readgroup['reference_file']
+    else:
+        cram_options = ''
+    return cram_options
+
+
+def get_source_aligned_file(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]
+    #there might be multiple bam/cram files as source for a sample (e.g. if sequenced multiple times)
+    #look for a read group for which the source file matches wildcard 'filename'
+    #return the full file path
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['info']['file'])][0]
+    return readgroup['file']
+
+
+rule split_alignments_by_readgroup:
+    input:
+        get_source_aligned_file
+    output:
+        #there can be multiple read groups in 'filename'. Store them in this folder.        
+        readgroups=temp(directory(os.path.join(CONFIG['readgroups'], "{sample}_{filename}"))) 
+    threads: config['split_alignments_by_readgroup']['n']
+    params:
+        cramref=get_cram_ref
+    run:
+        sinfo = SAMPLEINFO[wildcards['sample']]
+        readgroups = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['file'].endswith(wildcards['filename'])]
+
+        n = len(readgroups)
+        if n == 1: #nothing to split, single readgropu, just link the source file
+            extension = os.path.splitext(wildcards['filename'])[1]
+            cmd = """
+                mkdir -p {output}
+                ln {input} {output}/{wildcards.sample}.{readgroups[0]['info']['ID']}.{extension}
+                """
+            shell(cmd)                    
+        else:
+            #extract readgroups to output folder with {sample}.{readgroups ID}.{extension} format
+            if readgroups[0]['file_type'] == 'cram': 
+                #keep cram format, much more efficient, and even slighly faster
+                output_fmt = 'cram,version=3.1'
+            else:
+                output_fmt = 'bam'
+
+            cmd = """
+                mkdir -p {output}
+                samtools split -@ {threads} --output-fmt {output_fmt} {params.cramref} {input} -f '{output}/{wildcards.sample}.%!.%.'
+                """
+            shell(cmd,conda_env='envs/preprocess.yaml')
+
+
+
+def get_aligned_readgroup_folder(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
+    folder = os.path.join(CONFIG['READGROUPS'], wildcards['sample'] + '_' + sfile)
+    return folder
+
+
+
+rule external_alignments_to_fastq:
+    input:
+        get_aligned_readgroup_folder
+    output:
+        fq1 = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.extracted_R1.fq.gz"),
+        fq2 = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.extracted_R2.fq.gz"),
+        singletons = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.extracted_singletons.fq.gz"),
+    threads: config['external_alignments_to_fastq']['n']
+    log:
+        os.path.join(config['LOG'],"{sample}.{readgroup}.cram2fq.log"),
+    benchmark:
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.cram2fq.txt")
+    params:
+        cramref=get_cram_ref
+    priority: 10
+    conda: "envs/preprocess.yaml"
+    #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size becomes biased to genome location)
+    #alternative 2: fastq in interleaved mode, piping directly to adapterremoval is an issue as we 
+    shell:
+        """
+            mkdir -p {TMPDIR}
+            samtools collate -u -@ {threads} {cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{extension} {TMPDIR}/{wilcards.sample}.{wildcards.readgroup}.collate | samtools fastq -O -N -@ {threads} -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log}
+        """
+
+rule bz2togz:
+    input:
+        "{path}.bz2"
+    output:
+        "{path}.gz"
+    shell: """
+        bzcat {input} | bgzip > {output}
+        """
 
 
 #just alignment and convert to bams
@@ -49,55 +148,16 @@ def get_fastqpaired(wildcards):
         file2 = os.path.join(readgroup['prefix'],readgroup['file2'])
         if file2.endswith('.bz2'):
             file2 = file2[:-4] + '.gz'
-    elif 'cram' in sinfo['file_type']:
-        file1 = os.path.join('fq_extracted', wildcards['sample'] + '.' + readgroup['info']['ID'] + '.extracted_R1.fq.gz')
-        file2 = os.path.join('fq_extracted', wildcards['sample'] + '.' + readgroup['info']['ID'] + '.extracted_R2.fq.gz')
+    elif 'cram' in sinfo['file_type'] or 'bam' in sinfo['file_type']:
+        extension = sinfo['file_type']
+        file1 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R1.fq.gz')
+        file2 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R2.fq.gz')
     return [file1, file2]
 
 
 
-def get_bam_source(wildcards):
-    sinfo = SAMPLEINFO[wildcards['sample']]
-    if 'cram' in sinfo['file_type'] or 'bam' in sinfo['file_type']:
-        readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
-    return readgroup['file']
-# readgroup['info']['ID']
 
-rule collate_cram:
-    input:
-        cram = get_bam_source
-    threads: 30
-    output:
-        col_cram = "test_cram/{sample}.{readgroup}.col.cram"
-    log:
-        os.path.join(config['LOG'],"{sample}.{readgroup}.col.log"),
-    benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.col.txt")
-    priority: 10
-    conda: "envs/preprocess.yaml"
-    shell:
-        """
-        (samtools view --with-header -T {ref} -r '{wildcards.readgroup}' -@ {threads} {input.cram} | samtools collate -u -o {output} -@ {threads} /dev/stdin ) 2> {log}
-        """
 
-rule cram_to_fastq:
-    input:
-        rules.collate_cram.output.col_cram
-    output:
-        fq1 = "fq_extracted/{sample}.{readgroup}.extracted_R1.fq.gz",
-        fq2 = "fq_extracted/{sample}.{readgroup}.extracted_R2.fq.gz",
-        singeltons = "fq_extracted/{sample}.{readgroup}.extracted_singeltons.fq.gz",
-    threads: 30
-    log:
-        os.path.join(config['LOG'],"{sample}.{readgroup}.cram2fq.log"),
-    benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.cram2fq.txt")
-    priority: 10
-    conda: "envs/preprocess.yaml"
-    shell:
-            """
-            samtools fastq --reference {ref} -N -t -@ {threads} -1 {output.fq1} -2 {output.fq2} -s {output.singeltons} {input} 2> {log}
-            """
 
 
 # cut adapters from inout
@@ -106,8 +166,8 @@ rule adapter_removal:
     input:
         get_fastqpaired
     output:
-        for_f=os.path.join(config['FQ'],"{sample}.{readgroup}.cut_1.fq.gz"),
-        rev_f=os.path.join(config['FQ'],"{sample}.{readgroup}.cut_2.fq.gz")
+        for_f=temp(os.path.join(config['FQ'],"{sample}.{readgroup}.cut_1.fq.gz")),
+        rev_f=temp(os.path.join(config['FQ'],"{sample}.{readgroup}.cut_2.fq.gz"))
     # log file in this case contain some stats about removed seqs
     log:
         adapter_removal=os.path.join(config['STAT'],"{sample}.{readgroup}.adapter_removal.log"),
@@ -361,4 +421,4 @@ rule mCRAM:
     priority: 30
     conda: "envs/preprocess.yaml"
     shell:
-        "samtools view --cram -T {ref} -@ {threads} -o {output.CRAM} {input.bam}"
+        "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {threads} -o {output.CRAM} {input.bam}"

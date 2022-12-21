@@ -4,10 +4,10 @@ channels:
 - default
 - defaults
 dependencies:
-- samtools=1.15.1
+- samtools=1.16.1
 - adapterremoval=2.3.3
 - pigz=2.6
-- bcftools=1.15.1
+- bcftools=1.16
 - bedtools=2.30.0
 - dragmap=1.2.1
 - gatk4=4.3.0.0

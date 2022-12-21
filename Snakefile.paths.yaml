@@ -7,6 +7,9 @@ RES: '/projects/0/qtholstg/hg38_res/'
 #path to intervals file with targets
 kit_folder: 'intervals/'
 
+#folder with cram reference fasta files
+CRAMREFS: 'cram_refs'
+
 #conda env's paths
 CONDA_VERIFYBAMID: 'envs/verifybamid.yaml'
 CONDA_MAIN: 'envs/preprocess.yaml'
@@ -19,6 +22,7 @@ gVCF: 'gvcf'
 VCF: 'vcfs'
 VCF_Final: 'Final_VCF'
 STAT: 'stats'
+READGROUPS: 'readgroups'
 FQ: 'fq'
 uBAM: 'uBAM'
 uCRAM: 'uCRAM'
@@ -62,5 +66,5 @@ mills: 'databases/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz'
 dbsnp_indel: 'databases/Homo_sapiens_assembly38.known_indels.vcf.gz'
 
 
-TMPDIR: '/scratch-shared/'
+TMPDIR: 'tmp' #do not use scratch, amount of storage is limited
 tmpdir: '/scratch-local'

@@ -41,13 +41,9 @@ def file_size(fname):
 
 
 def get_bam_readgroups(fname, filetype):
-    if 'bam' in filetype:
-        p = subprocess.Popen('samtools view -H %s | grep ^@RG' % fname, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             shell=True)
-    else:
-        p = subprocess.Popen('samtools view -H %s -T /home/gozhegov/data/hg38_res/Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa   | grep ^@RG' % fname,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-
+    p = subprocess.Popen('samtools view -H %s | grep ^@RG' % fname, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            shell=True)
+       
     result, err = p.communicate()
     if p.returncode != 0:
         raise IOError(str(fname) + ': ' + str(err))
@@ -134,7 +130,7 @@ def read_samplefile_simple(filename, config, prefixpath=None):
     if os.path.exists(basename + '.source'):
         with open(basename + '.source','r') as fsource:
             prefixpath = fsource.readline().strip()
-        print(f'Data path overridden from {basename}.source file to {prefixpath}')            
+        print(f'Data path overridden by {basename}.source file to {prefixpath}')            
 
     if not prefixpath:
         prefixpath = os.path.dirname(filename)
@@ -142,9 +138,10 @@ def read_samplefile_simple(filename, config, prefixpath=None):
     if os.path.exists(basename + '.target'):
         with open(basename + '.target','r') as ftarget:
             targetpath = ftarget.readline().strip()
-        print(f'Data target path set to {targetpath}') 
+        print(f'Archive target path set to {targetpath}') 
     else:
         targetpath = None
+        print(f'Archive target path not set (no .target file)') 
 
 
     samples = []
@@ -170,6 +167,7 @@ def read_samplefile_simple(filename, config, prefixpath=None):
                 filesize = None
             else:
                 study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2, filesize = row
+            
 
             warning(sample_id.startswith(study),
                     'Sample id needs to start with study name to prevent sample name conflicts for ' + sample_id)
@@ -226,8 +224,8 @@ def read_samplefile_simple(filename, config, prefixpath=None):
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
                    'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex}
             
-            if any([not append_prefix(prefixpath,f).startswith("/archive") for f in itertools.chain(filenames1,filenames2)]):
-                res, warnings = get_readgroups(res, prefixpath)
+            if any([not (append_prefix(prefixpath,f).startswith("/archive") or append_prefix(prefixpath,f).startswith('dcache:')) for f in itertools.chain(filenames1,filenames2)]):
+                res, warnings = get_readgroups(res, prefixpath, config)
                 for w in warnings:
                     warning(False, w)
             samples.append(res)
@@ -236,7 +234,7 @@ def read_samplefile_simple(filename, config, prefixpath=None):
         f = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.bed')
         if not os.path.isfile(f):
             warning(False, 'capture kit file does not exist: ' + f)
-    print('')
+    print("")
     print('Check complete')
     return samples
 
@@ -253,7 +251,7 @@ def append_prefix(prefix, filename):
         return filename
 
 
-def get_readgroups(sample, sourcedir):
+def get_readgroups(sample, sourcedir, config):
     sample = sample.copy()
     sample_id = sample['sample']
     sample_type = sample['sample_type']
@@ -330,7 +328,20 @@ def get_readgroups(sample, sourcedir):
         used_readgroups = set()
         for filename in [e for e in filenames1 if not e.endswith('crai') or e.endswith('bai')]:
             fstat = os.stat(filename)
+            if 'cram' in file_type: #need fasta reference file
+                if len(sample['file2']) > 0:
+                    assert len(sample['file2']) == 1, 'No support (yet) for multiple cram reference files in "file2" column'
+                    reference_file = sample['file2'][0]
+                else:                    
+                    reference_file = "GRCh38_full_analysis_set_plus_decoy_hla.fa"  #default reference file
+
+                if not reference_file.startswith('/'): #relative path, look in cram reference folder
+                    reference_file = os.path.join(config['RES'], config['CRAMREFS'], sample['file2'][0])
+            else:
+                reference_file = None
+
             readgroups_info = get_bam_readgroups(filename, file_type)
+
             for readgroup_info in readgroups_info:
                 if not 'DT' in readgroup_info:
                     filedate = fstat.st_mtime
@@ -344,17 +355,14 @@ def get_readgroups(sample, sourcedir):
                 readgroup_info['SM'] = sample_id
 
                 readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename,
-                             'nreadgroups': len(readgroups_info), 'prefix': sourcedir}
+                             'nreadgroups': len(readgroups_info), 'prefix': sourcedir, 'reference_file': reference_file}
+                
                 if readgroup_info['ID'] in used_readgroups:
                     readgroup_info['oldname'] = readgroup_info['ID']
                     counter = 2
                     while (readgroup_info['ID'] + '.' + str(counter)) in used_readgroups:
                         counter += 1
                     readgroup_info['ID'] = readgroup_info['ID'] + '.' + str(counter)
-
-                if 'cram' in file_type:
-                    assert len(filenames2) == 1
-                    readgroup['reference_file'] = filenames2[0]
 
                 used_readgroups.add(readgroup_info['ID'])
 
