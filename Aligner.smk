@@ -104,24 +104,30 @@ rule external_alignments_to_fastq:
     input:
         get_aligned_readgroup_folder
     output:
-        fq1 = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.extracted_R1.fq.gz"),
-        fq2 = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.extracted_R2.fq.gz"),
+        fq1 = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.cut_1.fq.gz"),
+        fq2 = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.cut_2.fq.gz"),
         singletons = temp(config['FQ'] + "/{sample}.{readgroup}.{extension}.extracted_singletons.fq.gz"),
+        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.{extension}.adapters"),
     threads: config['external_alignments_to_fastq']['n']
     log:
-        os.path.join(config['LOG'],"{sample}.{readgroup}.cram2fq.log"),
+        fastq=os.path.join(config['LOG'],"{sample}.{readgroup}.cram2fq.log"),
+        adapter_removal=os.path.join(config['STAT'],"{sample}.{readgroup}.adapter_removal.log"),
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.cram2fq.txt")
     params:
-        cramref=get_cram_ref
+        cramref=get_cram_ref,
+        threads_ar=lambda wildcards,threads: max(int(threads / 2.0),1)
     priority: 10
     conda: "envs/preprocess.yaml"
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size becomes biased to genome location)
-    #alternative 2: fastq in interleaved mode, piping directly to adapterremoval is an issue as we 
+    #samtools fastq only uses ~2 threads, while collate uses much more. Therefore,pipe directly into adapterremoval to make use of the extra cores. Also save a store/load cycle.
     shell:
         """
             mkdir -p {TMPDIR}
-            samtools collate -u -@ {threads} {cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{extension} {TMPDIR}/{wilcards.sample}.{wildcards.readgroup}.collate | samtools fastq -O -N -@ {threads} -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log}
+            samtools collate -u -@ {threads} {cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{extension} {TMPDIR}/{wilcards.sample}.{wildcards.readgroup}.collate |
+            samtools fastq -O -N -@ {threads} -0 /dev/null -s {output.singletons}  2> {log.fastq} |
+            tee >(AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --interleaved-input --file1 /dev/stdin --gzip --gzip-level 1 --output1 {output.fq1} --output2 {output.fq2} --settings {log.adapter_removal} --minlength 40  --threads {params.threads_ar + 1}) |
+            AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --interleaved-input --file1 /dev/stdin --minalignmentlength 30 --threads {params.threads_ar - 1} > {output.stats}
         """
 
 rule bz2togz:
@@ -148,10 +154,13 @@ def get_fastqpaired(wildcards):
         file2 = os.path.join(readgroup['prefix'],readgroup['file2'])
         if file2.endswith('.bz2'):
             file2 = file2[:-4] + '.gz'
-    elif 'cram' in sinfo['file_type'] or 'bam' in sinfo['file_type']:
-        extension = sinfo['file_type']
-        file1 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R1.fq.gz')
-        file2 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R2.fq.gz')
+    else:
+        raise RuntimeError('Unexected call to get_fastqpaired')
+
+    #elif 'cram' in sinfo['file_type'] or 'bam' in sinfo['file_type']:
+    #    extension = sinfo['file_type']
+    #    file1 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R1.fq.gz')
+    #    file2 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R2.fq.gz')
     return [file1, file2]
 
 
@@ -166,8 +175,8 @@ rule adapter_removal:
     input:
         get_fastqpaired
     output:
-        for_f=temp(os.path.join(config['FQ'],"{sample}.{readgroup}.cut_1.fq.gz")),
-        rev_f=temp(os.path.join(config['FQ'],"{sample}.{readgroup}.cut_2.fq.gz"))
+        for_f=temp(os.path.join(config['FQ'],"{sample}.{readgroup}.fastq.cut_1.fq.gz")),
+        rev_f=temp(os.path.join(config['FQ'],"{sample}.{readgroup}.fastq.cut_2.fq.gz"))
     # log file in this case contain some stats about removed seqs
     log:
         adapter_removal=os.path.join(config['STAT'],"{sample}.{readgroup}.adapter_removal.log"),
@@ -176,15 +185,17 @@ rule adapter_removal:
     priority: 10
     conda: "envs/preprocess.yaml"
     threads: config["adapter_removal"]["n"]
+    #FIXME: combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |  
     shell: """
-		AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40  --threads {threads} 
+
+		    AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --discarded /dev/null --threads {threads} 
 		"""
 
 rule adapter_removal_identify:
     input:
         get_fastqpaired
     output:
-        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.adapters"),
+        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.fastq.adapters"),
     priority: 5
     conda: "envs/preprocess.yaml"
     threads: config["adapter_removal_identify"]["n"]
@@ -214,10 +225,28 @@ def check_sfile(wildcards):
     sfile = SAMPLEINFO[wildcards['sample']]['samplefile']
     return sfile
 
+def get_prepared_fastq(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]  # SMAPLEINFO comes from common.py, it's dict created from samplefile
+
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    if sinfo['file_type'] == 'fastq_paired' or sinfo['file_type'] == 'fastq':
+        extension = 'fastq'
+    elif 'cram' in sinfo['file_type']:
+        extension = 'cram'
+    elif 'bam' in sinfo['file_type']:
+        extension = 'bam'
+    else:
+        raise NotImplementedError('File type not yet supported')
+
+    file1 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgruop'] + '.' + extension + '.cut_1.fq.gz')
+    file2 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgruop'] + '.' + extension + '.cut_2.fq.gz')
+    return [file1,file2]
+
+
+
 rule align_reads:
     input:
-        for_f=rules.adapter_removal.output.for_f,
-        rev_f=rules.adapter_removal.output.rev_f,
+        get_prepared_fastq
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.aligned.bam")
     params:
@@ -235,7 +264,7 @@ rule align_reads:
     resources:
         mem_mb=get_mem_mb_align_reads,
     shell:
-        "(dragen-os -r {params.ref_dir} -1 {input.for_f} -2 {input.rev_f} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads}  | samtools view -@ {threads} -o {output.bam}) 2> {log.dragmap_log} "
+        "(dragen-os -r {params.ref_dir} -1 {input[0]} -2 {input[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --ht-mask-bed {params.mask_bed} --num-threads {threads}  | samtools view -@ {threads} -o {output.bam}) 2> {log.dragmap_log} "
 
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
