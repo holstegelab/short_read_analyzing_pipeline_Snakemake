@@ -30,10 +30,11 @@ use rule * from gVCF
 
 # rule all:
 #     expand('{samplefile}.done', samplefile=SAMPLE_FILES)
+mode = config.get("computing_mode", "WES")
 
 rule Combine_VCF_all:
     input:
-        expand(["{gvcf}/MERGED/bin_level/{chr}_{chr_p}.g.vcf.gz"], zip, chr = main_chrs_db, chr_p = chr_p, gvcf = [config['gVCF']]*853),
+        expand(["{gvcf}/MERGED/bin_level/{chr}_{chr_p}.{mode}.g.vcf.gz"], zip, chr = main_chrs_db, chr_p = chr_p, gvcf = [config['gVCF']]*853, mode = mode*853),
     default_target: True
 
 
@@ -42,16 +43,16 @@ def get_mem_mb_combine_gvcf(wildcrads, attempt):
 
 rule combinegvcfs:
     input:
-        gvcf = expand("{gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
+        gvcf = expand("{gvcf}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
         intervals = os.path.join(config['RES'], config['kit_folder'], 'BINS', 'interval_list', '{chr}_{chr_p}.interval_list')
-    output: chr_gvcfs = config['gVCF'] + "/MERGED/bin_level/{chr}_{chr_p}.g.vcf.gz"
-    log: combine =config['LOG'] + "/{chr}_{chr_p}_combine.log"
+    output: chr_gvcfs = config['gVCF'] + "/MERGED/bin_level/{chr}_{chr_p}.{mode}.g.vcf.gz"
+    log: combine =config['LOG'] + "/{chr}_{chr_p}_{mode}.combine.log"
     benchmark:
-        config['BENCH'] + "/{chr}_{chr_p}_combinegvcf_NV.txt"
+        config['BENCH'] + "/{chr}_{chr_p}_{mode}.combinegvcf_NV.txt"
     conda: "envs/preprocess.yaml"
     priority: 30
     resources: mem_mb = get_mem_mb_combine_gvcf
     params:
-        inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
+        inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
     shell:
         """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {ref} -L {input.intervals} 2> {log}"""

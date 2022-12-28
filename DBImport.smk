@@ -29,10 +29,10 @@ module gVCF:
 # use rule * from gVCF
 
 bins = config['RES'] + config['bin_file_ref']
-
+mode = config.get("computing_mode", "WES")
 rule DBImport_all:
     input:
-        expand(["labels/done_p{chr_p}.{chr}.{samplefile}.txt"], zip, chr = main_chrs_db, chr_p = chr_p, samplefile = SAMPLE_FILES*853),
+        expand(["labels/done_p{chr_p}.{chr}.{samplefile}.{mode}.txt"], zip, chr = main_chrs_db, chr_p = chr_p, samplefile = SAMPLE_FILES*853, mode = mode*853),
         # rules.gVCF_all.input,
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
@@ -74,9 +74,9 @@ else:
 
 
 rule backup_gdbi:
-    input: gdbi = path_to_dbi + '{chr}.p{chr_p}'
-    output: label = touch('labels/done_backup_{samplefile}_{chr}.p{chr_p}')
-    params: tar = "{samplefile}_gdbi_{chr}.p{chr_p}.tar.gz"
+    input: gdbi = path_to_dbi + '{chr}.p{chr_p}_{mode}'
+    output: label = touch('labels/done_backup_{samplefile}_{mode}_{chr}.p{chr_p}')
+    params: tar = "{samplefile}_{mode}_gdbi_{chr}.p{chr_p}.tar.gz"
     shell: """
             mkdir -p BACKUPS/previous &&
             find . -maxdepth 2 -name '*_gdbi_{chr}.p{chr_p}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
@@ -94,18 +94,18 @@ def get_mem_mb_GenomicDBI(wildcrads, attempt):
 
 rule GenomicDBImport:
     input:
-        g=expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,allow_missing=True),
+        g=expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,allow_missing=True),
         intervals=os.path.join(config['RES'],config['kit_folder'],'BINS','interval_list','{chr}_{chr_p}.interval_list'),
         labels = labels
-    log: config['LOG'] + "/GenomicDBImport.{samplefile}.{chr_p}.{chr}.log"
-    benchmark: config['BENCH'] + "/{chr}_{chr_p}_{samplefile}_GenomicDBImport.txt"
+    log: config['LOG'] + "/GenomicDBImport.{samplefile}.{chr_p}.{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/{chr}_{chr_p}_{samplefile}.{mode}_GenomicDBImport.txt"
     conda: "envs/preprocess.yaml"
     output:
-        ready=touch('labels/done_p{chr_p}.{chr}.{samplefile}.txt')
+        ready=touch('labels/done_p{chr_p}.{chr}.{samplefile}.{mode}.txt')
     threads: config['GenomicDBImport']['n']
     params:
-        inputs=expand(" -V {gvcfs}/reblock/{chr}/{sample}.{chr}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,allow_missing=True),
-        dbi=os.path.join(path_to_dbi + "{chr}.p{chr_p}"),
+        inputs=expand(" -V {gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,allow_missing=True),
+        dbi=os.path.join(path_to_dbi + "{chr}.p{chr_p}_{mode}"),
         method=DBI_method_params,
         batches='75',
     priority: 30

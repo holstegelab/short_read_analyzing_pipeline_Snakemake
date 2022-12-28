@@ -95,7 +95,7 @@ def get_aligned_readgroup_folder(wildcards):
     sinfo = SAMPLEINFO[wildcards['sample']]
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
-    folder = os.path.join(CONFIG['READGROUPS'], wildcards['sample'] + '_' + sfile)
+    folder = os.path.join(config['READGROUPS'], wildcards['sample'] + '_' + sfile)
     return folder
 
 
@@ -110,10 +110,10 @@ rule external_alignments_to_fastq:
         stats=os.path.join(config['STAT'],"{sample}.{readgroup}.{extension}.adapters"),
     threads: config['external_alignments_to_fastq']['n']
     log:
-        fastq=os.path.join(config['LOG'],"{sample}.{readgroup}.cram2fq.log"),
-        adapter_removal=os.path.join(config['STAT'],"{sample}.{readgroup}.adapter_removal.log"),
+        fastq=os.path.join(config['LOG'],"{sample}.{readgroup}.{extension}.cram2fq.log"),
+        adapter_removal=os.path.join(config['STAT'],"{sample}.{readgroup}.{extension}.adapter_removal.log"),
     benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.cram2fq.txt")
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.{extension}.cram2fq.txt")
     params:
         cramref=get_cram_ref,
         threads_ar=lambda wildcards,threads: max(int(threads / 2.0),1)

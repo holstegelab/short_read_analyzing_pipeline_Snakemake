@@ -26,9 +26,11 @@ module Aligner:
     config: config
 use rule * from Aligner
 
+mode = config.get("computing_mode", "WES")
+
 rule gVCF_all:
     input:
-        expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names),
+        expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
         rules.Aligner_all.input
     default_target: True
 
@@ -89,9 +91,17 @@ def get_chrom_capture_kit(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
     chr = wildcards.chr
     if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
-        capture_kit_chr_path = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list'
+        if mode == 'WES':
+            capture_kit_chr_path = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list'
+        elif mode == 'WGS':
+            capture_kit_chr_path = chr
     else:
-        capture_kit_chr_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38/' + capture_kit + '_hg38_' + chr + '.interval_list'
+        if mode == 'WES':
+            capture_kit_chr_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38/' + capture_kit + '_hg38_' + chr + '.interval_list'
+        else:
+            raise ValueError(
+                "You tried to run WGS pipeline on WES samples!"
+            )
     return capture_kit_chr_path
     # return os.path.join(RESOURCES, 'capture_kits', capture_kit, capture_kit + '.chr' + wildcards.chrom + '.bed')
 
@@ -121,11 +131,11 @@ rule HaplotypeCaller:
         contam= rules.verifybamid.output.VBID_stat,
         bai = rules.markdup_index.output.mdbams_bai
     output:
-        gvcf= config['gVCF'] + "/{chr}/{sample}.{chr}.g.vcf.gz"
+        gvcf= config['gVCF'] + "/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"
     log:
-        HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_haplotypecaller.log"
+        HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_{mode}_haplotypecaller.log"
     benchmark:
-        config['BENCH'] + "/{sample}_{chr}_haplotypecaller.txt"
+        config['BENCH'] + "/{sample}_{chr}_{mode}_haplotypecaller.txt"
     conda: "envs/preprocess.yaml"
     resources: mem_mb = get_mem_mb_HaplotypeCaller
     threads: config['HaplotypeCaller']['n']
@@ -146,10 +156,10 @@ rule HaplotypeCaller:
 rule reblock_gvcf:
     input:
         gvcf = rules.HaplotypeCaller.output.gvcf,
-    output: gvcf_reblock = config['gVCF'] + "/reblock/{chr}/{sample}.{chr}.g.vcf.gz"
-    log: Reblock=config['LOG'] + "/{sample}_{chr}_reblock.log"
+    output: gvcf_reblock = config['gVCF'] + "/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"
+    log: Reblock=config['LOG'] + "/{sample}_{chr}_{mode}_reblock.log"
     benchmark:
-        config['BENCH'] + "/{sample}_{chr}_reblock.txt"
+        config['BENCH'] + "/{sample}_{chr}_{mode}_reblock.txt"
     conda: "envs/preprocess.yaml"
     priority: 29
     params:
