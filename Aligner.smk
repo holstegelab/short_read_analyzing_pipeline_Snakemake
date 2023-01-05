@@ -35,6 +35,7 @@ rule Aligner_all:
 
 
 #utility function to get cram reference file option for samtools
+# maybe change somehow? If we don't have acces to original reference
 def get_cram_ref(wildcards):
     sinfo = SAMPLEINFO[wildcards['sample']]
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
@@ -50,7 +51,7 @@ def get_source_aligned_file(wildcards):
     #there might be multiple bam/cram files as source for a sample (e.g. if sequenced multiple times)
     #look for a read group for which the source file matches wildcard 'filename'
     #return the full file path
-    readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['info']['file'])][0]
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['info']['file']][0]
     return readgroup['file']
 
 
@@ -59,7 +60,7 @@ rule split_alignments_by_readgroup:
         get_source_aligned_file
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.        
-        readgroups=temp(directory(os.path.join(CONFIG['readgroups'], "{sample}_{filename}"))) 
+        readgroups=temp(directory(os.path.join(config['READGROUPS'], "{sample}_{filename}")))
     threads: config['split_alignments_by_readgroup']['n']
     params:
         cramref=get_cram_ref
@@ -163,14 +164,7 @@ def get_fastqpaired(wildcards):
     #    file2 = os.path.join(config["FQ"], wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + extension + '.extracted_R2.fq.gz')
     return [file1, file2]
 
-
-
-
-
-
-
 # cut adapters from inout
-# DRAGMAP doesn;t work well with uBAM, so use fq as input
 rule adapter_removal:
     input:
         get_fastqpaired
@@ -185,9 +179,9 @@ rule adapter_removal:
     priority: 10
     conda: "envs/preprocess.yaml"
     threads: config["adapter_removal"]["n"]
-    #FIXME: combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |  
-    shell: """
-
+    ##FIXME: combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
+    shell:
+        """
 		    AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --discarded /dev/null --threads {threads} 
 		"""
 
@@ -200,7 +194,8 @@ rule adapter_removal_identify:
     conda: "envs/preprocess.yaml"
     threads: config["adapter_removal_identify"]["n"]
     benchmark: os.path.join(config['BENCH'],"{sample}.{readgroup}.adapter_removal_identify.txt")
-    shell: """
+    shell:
+        """
 		AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]}  --threads {threads} > {output.stats}
 		"""
 
@@ -238,8 +233,8 @@ def get_prepared_fastq(wildcards):
     else:
         raise NotImplementedError('File type not yet supported')
 
-    file1 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgruop'] + '.' + extension + '.cut_1.fq.gz')
-    file2 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgruop'] + '.' + extension + '.cut_2.fq.gz')
+    file1 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgroup'] + '.' + extension + '.cut_1.fq.gz')
+    file2 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgroup'] + '.' + extension + '.cut_2.fq.gz')
     return [file1,file2]
 
 
@@ -313,8 +308,7 @@ rule dechimer:
             stats = [l for l in f.readlines()]
         print(stats)
         primary_aligned_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_aligned_bp')][0]
-        primary_soft_clipped_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp')][
-            0]
+        primary_soft_clipped_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp')][0]
         res = float(primary_soft_clipped_bp) / float(primary_aligned_bp + primary_soft_clipped_bp)
 
         if res > float(config['DECHIMER_THRESHOLD']):

@@ -155,5 +155,8 @@ neewBams:
 combinegvcfs:
         mem: 7000
         n: 2
+delly_call:
+        mem: 1700
+        n: 1
 
 

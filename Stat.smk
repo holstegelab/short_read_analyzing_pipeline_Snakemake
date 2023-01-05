@@ -14,8 +14,8 @@ MERGED_CAPTURE_KIT = config['MERGED_CAPTURE_KIT']
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+"
+    sample="[\w\d_\-@]+"
+
 
 from read_samples import *
 from common import *
@@ -39,9 +39,6 @@ rule Stat_all:
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
     default_target: True
-
-
-
 
 # return interval_list file instead of bed file
 def get_capture_kit_interval_list(wildcards):
