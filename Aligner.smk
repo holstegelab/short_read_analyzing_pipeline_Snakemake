@@ -13,7 +13,8 @@ os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    extension='sam|bam|cram'
+    extension='sam|bam|cram',
+    filetype = 'fq|fastq'
     # readgroup="[\w\d_\-@]+"
 
 from read_samples import *
@@ -133,9 +134,9 @@ rule external_alignments_to_fastq:
 
 rule bz2togz:
     input:
-        "{path}.bz2"
+        "{path}.{filetype}.bz2"
     output:
-        "{path}.gz"
+        "{path}.{filetype}.gz"
     shell: """
         bzcat {input} | bgzip > {output}
         """

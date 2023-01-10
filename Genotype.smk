@@ -1,3 +1,5 @@
+import os
+
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['gatk']
@@ -11,7 +13,7 @@ ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-mode = config.get("computing_mode", "WES")
+
 
 
 from read_samples import *
@@ -36,7 +38,8 @@ module Combine_gVCF:
 
 
 bins = config['RES'] + config['bin_file_ref']
-gVCF_combine_method = config.get("Combine_gVCF_method", "COMBINE_GVCF")
+gVCF_combine_method = config.get("Combine_gVCF_method", "DBIMPORT")
+mode = config.get("computing_mode", "WES")
 if gVCF_combine_method == "DBIMPORT":
     use rule * from DBImport
     rule_all_combine = rules.DBImport_all.input
@@ -53,13 +56,14 @@ rule Genotype_all:
         rule_all_combine,
         # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
         expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
-        expand("{vcf}/Merged_norm.{mode}.vcf", vcf=config['VCF_Final'], mode = mode),
-        expand("{vcf}/Merged_norm.{mode}.vcf.idx", vcf=config['VCF_Final'], mode = mode),
-        expand("{stat}/BASIC.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode),
+        # expand("{vcf}/Merged_norm.{mode}.vcf", vcf=config['VCF_Final'], mode = mode),
+        # expand("{vcf}/Merged_norm.{mode}.vcf.idx", vcf=config['VCF_Final'], mode = mode),
+        # expand("{stat}/BASIC.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode),
+        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = chr)
     default_target: True
 
 def get_mem_mb_genotype(wildcrads, attempt):
-    return (attempt-1) * 2 * int(config['GenotypeDBI']['mem']) + int(config['GenotypeDBI']['mem'])
+    return attempt*int(config['GenotypeDBI']['mem'])
 
 def get_parts_capture_kit(wildcards):
     chr = wildcards.chr
@@ -73,8 +77,8 @@ def get_parts_capture_kit(wildcards):
 if gVCF_combine_method == "DBIMPORT":
     #use rule * from DBImport
     DBImethod = config.get("DBI_method", "new")
-    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = mode*853)
-    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = mode*853)
+    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = [mode]*853)
+    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = [mode]*853)
     rule GenotypeDBI:
         input:
             test = rules.GenomicDBImport.output.ready
@@ -96,13 +100,13 @@ if gVCF_combine_method == "DBIMPORT":
 
 elif gVCF_combine_method == "COMBINE_GVCF":
     #use rule * from Combine_gVCF
-    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = mode*853)
-    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = mode*853)
+    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = [mode]*853)
+    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = [mode]*853)
     rule GenotypeDBI:
         input: gvcf = rules.combinegvcfs.output.chr_gvcfs
-        output: raw_vcf = config['VCF'] + "/MERGED/cohort_{chr}.{mode}.vcf.gz"
-        log: config['LOG'] + '/' + "GenotypeDBI_{chr}.{mode}.log"
-        benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.{mode}.txt"
+        output: raw_vcf = config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"
+        log: config['LOG'] + '/' + "GenotypeDBI_{chr}.{chr_p}.{mode}.log"
+        benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.{chr_p}.{mode}.txt"
         params:
             dbsnp=config['RES'] + config['dbsnp'],
         conda: "envs/preprocess.yaml"
@@ -124,6 +128,18 @@ rule Mergechrs:
     priority: 45
     shell:
         "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log}"
+
+rule merge_per_chr:
+    input:
+        vcfs =  merged_input
+    output: per_chr_vcfs = os.path.join(config['VCF'], "PER_chr", "{chr}_{mode}_merged.vcf.gz")
+    params: inputs = expand("-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz", mode = mode, dir = config['VCF'], chr_p = chr_p, allow_missing=True)
+    log: config['LOG'] + "/merge_per_chr_{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/merge_per_chr_{chr}.{mode}.txt"
+    priority: 45
+    conda: "envs/preprocess.yaml"
+    shell:
+        "{gatk} GatherVcfs {params.inputs} -O {output} -R {ref} 2> {log}"
 
 rule index_mergechrs:
     input: rules.Mergechrs.output.vcf

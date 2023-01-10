@@ -10,6 +10,7 @@ ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
+    mode = "WES|WGS"
     # readgroup="[\w\d_\-@]+",
 
 from read_samples import *
@@ -32,7 +33,7 @@ bins = config['RES'] + config['bin_file_ref']
 mode = config.get("computing_mode", "WES")
 rule DBImport_all:
     input:
-        expand(["labels/done_p{chr_p}.{chr}.{samplefile}.{mode}.txt"], zip, chr = main_chrs_db, chr_p = chr_p, samplefile = SAMPLE_FILES*853, mode = mode*853),
+        expand(["labels/done_p{chr_p}.{chr}.{mode}.txt"], zip, chr = main_chrs_db, chr_p = chr_p, mode = [mode]*853),
         # rules.gVCF_all.input,
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
@@ -43,9 +44,11 @@ if DBImethod == "new":
     # if want to
     DBI_method_params = "--genomicsdb-workspace-path "
     path_to_dbi = "genomicsdb_"
+    labels = []
 elif DBImethod == "update" and len(DBIpath) != 1:
     DBI_method_params = "--genomicsdb-update-workspace-path "
     path_to_dbi = DBIpath
+    labels = expand(["labels/done_backup_{samplefile}_{mode}_{chr}.p{chr_p}"],zip,chr=main_chrs_db,chr_p=chr_p,mode=[mode] * 853,samplefile=SAMPLE_FILES * 853)
 elif DBImethod == "update" and len(DBIpath) == 1:
     raise ValueError(
         "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_'"
@@ -83,10 +86,6 @@ rule backup_gdbi:
             tar -czv -f BACKUPS/{params.tar} {input}
             """
 
-if DBImethod == 'new':
-    labels = []
-elif DBImethod == 'update':
-    labels = rules.backup_gdbi.output
 
 def get_mem_mb_GenomicDBI(wildcrads, attempt):
     return attempt*(config['GenomicDBImport']['mem'])
@@ -94,17 +93,17 @@ def get_mem_mb_GenomicDBI(wildcrads, attempt):
 
 rule GenomicDBImport:
     input:
-        g=expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,allow_missing=True),
+        g=expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names, mode = [mode], allow_missing=True),
         intervals=os.path.join(config['RES'],config['kit_folder'],'BINS','interval_list','{chr}_{chr_p}.interval_list'),
         labels = labels
-    log: config['LOG'] + "/GenomicDBImport.{samplefile}.{chr_p}.{chr}.{mode}.log"
-    benchmark: config['BENCH'] + "/{chr}_{chr_p}_{samplefile}.{mode}_GenomicDBImport.txt"
+    log: config['LOG'] + "/GenomicDBImport.{chr_p}.{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/{chr}_{chr_p}.{mode}_GenomicDBImport.txt"
     conda: "envs/preprocess.yaml"
     output:
-        ready=touch('labels/done_p{chr_p}.{chr}.{samplefile}.{mode}.txt')
+        ready=touch('labels/done_p{chr_p}.{chr}.{mode}.txt')
     threads: config['GenomicDBImport']['n']
     params:
-        inputs=expand(" -V {gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,allow_missing=True),
+        inputs=expand(" -V {gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,mode = [mode],allow_missing=True),
         dbi=os.path.join(path_to_dbi + "{chr}.p{chr_p}_{mode}"),
         method=DBI_method_params,
         batches='75',

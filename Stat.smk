@@ -1,7 +1,9 @@
 import pandas as pd
 import numpy
 import read_stats
+import read_stats
 import os
+import getpass
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
@@ -23,6 +25,11 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
+
+
+tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
+
+os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -71,9 +78,11 @@ rule hs_stats:
         #def is 20
         MQ=10,
     conda: "envs/preprocess.yaml"
-    resources: mem_mb = get_mem_mb_hs_stats
+    resources: mem_mb = get_mem_mb_hs_stats,
+                tmpdir = tmpdir
     shell:
-        """gatk  CollectHsMetrics --java-options "-Xmx{resources.mem_mb}m" \
+        """
+            gatk  CollectHsMetrics --java-options "-Xmx{resources.mem_mb}m"  --TMP_DIR {resources.tmpdir} \
             -I {input.bam} -R {ref} -BI {params.interval} -TI {params.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
@@ -102,9 +111,11 @@ rule Artifact_stats:
         out = os.path.join(config['STAT'], "{sample}.bait_bias"),
         dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
-    resources: mem_mb = get_mem_mb_Artifact_stats
+    resources: mem_mb = get_mem_mb_Artifact_stats,
+                tmpdir= tmpdir
     shell:
-        """gatk  CollectSequencingArtifactMetrics --java-options "-Xmx{resources.mem_mb}m" -I {input.bam} -O {params.out} \
+        """
+            gatk  CollectSequencingArtifactMetrics --java-options "-Xmx{resources.mem_mb}m" --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
         -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"""
 
 def get_mem_mb_OXOG_metrics(wildcrads, attempt):
@@ -122,7 +133,9 @@ rule OXOG_metrics:
         interval = get_capture_kit_interval_list,
         dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
-    resources: mem_mb = get_mem_mb_OXOG_metrics
+    resources:
+                mem_mb = get_mem_mb_OXOG_metrics,
+                tmpdir= tmpdir
     shell:
         """gatk CollectOxoGMetrics --java-options "-Xmx{resources.mem_mb}m" -I {input.bam} -O {output} -R {ref} \
          --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"""

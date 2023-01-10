@@ -1,3 +1,8 @@
+import pandas as pd
+import read_stats
+import os
+import getpass
+
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['gatk']
@@ -8,6 +13,9 @@ verifybamid2 = config['verifybamid2']
 
 ref = config['RES'] + config['ref']
 
+tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
+
+os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -137,7 +145,8 @@ rule HaplotypeCaller:
     benchmark:
         config['BENCH'] + "/{sample}_{chr}_{mode}_haplotypecaller.txt"
     conda: "envs/preprocess.yaml"
-    resources: mem_mb = get_mem_mb_HaplotypeCaller
+    resources: mem_mb = get_mem_mb_HaplotypeCaller,
+                tmpdir = tmpdir
     threads: config['HaplotypeCaller']['n']
     params:
         dbsnp = config['RES'] + config['dbsnp'],
@@ -147,11 +156,12 @@ rule HaplotypeCaller:
         interval= get_chrom_capture_kit,
     priority: 28
     shell:
-        "{gatk} HaplotypeCaller \
+        """
+                {gatk} HaplotypeCaller  --java-options "-Xmx{resources.mem_mb}m" --tmp-dir {resources.tmpdir}  \
                  -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {threads} \
-                  --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"
+                  --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
 
 rule reblock_gvcf:
     input:
