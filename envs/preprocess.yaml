@@ -15,4 +15,7 @@ dependencies:
 - delly=1.1.3
 - cnvkit=0.9.9
 - r-ggplot2=3.3.6
+- python-crypt4gh
+- htslib
+- python=3.10
 name: preprocess
