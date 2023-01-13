@@ -131,14 +131,13 @@ rule OXOG_metrics:
     benchmark: os.path.join(config['BENCH'], "OxoG_{sample}.txt")
     params:
         interval = get_capture_kit_interval_list,
-        dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
     resources:
                 mem_mb = get_mem_mb_OXOG_metrics,
                 tmpdir= tmpdir
     shell:
         """gatk CollectOxoGMetrics --java-options "-Xmx{resources.mem_mb}m" -I {input.bam} -O {output} -R {ref} \
-         --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"""
+         --INTERVALS {params.interval} 2> {log}"""
 
 rule samtools_stat:
     input:

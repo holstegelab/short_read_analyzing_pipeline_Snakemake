@@ -14,6 +14,7 @@ verifybamid2 = config['verifybamid2']
 ref = config['RES'] + config['ref']
 
 tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
+tmpdir_alternative = os.path.join(config['tmpdir'],getpass.getuser())
 
 os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
@@ -146,7 +147,7 @@ rule HaplotypeCaller:
         config['BENCH'] + "/{sample}_{chr}_{mode}_haplotypecaller.txt"
     conda: "envs/preprocess.yaml"
     resources: mem_mb = get_mem_mb_HaplotypeCaller,
-                tmpdir = tmpdir
+                tmpdir = tmpdir_alternative
     threads: config['HaplotypeCaller']['n']
     params:
         dbsnp = config['RES'] + config['dbsnp'],
@@ -157,11 +158,18 @@ rule HaplotypeCaller:
     priority: 28
     shell:
         """
-                {gatk} HaplotypeCaller  --java-options "-Xmx{resources.mem_mb}m" --tmp-dir {resources.tmpdir}  \
+                {gatk} HaplotypeCaller  --java-options "-Xmx{resources.mem_mb}m"   \
                  -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {threads} \
                   --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
+
+
+def get_mem_mb_reblock_gvcf(wildcrads, attempt):
+    return attempt * int(config['reblock_gvcf']['mem'])
+
+rule index_gvcf:
+    input: gvcf = rules.HaplotypeCaller.output.gvcf
 
 rule reblock_gvcf:
     input:
@@ -174,5 +182,6 @@ rule reblock_gvcf:
     priority: 29
     params:
         dbsnp=config['RES'] + config['dbsnp'],
+    resources: mem_mb = get_mem_mb_reblock_gvcf
     shell:
-        "{gatk} ReblockGVCF --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"
+        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}m" --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""

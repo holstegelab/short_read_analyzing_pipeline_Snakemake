@@ -51,6 +51,10 @@ module Combine_gVCF:
     snakefile: 'Combine_gVCF.smk'
     config: config
 use rule * from Stat
+module Encrypt:
+    snakefile: 'Encrypt.smk'
+    config: config
+use rule * from Encrypt
 
 
 
@@ -127,7 +131,8 @@ rule all:
         VQSR_rule,
         rules.Stat_all.input,
         SV_rule,
-        CNV_rule
+        CNV_rule,
+        rules.Encrypt_all.input
     default_target: True
 
 
