@@ -1,8 +1,7 @@
-
 #HOME FOLDERS:
 # path to miniconda
 miniconda: '~/miniconda3/envs/preprocess/'
-RES: '/projects/0/qtholstg/hg38_res/'
+RES: '/gpfs/work3/0/qtholstg/hg38_res/'
 
 #path to intervals file with targets
 kit_folder: 'intervals/'
@@ -31,6 +30,7 @@ TARGET: 'cnvkit/target'
 CNVKIT: 'cnvkit'
 DELLY: 'SV_delly'
 MULTICOHORT: 'Multicohort'
+DEEPVARIANT: 'deepvariant'
 #programs
 gatk: 'gatk'
 samtools: 'samtools'
@@ -58,7 +58,7 @@ refflat: 'refFlat.txt'
 MERGED_CAPTURE_KIT: 'merged_capturekits_and_CCDS'
 
 # VQSR DBses
-dbsnp: 'databases/HG38_dbSNP_v155.vcf.gz'
+dbsnp: 'databases/HG38_dbSNP_v155_updatesd.vcf.gz'
 hapmap: 'databases/hapmap_3.3.hg38.vcf.gz'
 omni: 'databases/1000G_omni2.5.hg38.vcf.gz'
 kilo_g: 'databases/1000G_phase1.snps.high_confidence.hg38.vcf.gz'

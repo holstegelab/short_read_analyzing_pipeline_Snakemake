@@ -202,10 +202,6 @@ rule bamstats_all:
 
 rule bamstats_exome:
     input:
-        # very annoying bug here
-        # if in input 2 functions and one of them is check chekpoint (rules.markdup.output.mdbams and get_capture_kit_bed here was as example)
-        # first command has not been executed
-        # and in shell wildcard (instead of iutput of function) has putted
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup_index.output.mdbams_bai
     output:

@@ -55,12 +55,14 @@ rule Genotype_all:
     input:
         rule_all_combine,
         # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
-        expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
+        #expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
         # expand("{vcf}/Merged_norm.{mode}.vcf", vcf=config['VCF_Final'], mode = mode),
         # expand("{vcf}/Merged_norm.{mode}.vcf.idx", vcf=config['VCF_Final'], mode = mode),
-        # expand("{stat}/BASIC.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode),
-        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = chr)
+        expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = chr),
+        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = chr),
+        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = chr)
     default_target: True
+
 
 def get_mem_mb_genotype(wildcrads, attempt):
     return attempt*int(config['GenotypeDBI']['mem'])
@@ -129,18 +131,6 @@ rule Mergechrs:
     shell:
         "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log}"
 
-rule merge_per_chr:
-    input:
-        vcfs =  merged_input
-    output: per_chr_vcfs = os.path.join(config['VCF'], "PER_chr", "{chr}_{mode}_merged.vcf.gz")
-    params: inputs = expand("-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz", mode = mode, dir = config['VCF'], chr_p = chr_p, allow_missing=True)
-    log: config['LOG'] + "/merge_per_chr_{chr}.{mode}.log"
-    benchmark: config['BENCH'] + "/merge_per_chr_{chr}.{mode}.txt"
-    priority: 45
-    conda: "envs/preprocess.yaml"
-    shell:
-        "{gatk} GatherVcfs {params.inputs} -O {output} -R {ref} 2> {log}"
-
 rule index_mergechrs:
     input: rules.Mergechrs.output.vcf
     conda: "envs/preprocess.yaml"
@@ -151,7 +141,6 @@ rule index_mergechrs:
     priority: 46
     shell:
         "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
-
 
 rule norm:
     input:
@@ -178,25 +167,76 @@ rule norm_idx:
     shell:
         "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
 
+rule merge_per_chr:
+    input:
+        vcfs = lambda wildcards: expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr_p=valid_chr_p[wildcards.chr],chr=wildcards.chr,dir=[config['VCF']] * len(valid_chr_p[wildcards.chr]),mode=[mode] * len(valid_chr_p[wildcards.chr]))
+    output: per_chr_vcfs = os.path.join(config['VCF'], "PER_chr", "{chr}_{mode}_merged.vcf.gz")
+    params: inputs = lambda wildcards: expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr_p=valid_chr_p[wildcards.chr],chr=wildcards.chr,dir=[config['VCF']] * len(valid_chr_p[wildcards.chr]),mode=[mode] * len(valid_chr_p[wildcards.chr]))
+    log: config['LOG'] + "/merge_per_chr_{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/merge_per_chr_{chr}.{mode}.txt"
+    priority: 45
+    conda: "envs/preprocess.yaml"
+    shell:
+        """{gatk} GatherVcfs {params.inputs} -O {output} -R {ref} 2> {log}"""
+
+
+rule index_per_chr:
+    input: rules.merge_per_chr.output.per_chr_vcfs
+    conda: "envs/preprocess.yaml"
+    log: config['LOG'] + "/Mergechrsed_index.{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/Mergechrsed_index.{chr}.{mode}.txt"
+    output:
+        vcfidx = os.path.join(config['VCF'], "PER_chr", "{chr}_{mode}_merged.vcf.gz.tbi")
+    priority: 46
+    shell:
+        "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
+
+
+rule norm_per_chr:
+    input:
+        vcf = rules.merge_per_chr.output.per_chr_vcfs,
+        idx = rules.index_per_chr.output.vcfidx
+    output:
+        normVCF=config['VCF_Final'] + "/{chr}/Merged_norm.{chr}.{mode}.vcf.gz",
+    log: config['LOG'] + "/normalization_per_chr.{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/normalization_per_chr.{chr}.{mode}.txt"
+    priority: 50
+    conda: "envs/preprocess.yaml"
+    threads: config['norm_per_chr']['n']
+    shell:
+        "({bcftools} norm --threads {threads} -f {ref} {input} -m -both -O v | {bcftools} norm --threads {threads} --check-ref ws -d exact -f {ref} -O z > {output.normVCF}) 2> {log}"
+
+rule norm_idx_per_chr:
+    input:
+        normVCF = rules.norm_per_chr.output.normVCF
+    output:
+        idx=config['VCF_Final'] + "/{chr}/Merged_norm.{chr}.{mode}.vcf.gz.tbi"
+    log: config['LOG'] + "/idx_normalizated.{chr}.{mode}.log"
+    benchmark: config['BENCH'] + "/idx_normalizated.{chr}.{mode}.txt"
+    priority: 55
+    conda: "envs/preprocess.yaml"
+    shell:
+        "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
+
+
 # basic stats
 # include hom-het ratio, titv ratio, etc.
-rule basic_stats:
+rule basic_stats_per_chr:
     input:
-        vcf = rules.norm.output.normVCF,
-        tbi = rules.norm_idx.output.idx
+        vcf = rules.norm_per_chr.output.normVCF,
+        tbi = rules.norm_idx_per_chr.output.idx
     output:
-        os.path.join(config['STAT'], "BASIC.{mode}.variant_calling_detail_metrics"),
-        os.path.join(config['STAT'], "BASIC.{mode}.variant_calling_summary_metrics")
+        os.path.join(config['STAT'], "BASIC.{chr}.{mode}.variant_calling_detail_metrics"),
+        os.path.join(config['STAT'], "BASIC.{chr}.{mode}.variant_calling_summary_metrics")
     priority: 90
-    log: os.path.join(config['LOG'], "VCF_stats.{mode}.log")
-    benchmark: os.path.join(config['BENCH'], "VCF_stats.{mode}.txt")
+    log: os.path.join(config['LOG'], "VCF_stats.{chr}.{mode}.log")
+    benchmark: os.path.join(config['BENCH'], "VCF_stats.{chr}.{mode}.txt")
     params: dbsnp = os.path.join(config['RES'], config['dbsnp'])
     conda: "envs/preprocess.yaml"
-    threads: config['basic_stats']['n']
+    threads: config['basic_stats_per_chr']['n']
     shell:
-        "gatk CollectVariantCallingMetrics \
-        -R {ref} -I {input.vcf} -O stats/BASIC \
+        "{gatk} CollectVariantCallingMetrics \
+        -R {ref} -I {input.vcf} -O stats/BASIC.{wildcards.chr}.{wildcards.mode} \
         --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
-
 
 

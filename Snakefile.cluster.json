@@ -69,7 +69,7 @@ GenomicDBImport:
         time: 500
 GenotypeDBI:
         n: 2
-        mem: 4000
+        mem: 5500
         time: 1500
 Mergechrs:
         n: 1
@@ -111,7 +111,7 @@ norm:
         n: 1
         mem: 5000
         time: 600
-basic_stats:
+basic_stats_per_chr:
         n: 2
         mem: 4500
 hs_stats:
@@ -161,5 +161,10 @@ delly_call:
 reblock_gvcf:
         mem: 1700
         n: 1
+norm_per_chr:
+        n: 2
+deepvariant:
+        n: 32
+        mem: 60000
 
 
