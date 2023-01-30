@@ -113,5 +113,3 @@ rule GenomicDBImport:
         """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs} \
             --intervals {input.intervals}  -R {ref} {params.method} {params.dbi}/ --batch-size {params.batches} \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"""
-
-

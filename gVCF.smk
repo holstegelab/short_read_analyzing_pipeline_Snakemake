@@ -130,6 +130,14 @@ def get_mem_mb_HaplotypeCaller(wildcrads, attempt):
     return attempt * int(config['HaplotypeCaller']['mem'])
 
 
+def get_chrom_merged_capture_kit(wildcards):
+    chr = wildcards.chr
+    if mode == 'WES':
+        capture_kit_chr_path = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list'
+    elif mode == 'WGS':
+        capture_kit_chr_path = chr
+    return capture_kit_chr_path
+
 #find SNPs from bams
 # change RAM too function
 rule HaplotypeCaller:
@@ -154,7 +162,7 @@ rule HaplotypeCaller:
         padding=300,  # extend intervals to this bp
         contam_frac = read_contam_w, # get contamination fraction per sample
         # command to get path to capture_kit interval list from SAMPLEFILE
-        interval= get_chrom_capture_kit,
+        interval= get_chrom_merged_capture_kit,
     priority: 28
     shell:
         """

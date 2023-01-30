@@ -54,8 +54,8 @@ else:
 rule Genotype_all:
     input:
         rule_all_combine,
-        # expand(config['VCF'] + "/Merged_raw_DBI_{chr_p}.vcf.gz", chr_p = chr_p),
-        #expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
+        # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
+        # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
         # expand("{vcf}/Merged_norm.{mode}.vcf", vcf=config['VCF_Final'], mode = mode),
         # expand("{vcf}/Merged_norm.{mode}.vcf.idx", vcf=config['VCF_Final'], mode = mode),
         expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = chr),
@@ -118,60 +118,13 @@ elif gVCF_combine_method == "COMBINE_GVCF":
             "{gatk} GenotypeGVCFs -R {ref} -V {input.gvcf} -O {output} -D {params.dbsnp} --intervals {wildcards.chr} 2> {log}"
 
 
-rule Mergechrs:
-    input:
-        merged_input
-    params: vcfs = vcfs_to_merge
-    conda: "envs/preprocess.yaml"
-    log: config['LOG'] + "/Mergechrs.{mode}.log"
-    benchmark: config['BENCH'] + "/Mergechrs.{mode}.txt"
-    output:
-        vcf = config['VCF'] + "/ALL_chrs.{mode}.vcf.gz"
-    priority: 45
-    shell:
-        "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log}"
 
-rule index_mergechrs:
-    input: rules.Mergechrs.output.vcf
-    conda: "envs/preprocess.yaml"
-    log: config['LOG'] + '/' + "Mergechrsed_index.{mode}.log"
-    benchmark: config['BENCH'] + "/Mergechrsed_index.{mode}.txt"
-    output:
-        vcfidx = config['VCF'] + "/ALL_chrs.{mode}.vcf.gz.tbi"
-    priority: 46
-    shell:
-        "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
-
-rule norm:
-    input:
-        vcf = rules.Mergechrs.output.vcf,
-        idx = rules.index_mergechrs.output.vcfidx
-    output:
-        normVCF=config['VCF_Final'] + "/Merged_norm.{mode}.vcf",
-    log: config['LOG'] + '/' + "normalization.{mode}.log"
-    benchmark: config['BENCH'] + "/normalization.{mode}.txt"
-    priority: 50
-    conda: "envs/preprocess.yaml"
-    shell:
-        "({bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF}) 2> {log}"
-
-rule norm_idx:
-    input:
-        normVCF = rules.norm.output.normVCF
-    output:
-        idx=config['VCF_Final'] + "/Merged_norm.{mode}.vcf.idx"
-    log: config['LOG'] + '/' + "normalization.{mode}.log"
-    benchmark: config['BENCH'] + "/idx_normalizated.{mode}.txt"
-    priority: 55
-    conda: "envs/preprocess.yaml"
-    shell:
-        "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
 
 rule merge_per_chr:
     input:
-        vcfs = lambda wildcards: expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr_p=valid_chr_p[wildcards.chr],chr=wildcards.chr,dir=[config['VCF']] * len(valid_chr_p[wildcards.chr]),mode=[mode] * len(valid_chr_p[wildcards.chr]))
+        vcfs = lambda wildcards: expand("{dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{mode}.vcf.gz".format(dir=config['VCF'], chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
     output: per_chr_vcfs = os.path.join(config['VCF'], "PER_chr", "{chr}_{mode}_merged.vcf.gz")
-    params: inputs = lambda wildcards: expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr_p=valid_chr_p[wildcards.chr],chr=wildcards.chr,dir=[config['VCF']] * len(valid_chr_p[wildcards.chr]),mode=[mode] * len(valid_chr_p[wildcards.chr]))
+    params: inputs = lambda wildcards: expand("-I {dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{mode}.vcf.gz".format(dir=config['VCF'], chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
     log: config['LOG'] + "/merge_per_chr_{chr}.{mode}.log"
     benchmark: config['BENCH'] + "/merge_per_chr_{chr}.{mode}.txt"
     priority: 45
@@ -240,3 +193,54 @@ rule basic_stats_per_chr:
         --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
 
 
+
+# rule Mergechrs:
+#     input:
+#         merged_input
+#     params: vcfs = vcfs_to_merge
+#     conda: "envs/preprocess.yaml"
+#     log: config['LOG'] + "/Mergechrs.{mode}.log"
+#     benchmark: config['BENCH'] + "/Mergechrs.{mode}.txt"
+#     output:
+#         vcf = config['VCF'] + "/ALL_chrs.{mode}.vcf.gz"
+#     priority: 45
+#     shell:
+#         "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log}"
+#
+# rule index_mergechrs:
+#     input: rules.Mergechrs.output.vcf
+#     conda: "envs/preprocess.yaml"
+#     log: config['LOG'] + '/' + "Mergechrsed_index.{mode}.log"
+#     benchmark: config['BENCH'] + "/Mergechrsed_index.{mode}.txt"
+#     output:
+#         vcfidx = config['VCF'] + "/ALL_chrs.{mode}.vcf.gz.tbi"
+#     priority: 46
+#     shell:
+#         "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
+#
+# rule norm:
+#     input:
+#         vcf = rules.Mergechrs.output.vcf,
+#         idx = rules.index_mergechrs.output.vcfidx
+#     output:
+#         normVCF=config['VCF_Final'] + "/Merged_norm.{mode}.vcf",
+#     log: config['LOG'] + '/' + "normalization.{mode}.log"
+#     benchmark: config['BENCH'] + "/normalization.{mode}.txt"
+#     priority: 50
+#     conda: "envs/preprocess.yaml"
+#     shell:
+#         "({bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF}) 2> {log}"
+#
+# rule norm_idx:
+#     input:
+#         normVCF = rules.norm.output.normVCF
+#     output:
+#         idx=config['VCF_Final'] + "/Merged_norm.{mode}.vcf.idx"
+#     log: config['LOG'] + '/' + "normalization.{mode}.log"
+#     benchmark: config['BENCH'] + "/idx_normalizated.{mode}.txt"
+#     priority: 55
+#     conda: "envs/preprocess.yaml"
+#     shell:
+#         "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
+#
+#

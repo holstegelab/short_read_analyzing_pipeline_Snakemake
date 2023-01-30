@@ -444,5 +444,7 @@ rule mCRAM:
     benchmark: os.path.join(config['BENCH'],'{sample}_mCRAM.txt')
     priority: 30
     conda: "envs/preprocess.yaml"
+    log:
+        os.path.join(config['LOG'],"{sample}.mCRAM.log")
     shell:
-        "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {threads} -o {output.CRAM} {input.bam}"
+        "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {threads} -o {output.CRAM} {input.bam} 2> {log}"

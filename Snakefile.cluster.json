@@ -163,8 +163,21 @@ reblock_gvcf:
         n: 1
 norm_per_chr:
         n: 2
-deepvariant:
-        n: 32
-        mem: 60000
+make_examples:
+        n: 1
+        mem: 750
+        time: 950
+call_variants:
+        n: 4
+        mem: 3200
+        time: 71
+postprocess_variants:
+        n: 1
+        mem: 1000
+        time: 15
+glnexus:
+        n: 8
+        mem: 16000
+
 
 
