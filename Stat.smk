@@ -143,7 +143,7 @@ rule samtools_stat:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup_index.output.mdbams_bai
-    output: samtools_stat = os.path.join(config['STAT'], "{sample}_samtools.stat")
+    output: samtools_stat = ensure(os.path.join(config['STAT'], "{sample}_samtools.stat"), non_empty=True)
     priority: 99
     log: os.path.join(config['LOG'], "samtools_{sample}.log")
     benchmark: os.path.join(config['BENCH'], "samtools_stat_{sample}.txt")
@@ -171,7 +171,7 @@ rule samtools_stat_exome:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup_index.output.mdbams_bai
-    output: samtools_stat_exome = os.path.join(config['STAT'], "{sample}_samtools.exome.stat")
+    output: samtools_stat_exome = ensure(os.path.join(config['STAT'], "{sample}_samtools.exome.stat"), non_empty=True)
     priority: 99
     params:
         bed_interval = get_capture_kit_bed
@@ -191,7 +191,7 @@ rule bamstats_all:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup_index.output.mdbams_bai
     output:
-        All_exome_stats = os.path.join(config['STAT'],'{sample}.bam_all.tsv')
+        All_exome_stats = ensure(os.path.join(config['STAT'],'{sample}.bam_all.tsv'), non_empty=True)
     benchmark: os.path.join(config['BENCH'],"bamstats_all_{sample}.txt")
     threads: config['bamstats_all']['n']
     params:
@@ -205,7 +205,7 @@ rule bamstats_exome:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup_index.output.mdbams_bai
     output:
-        All_exome_stats = os.path.join(config['STAT'], '{sample}.bam_exome.tsv')
+        All_exome_stats = ensure(os.path.join(config['STAT'], '{sample}.bam_exome.tsv'),  non_empty=True)
     benchmark: os.path.join(config['BENCH'],"bamstats_exome_{sample}.txt")
     threads: config['bamstats_exome']['n']
     params:
