@@ -27,14 +27,14 @@ module Aligner:
 module gVCF:
     snakefile: 'gVCF.smk'
     config: config
-# use rule * from gVCF
+use rule * from gVCF
 
 bins = config['RES'] + config['bin_file_ref']
 mode = config.get("computing_mode", "WES")
 rule DBImport_all:
     input:
         expand(["labels/done_p{chr_p}.{chr}.{mode}.txt"], zip, chr = main_chrs_db, chr_p = chr_p, mode = [mode]*853),
-        # rules.gVCF_all.input,
+        rules.gVCF_all.input,
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
 

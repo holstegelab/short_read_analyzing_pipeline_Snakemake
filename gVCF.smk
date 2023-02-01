@@ -192,4 +192,5 @@ rule reblock_gvcf:
         dbsnp=config['RES'] + config['dbsnp'],
     resources: mem_mb = get_mem_mb_reblock_gvcf
     shell:
-        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}m" --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
+        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}m" --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
+

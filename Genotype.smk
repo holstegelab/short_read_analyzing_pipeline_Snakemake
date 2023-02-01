@@ -79,8 +79,6 @@ def get_parts_capture_kit(wildcards):
 if gVCF_combine_method == "DBIMPORT":
     #use rule * from DBImport
     DBImethod = config.get("DBI_method", "new")
-    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = [mode]*853)
-    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = [mode]*853)
     rule GenotypeDBI:
         input:
             test = rules.GenomicDBImport.output.ready
@@ -92,7 +90,6 @@ if gVCF_combine_method == "DBIMPORT":
             dir = rules.GenomicDBImport.params.dbi,
             dbsnp = config['RES'] + config['dbsnp'],
             intervals = get_parts_capture_kit
-            # intervals= config['RES'] + config['bin_file_ref'] + '/{chr}/hg38_mainchr_bins{chr_p}.bed.interval_list'
         conda: "envs/preprocess.yaml"
         resources: mem_mb = get_mem_mb_genotype
         priority: 40
@@ -102,8 +99,6 @@ if gVCF_combine_method == "DBIMPORT":
 
 elif gVCF_combine_method == "COMBINE_GVCF":
     #use rule * from Combine_gVCF
-    merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = [mode]*853)
-    vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = [mode]*853)
     rule GenotypeDBI:
         input: gvcf = rules.combinegvcfs.output.chr_gvcfs
         output: raw_vcf = config['VCF'] + "/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"
@@ -196,8 +191,8 @@ rule basic_stats_per_chr:
 
 # rule Mergechrs:
 #     input:
-#         merged_input
-#     params: vcfs = vcfs_to_merge
+        # merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = [mode]*853)
+#     params: vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = [mode]*853)
 #     conda: "envs/preprocess.yaml"
 #     log: config['LOG'] + "/Mergechrs.{mode}.log"
 #     benchmark: config['BENCH'] + "/Mergechrs.{mode}.txt"
