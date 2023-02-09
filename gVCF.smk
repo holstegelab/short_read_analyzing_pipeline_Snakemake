@@ -163,10 +163,12 @@ rule HaplotypeCaller:
         contam_frac = read_contam_w, # get contamination fraction per sample
         # command to get path to capture_kit interval list from SAMPLEFILE
         interval= get_chrom_merged_capture_kit,
+        mem = int(config['HaplotypeCaller']['mem'] - 300)
     priority: 28
     shell:
         """
-                {gatk} HaplotypeCaller  --java-options "-Xmx{resources.mem_mb}m"   \
+                
+                OPENBLAS_NUM_THREADS=1  OMP_NUM_THREADS=1 {gatk} HaplotypeCaller  --java-options "-Xmx{params.mem}M"   \
                  -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {threads} \
@@ -192,5 +194,5 @@ rule reblock_gvcf:
         dbsnp=config['RES'] + config['dbsnp'],
     resources: mem_mb = get_mem_mb_reblock_gvcf
     shell:
-        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}m" --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
+        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}M" --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
 

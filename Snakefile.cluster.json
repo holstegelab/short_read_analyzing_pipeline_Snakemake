@@ -61,7 +61,7 @@ CalibrateDragstrModel:
         time: 400
 HaplotypeCaller:
         n: 2
-        mem: 2000
+        mem: 2500
         time: 2500
 GenomicDBImport:
         n: 1

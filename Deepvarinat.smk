@@ -146,26 +146,26 @@ rule glnexus:
     shell:
         # FIXME: change path to preaet yaml file
         """
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config /gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config DeepVariant{wildcards.mode}  {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
         """
 
-# rule glnexus_custom:
-#     input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
-#     output: vcf = os.path.join(current_dir, "glnexus_custom", "{chr}", "{chr}_{mode}.vcf.gz")
-#     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
-#     params: bed = get_chrom_capture_kit_bed,
-#             mem_gb = int(config['glnexus']['mem'] // 1024),
-#             scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus.DB"
-#     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus_custom.log")
-#     benchmark:
-#         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_custom.txt")
-#     threads: config['glnexus']['n']
-#     resources: mem_mb = config['glnexus']['mem']
-#     shell:
-#         # --bed {params.bed}
-#         """
-#         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config /gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
-#         """
+rule glnexus_custom:
+    input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
+    output: vcf = os.path.join(current_dir, "glnexus_custom", "{chr}", "{chr}_{mode}.vcf.gz")
+    container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
+    params: bed = get_chrom_capture_kit_bed,
+            mem_gb = int(config['glnexus']['mem'] // 1024),
+            scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus.DB"
+    log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus_custom.log")
+    benchmark:
+        os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_custom.txt")
+    threads: config['glnexus']['n']
+    resources: mem_mb = config['glnexus']['mem']
+    shell:
+        # --bed {params.bed}
+        """
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config /gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
+        """
 
 
 rule norma_gln:
@@ -176,7 +176,6 @@ rule norma_gln:
     benchmark:
         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.norma_gln.txt")
     shell: "bcftools norm -f {ref} {input} -m -both -O v | bcftools norm --check-ref ws -d exact -f {ref} -O z > {output.normVCF} 2> {log}"
-
 
 # for i in {0..1}; do singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" /opt/deepvariant/bin/make_examples --ref=/gpfs/work3/0/qtholstg/hg38_res/Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa --reads=/gpfs/work3/0/qtholstg/Georgii_tests/10_additional_samples_gVCF/bams/NL_VUMC_KG-013832.markdup.bam --gvcf=/gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_call_variant_test.gvcf.tfrecord_chr20@2.gz --mode calling --regions chr20 --examples /gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_call_variant_test_examples_chr20@2.gz --task $i --channels="insert_size"    --gvcf_gq_binsize 3; done
 #
