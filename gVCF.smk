@@ -63,7 +63,7 @@ rule CalibrateDragstrModel:
     log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
     shell:
-        "{gatk} CalibrateDragstrModel -R {ref} -I {input.bam} -O {output} -str {params.str_ref} 2>{log}"
+        """{gatk} CalibrateDragstrModel --java-options "-Xmx{resources.mem_mb}m"  -R {ref} -I {input.bam} -O {output} -str {params.str_ref} 2>{log}"""
 
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
@@ -176,8 +176,8 @@ rule HaplotypeCaller:
 def get_mem_mb_reblock_gvcf(wildcrads, attempt):
     return attempt * int(config['reblock_gvcf']['mem'])
 
-rule index_gvcf:
-    input: gvcf = rules.HaplotypeCaller.output.gvcf
+# rule index_gvcf:
+#     input: gvcf = rules.HaplotypeCaller.output.gvcf
 
 rule reblock_gvcf:
     input:

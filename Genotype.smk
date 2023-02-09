@@ -56,11 +56,11 @@ rule Genotype_all:
         rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
-        # expand("{vcf}/Merged_norm.{mode}.vcf", vcf=config['VCF_Final'], mode = mode),
-        # expand("{vcf}/Merged_norm.{mode}.vcf.idx", vcf=config['VCF_Final'], mode = mode),
         expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = chr),
         expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = chr),
-        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = chr)
+        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = chr),
+        expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz", vcf = config['VCF_Final'], mode = mode, chr = chr),
+        expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz.tbi", vcf = config['VCF_Final'], mode = mode, chr = chr)
     default_target: True
 
 
@@ -124,6 +124,7 @@ rule merge_per_chr:
     benchmark: config['BENCH'] + "/merge_per_chr_{chr}.{mode}.txt"
     priority: 45
     conda: "envs/preprocess.yaml"
+    resources: mem_mb = config['merge_per_chr']['mem']
     shell:
         """{gatk} GatherVcfs {params.inputs} -O {output} -R {ref} 2> {log}"""
 
@@ -136,6 +137,7 @@ rule index_per_chr:
     output:
         vcfidx = os.path.join(config['VCF'], "PER_chr", "{chr}_{mode}_merged.vcf.gz.tbi")
     priority: 46
+    resources: mem_mb=config['index_per_chr']['mem']
     shell:
         "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
 
