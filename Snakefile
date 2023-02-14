@@ -58,7 +58,7 @@ use rule * from Encrypt
 module Deepvariant:
     snakefile: 'Deepvarinat.smk'
     config: config
-use rule * from Deepvariant
+
 module GLnexus:
     snakefile: 'GLnexus.smk'
     config: config
@@ -91,36 +91,63 @@ VQSR = config.get("VQSR","NO")
 end_point = config.get("END_POINT", "gVCF")
 
 if end_point == "gVCF":
-    use rule * from gVCF
-    use rule * from Aligner
-    END_RULE = rules.gVCF_all.input,
+    if gvcf_caller == "HaplotypeCaller":
+        use rule * from gVCF
+        use rule * from Aligner
+        END_RULE = rules.gVCF_all.input,
+    elif gvcf_caller == "Deepvariant":
+        use rule * from Deepvariant
+        use rule * from Aligner
+        END_RULE = rules.Deepvariant_all.input
 elif end_point == "Align" or end_point == "Aligner":
     use rule * from Aligner
     END_RULE = rules.Aligner_all.input
 elif end_point == "Genotype" or end_point == "Genotyper":
-    use rule * from gVCF
-    use rule * from Aligner
-    use rule * from Genotype
-    END_RULE = rules.Genotype_all.input
-elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
-    use rule * from gVCF
-    use rule * from Aligner
-    use rule * from Genotype
-    END_RULE = rules.Genotype_all.input
-    if VQSR == "RUN_VQSR":
-        use rule * from VQSR
-        VQSR_rule = rules.VQSR_all.input,
-    elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
-        VQSR_rule = []
-    else:
-        raise ValueError(
-            "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR(default)'."
-        )
+    if gvcf_caller == "HaplotypeCaller":
+        use rule * from gVCF
+        use rule * from Aligner
+        if gVCF_combine_method == "DBIMPORT" or gVCF_combine_method == "COMBINE_GVCF":
+            use rule * from Genotype
+            END_RULE = rules.Genotype_all.input
+        elif gVCF_combine_method == "GLnexus":
+            use rule * from GLnexus
+            rule_all_combine = rule.GLnexus_all.input
+            END_RULE = rules.GLnexus_all.input
+        else:
+            raise ValueError(
+                "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
+            )
 
+elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
+    use rule * from Aligner
     if gVCF_combine_method == "DBIMPORT":
+        use rule * from gVCF
+        use rule * from Genotype
+        END_RULE = rules.Genotype_all.input
+        if VQSR == "RUN_VQSR":
+            use rule * from VQSR
+            VQSR_rule = rules.VQSR_all.input,
+        elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
+            VQSR_rule = []
+        else:
+            raise ValueError(
+                "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR(default)'."
+            )
         use rule * from DBImport
         rule_all_combine = rules.DBImport_all.input
     elif gVCF_combine_method == "COMBINE_GVCF":
+        use rule * from gVCF
+        use rule * from Genotype
+        END_RULE = rules.Genotype_all.input
+        if VQSR == "RUN_VQSR":
+            use rule * from VQSR
+            VQSR_rule = rules.VQSR_all.input,
+        elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
+            VQSR_rule = []
+        else:
+            raise ValueError(
+                "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR(default)'."
+            )
         use rule * from Combine_gVCF
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
