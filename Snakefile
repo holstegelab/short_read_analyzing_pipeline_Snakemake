@@ -111,7 +111,7 @@ elif end_point == "Genotype" or end_point == "Genotyper":
             END_RULE = rules.Genotype_all.input
         elif gVCF_combine_method == "GLnexus":
             use rule * from GLnexus
-            rule_all_combine = rule.GLnexus_all.input
+            rule_all_combine = rules.GLnexus_all.input
             END_RULE = rules.GLnexus_all.input
         else:
             raise ValueError(
@@ -152,7 +152,7 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
         use rule * from GLnexus
-        rule_all_combine = rule.GLnexus_all.input
+        rule_all_combine = rules.GLnexus_all.input
     else:
         raise ValueError(
             "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
@@ -173,7 +173,6 @@ rule all:
         SV_rule,
         CNV_rule,
         rules.Encrypt_all.input,
-        rules.Deepvariant_all.input,
     default_target: True
 
 
