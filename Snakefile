@@ -103,9 +103,9 @@ elif end_point == "Align" or end_point == "Aligner":
     use rule * from Aligner
     END_RULE = rules.Aligner_all.input
 elif end_point == "Genotype" or end_point == "Genotyper":
+    use rule * from Aligner
     if gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
-        use rule * from Aligner
         if gVCF_combine_method == "DBIMPORT" or gVCF_combine_method == "COMBINE_GVCF":
             use rule * from Genotype
             END_RULE = rules.Genotype_all.input
@@ -117,6 +117,15 @@ elif end_point == "Genotype" or end_point == "Genotyper":
             raise ValueError(
                 "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
             )
+    elif gvcf_caller == "Deepvariant":
+        use rule * from Deepvariant
+        use rule * from GLnexus
+        rule_all_combine = rules.GLnexus_all.input
+        END_RULE = rules.GLnexus_all.input
+    else:
+        raise ValueError(
+            "invalid option provided to 'caller'; please choose either 'HaplotypeCaller'(default) or 'Deepvariant'."
+        )
 
 elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
     use rule * from Aligner
