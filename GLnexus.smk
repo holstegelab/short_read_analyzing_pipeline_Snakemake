@@ -60,10 +60,15 @@ if gvcf_caller == "HaplotypeCaller":
 
 elif gvcf_caller == "Deepvariant":
     gvcf_input = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
-    glnexus_dir = "GLnexus_on_Deepvariant"
+    glnexus_dir = ["GLnexus_on_Deepvariant"]
     use rule * from Deepvariant
     rule_gvcf_all_input = rules.Deepvariant_all.input
-
+elif gvcf_caller == "BOTH":
+    gvcf_input = expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
+    glnexus_dir = ["GLnexus_on_Haplotypecaller"]
+    use rule * from gVCF
+    use rule * from Deepvariant
+    rule_gvcf_all_input = [rules.gVCF_all.input, rules.Deepvariant_all.input]
 else:
     raise ValueError(
         "invalid option provided to 'caller'; please choose either 'HaplotypeCaller' or 'Deepvariant'."
@@ -86,15 +91,15 @@ def get_chrom_capture_kit_bed(wildcards):
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}/{chr}/{chr}_{mode}.vcf.gz", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir + dir_appendix),
-        expand("{cur_dir}/{types_of_gl}/{chr}/{chr}_{mode}.vcf.gz.tbi", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir + dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}_{mode}.vcf.gz", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}_{mode}.vcf.gz.tbi", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
         rule_gvcf_all_input
     default_target: True
 
 rule glnexus:
     input: gvcf_input
     # input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
-    output: vcf = os.path.join(current_dir, glnexus_dir + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz")
+    output: vcf = os.path.join(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = get_chrom_capture_kit_bed,
             mem_gb = int(config['glnexus']['mem'] // 1024),
@@ -111,9 +116,22 @@ rule glnexus:
         """
 rule index_deep:
     input: rules.glnexus.output.vcf
-    output: tbi = os.path.join(current_dir, glnexus_dir + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")
+    output: tbi = os.path.join(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")
     conda: "envs/preprocess.yaml"
     shell: "gatk IndexFeatureFile -I {input}"
+
+if gvcf_caller == "BOTH":
+    use rule glnexus as glnexus_2 with:
+        input: expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
+        output: vcf=os.path.join(current_dir,glnexus_dir[1] + dir_appendix,"{chr}","{chr}_{mode}.vcf.gz")
+    use rule index_deep as index_deep_2 with:
+        input: rules.glnexus_2.output.vcf
+        output: tbi = os.path.join(current_dir, glnexus_dir[1] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")
+
+
+
+
+
 
 
     # rule norma_gln:
