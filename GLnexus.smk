@@ -123,6 +123,8 @@ if gvcf_caller == "BOTH":
     use rule glnexus as glnexus_2 with:
         input: expand("{cd}/{dp}/gVCF/{chr}/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
         output: vcf=os.path.join(current_dir,glnexus_dir[1] + dir_appendix,"{chr}","{chr}_{mode}.vcf.gz")
+        benchmark:
+            os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_2.txt")
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
         output: tbi = os.path.join(current_dir, glnexus_dir[1] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")

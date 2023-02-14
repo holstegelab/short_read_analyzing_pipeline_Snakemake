@@ -183,8 +183,11 @@ postprocess_variants:
         mem: 900
         time: 15
 glnexus:
+        n: 4
+        mem: 6600
+glnexus_2:
         n: 2
-        mem: 3800
+        mem: 6600
 merge_per_chr:
         n: 1
         mem: 400
