@@ -38,11 +38,11 @@ module Genotype:
 
 use rule * from Genotype
 
-
+mode = config.get("computing_mode", "WES")
 rule VQSR_all:
     input:
         rules.Genotype_all.input,
-        expand("{vcf}/Merged_after_VQSR.vcf",vcf=config['VCF_Final']),
+        expand("{vcf}/VQSR/{chr}/Merged_after_VQSR_{chr}_{mode}.vcf",vcf=config['VCF_Final'], chr = chr, mode = mode),
     default_target: True
 
 
@@ -52,14 +52,14 @@ rule VQSR_all:
 # SNPs and INDELs require different options
 rule SelectSNPs:
     input:
-        vcf = rules.norm.output.normVCF,
-        tbi= rules.norm_idx.output.idx
+        vcf = rules.merge_per_chr.output.per_chr_vcfs,
+        tbi= rules.index_per_chr.output.vcfidx
     output:
-        SNP_vcf = temp(config['VCF_Final'] + "/Merged_SNPs.vcf")
+        SNP_vcf = temp(config['VCF_Final'] + "/{chr}/Merged_SNPs_{chr}_{mode}.vcf")
         # SNP_vcf=temp(config['VCF'] + "/Merged_SNPs.vcf")
     priority: 56
-    log: config['LOG'] + '/' + "SelectSNPs.log"
-    benchmark: config['BENCH'] + "/SelectSNPs.txt"
+    log: config['LOG'] + '/' + "SelectSNPs_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/SelectSNPs_{chr}_{mode}.txt"
     conda: "envs/preprocess.yaml"
     shell:
         """
@@ -73,13 +73,13 @@ rule VQSR_SNP:
     input:
         rules.SelectSNPs.output.SNP_vcf
     output:
-        recal_snp=temp(config['VCF_Final'] + "/SNPs_vqsr.recal"),
-        tranches_file_snp=temp(config['VCF_Final'] + "/SNPs_vqsr.tranches"),
+        recal_snp=temp(config['VCF_Final'] + "/VQSR/{chr}/SNPs_vqsr_{chr}_{mode}.recal"),
+        tranches_file_snp=temp(config['VCF_Final'] + "/VQSR/{chr}/SNPs_vqsr_{chr}_{mode}.tranches"),
         # recal_snp=temp(config['VCF'] + "/SNPs_vqsr.recal"),
         # tranches_file_snp=temp(config['VCF'] + "/SNPs_vqsr.tranches"),
-        r_snp=config['STAT'] + "/SNPs_vqsr_plots.R"
-    log: config['LOG'] + '/' + "VQSR_SNP.log"
-    benchmark: config['BENCH'] + "/VQSR_SNP.txt"
+        r_snp=config['STAT'] + "/VQSR/R/{chr}/SNPs_vqsr_plots_{mode}.R"
+    log: config['LOG'] + '/' + "VQSR_SNP_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/VQSR_SNP_{chr}_{mode}.txt"
     params:
         hapmap = config['RES'] + config['hapmap'],
         omni = config['RES'] + config['omni'],
@@ -109,10 +109,11 @@ rule ApplyVQSR_SNPs:
         tranches_snp=rules.VQSR_SNP.output.tranches_file_snp,
         snps_variants=rules.SelectSNPs.output.SNP_vcf
     output:
-        recal_vcf_snp = temp(config['VCF_Final'] + "/SNPs_recal_apply_vqsr.vcf")
+        recal_vcf_snp = (config['VCF_Final'] + "/VQSR/{chr}/SNPs_recal_apply_vqsr_{chr}_{mode}.vcf.gz"),
+        tbi = ensure((config['VCF_Final'] + "/VQSR/{chr}/SNPs_recal_apply_vqsr_{chr}_{mode}.vcf.gz.tbi"), non_empty=True)
         # recal_vcf_snp=temp(config['VCF'] + "/SNPs_recal_apply_vqsr.vcf")
-    log: config['LOG'] + '/' + "Apply_VQSR_SNP.log"
-    benchmark: config['BENCH'] + "/Apply_VQSR_SNP.txt"
+    log: config['LOG'] + '/' + "Apply_VQSR_SNP_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/Apply_VQSR_SNP_{chr}_{mode}.txt"
     params:
         ts_level='99.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
     priority: 60
@@ -121,18 +122,18 @@ rule ApplyVQSR_SNPs:
         """
         {gatk} ApplyVQSR -R {ref} -mode SNP \
         --recal-file {input.recal_snp} --tranches-file {input.tranches_snp} \
-        -O {output} -V {input.snps_variants} -ts-filter-level {params.ts_level} -AS TRUE 2> {log}
+        -O {output.recal_vcf_snp} -V {input.snps_variants} -ts-filter-level {params.ts_level} -AS TRUE --create-output-variant-index true 2> {log}
         """
 
 # select INDELs for VQSR
 rule SelectINDELs:
     input:
-        vcf  = rules.norm.output.normVCF,
-        tbi= rules.norm_idx.output.idx
+        vcf = rules.merge_per_chr.output.per_chr_vcfs,
+        tbi= rules.index_per_chr.output.vcfidx
     output:
-        INDEL_vcf=temp(config['VCF_Final'] + "/Merged_INDELs.vcf")
-    log: config['LOG'] + '/' + "SelectINDELS.log"
-    benchmark: config['BENCH'] + "/SelectINDELs.txt"
+        INDEL_vcf=temp(config['VCF_Final'] + "/{chr}/Merged_INDELs_{chr}_{mode}.vcf")
+    log: config['LOG'] + '/' + "SelectINDELS_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/SelectINDELs_{chr}_{mode}.txt"
     priority: 56
     conda: "envs/preprocess.yaml"
     shell:
@@ -147,11 +148,11 @@ rule VQSR_INDEL:
     input:
         rules.SelectINDELs.output.INDEL_vcf
     output:
-        recal_indel=temp(config['VCF_Final'] + "/INDELs_vqsr.recal"),
-        tranches_file_indel=temp(config['VCF_Final'] + "/INDELs_vqsr.tranches"),
-        r_indel=config['STAT'] + "/INDELs_vqsr_plots.R"
-    log: config['LOG'] + '/' + "VQSR_INDEL.log"
-    benchmark: config['BENCH'] + "/VQSR_INDEL.txt"
+        recal_indel=temp(config['VCF_Final'] + "/VQSR/{chr}/INDELs_vqsr_{chr}_{mode}.recal"),
+        tranches_file_indel=temp(config['VCF_Final'] + "/VQSR/{chr}/INDELs_vqsr_{chr}_{mode}.tranches"),
+        r_indel=config['STAT'] + "/VQSR/R/INDELs_vqsr_plots_{chr}_{mode}.R"
+    log: config['LOG'] + '/' + "VQSR_INDEL_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/VQSR_INDEL_{chr}_{mode}.txt"
     priority: 58
     params:
         mills = config['RES'] + config['mills'],
@@ -175,10 +176,10 @@ rule ApplyVQSR_INDEs:
         recal_indel=rules.VQSR_INDEL.output.recal_indel,
         tranches_indel=rules.VQSR_INDEL.output.tranches_file_indel,
         indel_variants=rules.SelectINDELs.output.INDEL_vcf
-    log: config['LOG'] + '/' + "ApplyVQSR_INDELs.log"
-    benchmark: config['BENCH'] + "/ApplyVQSR_INDELs.txt"
+    log: config['LOG'] + '/' + "ApplyVQSR_INDELs_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/ApplyVQSR_INDELs_{chr}_{mode}.txt"
     output:
-        recal_vcf_indel=temp(config['VCF_Final'] + "/INDELs_recal_apply_vqsr.vcf")
+        recal_vcf_indel=temp(config['VCF_Final'] + "/VQSR/{chr}/INDELs_recal_apply_vqsr_{chr}_{mode}.vcf")
     params:
         ts_level='97.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
     conda: "envs/preprocess.yaml"
@@ -192,12 +193,12 @@ rule ApplyVQSR_INDEs:
 
 rule select_norsnp_nor_indels:
     input:
-        vcf = rules.norm.output.normVCF,
-        tbi = rules.norm_idx.output.idx
+        vcf = rules.merge_per_chr.output.per_chr_vcfs,
+        tbi= rules.index_per_chr.output.vcfidx
     output:
-        MIX_vcf=temp(config['VCF_Final'] + "/merged_mix.vcf")
-    log: config['LOG'] + '/' + "SelectMix.log"
-    benchmark: config['BENCH'] + "/SelectMix.txt"
+        MIX_vcf=temp(config['VCF_Final'] + "/{chr}/merged_mix_{chr}_{mode}.vcf")
+    log: config['LOG'] + '/' + "SelectMix_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/SelectMix_{chr}_{mode}.txt"
     priority: 59
     conda: "envs/preprocess.yaml"
     shell:
@@ -214,15 +215,14 @@ rule combine:
         snps=rules.ApplyVQSR_SNPs.output.recal_vcf_snp,
         indel=rules.ApplyVQSR_INDEs.output.recal_vcf_indel,
         mix = rules.select_norsnp_nor_indels.output.MIX_vcf
-    log: config['LOG'] + '/' + "combine.log"
-    benchmark: config['BENCH'] + "/combine.txt"
+    log: config['LOG'] + "/combine_{chr}_{mode}.log"
+    benchmark: config['BENCH'] + "/combine_{chr}_{mode}.txt"
     output:
-        filtrVCF=(config['VCF_Final'] + "/Merged_after_VQSR.vcf")
+        filtrVCF=(config['VCF_Final'] + "/VQSR/{chr}/Merged_after_VQSR_{chr}_{mode}.vcf")
     priority: 70
     conda: "envs/preprocess.yaml"
     shell:
-        "{gatk} MergeVcfs \
-                -I {input.snps} -I {input.indel} -I {input.mix} -O {output} 2> {log}"
+        "{gatk} MergeVcfs -I {input.snps} -I {input.indel} -O {output} 2> {log}"
 
 # # normalization with bcftools
 # rule norm:

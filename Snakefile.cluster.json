@@ -1,6 +1,6 @@
 __default__:
     time: 100
-    mem: 6000
+    mem: 1700
     n: 1
     arch_use_add: 0
     arch_use_remove: 0
@@ -63,6 +63,9 @@ HaplotypeCaller:
         n: 2
         mem: 2500
         time: 2500
+deepvariant:
+        n: 4
+        mem: 6600
 GenomicDBImport:
         n: 1
         mem: 3500
@@ -159,8 +162,8 @@ delly_call:
         mem: 1700
         n: 1
 reblock_gvcf:
-        mem: 2300
-        n: 3
+        mem: 2500
+        n: 2
 norm_per_chr:
         n: 1
         mem: 150
@@ -188,6 +191,9 @@ merge_per_chr:
 index_per_chr:
         n: 1
         mem: 450
+index_gvcf:
+        n: 1
+        mem: 500
 
 
 

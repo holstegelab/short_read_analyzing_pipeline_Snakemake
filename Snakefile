@@ -55,7 +55,13 @@ module Encrypt:
     snakefile: 'Encrypt.smk'
     config: config
 use rule * from Encrypt
-
+module Deepvariant:
+    snakefile: 'Deepvarinat.smk'
+    config: config
+use rule * from Deepvariant
+module GLnexus:
+    snakefile: 'GLnexus.smk'
+    config: config
 
 
 SV = config.get("SV", "RUN_SV")
@@ -72,7 +78,11 @@ if CNV == "RUN_CNV":
 else:
     CNV_rule = []
 
-gVCF_combine_method = config.get("Combine_gVCF_method", "DBIMPORT")
+gVCF_combine_method = config.get("Combine_gVCF_method", "GLnexus")
+
+
+gvcf_caller = config.get("caller", "HaplotypeCaller")
+glnexus_filtration = config.get("glnexus_filtration", "default")
 
 
 rule_all_combine = []
@@ -104,7 +114,7 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
         VQSR_rule = []
     else:
         raise ValueError(
-            "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR'."
+            "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR(default)'."
         )
 
     if gVCF_combine_method == "DBIMPORT":
@@ -113,13 +123,16 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
     elif gVCF_combine_method == "COMBINE_GVCF":
         use rule * from Combine_gVCF
         rule_all_combine = rules.Combine_gVCF_all.input
+    elif gVCF_combine_method == "GLnexus":
+        use rule * from GLnexus
+        rule_all_combine = rule.GLnexus_all.input
     else:
         raise ValueError(
-            "invalid option provided to 'Combine_gVCF_method'; please choose either 'COMBINE_GVCF' or 'DBIMPORT'."
+            "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
         )
 else:
     raise ValueError(
-        "Invalid option provided to 'END_POINT'; please choose either 'gVCF', 'Align', 'Genotype' or 'Combine'."
+        "Invalid option provided to 'END_POINT'; please choose either 'gVCF(default)', 'Align', 'Genotype' or 'Combine'."
     )
 
 
@@ -132,7 +145,8 @@ rule all:
         rules.Stat_all.input,
         SV_rule,
         CNV_rule,
-        rules.Encrypt_all.input
+        rules.Encrypt_all.input,
+        rules.Deepvariant_all.input,
     default_target: True
 
 

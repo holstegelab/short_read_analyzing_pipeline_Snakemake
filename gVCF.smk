@@ -40,6 +40,7 @@ mode = config.get("computing_mode", "WES")
 rule gVCF_all:
     input:
         expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
+        expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
         rules.Aligner_all.input
     default_target: True
 
@@ -148,7 +149,8 @@ rule HaplotypeCaller:
         contam= rules.verifybamid.output.VBID_stat,
         bai = rules.markdup_index.output.mdbams_bai
     output:
-        gvcf= config['gVCF'] + "/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"
+        gvcf= ensure(os.path.join(config['gVCF'], "{chr}/{sample}.{chr}.{mode}.g.vcf.gz"), non_empty=True),
+        tbi = ensure(os.path.join(config['gVCF'], "{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi"), non_empty=True),
     log:
         HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_{mode}_haplotypecaller.log"
     benchmark:
@@ -163,28 +165,26 @@ rule HaplotypeCaller:
         contam_frac = read_contam_w, # get contamination fraction per sample
         # command to get path to capture_kit interval list from SAMPLEFILE
         interval= get_chrom_merged_capture_kit,
-        mem = int(config['HaplotypeCaller']['mem'] - 300)
     priority: 28
     shell:
         """
                 
-                OPENBLAS_NUM_THREADS=1  OMP_NUM_THREADS=1 {gatk} HaplotypeCaller  --java-options "-Xmx{params.mem}M"   \
+                OPENBLAS_NUM_THREADS=1  OMP_NUM_THREADS=1 {gatk} HaplotypeCaller  --java-options "-Xmx{resources.mem_mb}M"   \
                  -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-                 -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {threads} \
+                 -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {threads}  --create-output-variant-index true\
                   --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
 
 
 def get_mem_mb_reblock_gvcf(wildcrads, attempt):
     return attempt * int(config['reblock_gvcf']['mem'])
 
-# rule index_gvcf:
-#     input: gvcf = rules.HaplotypeCaller.output.gvcf
-
 rule reblock_gvcf:
     input:
         gvcf = rules.HaplotypeCaller.output.gvcf,
-    output: gvcf_reblock = config['gVCF'] + "/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"
+        idx = rules.HaplotypeCaller.output.tbi
+    output: gvcf_reblock = ensure(os.path.join(config['gVCF'], "reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"), non_empty=True),
+            tbi = ensure(os.path.join(config['gVCF'], "reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi"), non_empty=True)
     log: Reblock=config['LOG'] + "/{sample}_{chr}_{mode}_reblock.log"
     benchmark:
         config['BENCH'] + "/{sample}_{chr}_{mode}_reblock.txt"
@@ -194,5 +194,5 @@ rule reblock_gvcf:
         dbsnp=config['RES'] + config['dbsnp'],
     resources: mem_mb = get_mem_mb_reblock_gvcf
     shell:
-        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}M" --keep-all-alts -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
+        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}M" --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
 

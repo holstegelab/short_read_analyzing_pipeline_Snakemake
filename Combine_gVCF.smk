@@ -32,7 +32,7 @@ use rule * from gVCF
 #     expand('{samplefile}.done', samplefile=SAMPLE_FILES)
 mode = config.get("computing_mode", "WES")
 
-rule Combine_VCF_all:
+rule Combine_gVCF_all:
     input:
         expand(["{gvcf}/MERGED/bin_level/{chr}_{chr_p}.{mode}.g.vcf.gz"], zip, chr = main_chrs_db, chr_p = chr_p, gvcf = [config['gVCF']]*853, mode = mode*853),
     default_target: True

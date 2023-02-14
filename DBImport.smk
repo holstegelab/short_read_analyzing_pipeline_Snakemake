@@ -1,3 +1,8 @@
+import pandas as pd
+import read_stats
+import os
+import getpass
+
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['gatk']
@@ -19,6 +24,8 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
+tmpdir_alternative = os.path.join(config['tmpdir'],getpass.getuser())
+tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -59,26 +66,11 @@ else:
         "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
     )
 
-# def get_parts_capture_kit(wildcards):
-#     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-#     chr = wildcards.chr
-#     parts = wildcards.part
-#     if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
-#         capture_kit_chr_path = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list'
-#     else:
-#         capture_kit_parts_path = config['RES'] + config['kit_folder'] + capture_kit, 'interval_list', capture_kit + chr + parts + '.interval_list'
-#     return capture_kit_parts_path
-
-# def get_parts_capture_kit(wildcards):
-#     chr = wildcards.chr
-#     parts = wildcards.chr_p
-#     capture_kit_parts_path = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], 'interval_list', config['MERGED_CAPTURE_KIT'] + '_' + chr + '_' + parts + '.interval_list')
-#     return capture_kit_parts_path
 
 
 rule backup_gdbi:
     input: gdbi = path_to_dbi + '{chr}.p{chr_p}_{mode}'
-    output: label = touch('labels/done_backup_{samplefile}_{mode}_{chr}.p{chr_p}')
+    output: label = touch(temp('labels/done_backup_{samplefile}_{mode}_{chr}.p{chr_p}'))
     params: tar = "{samplefile}_{mode}_gdbi_{chr}.p{chr_p}.tar.gz"
     shell: """
             mkdir -p BACKUPS/previous &&
@@ -100,7 +92,7 @@ rule GenomicDBImport:
     benchmark: config['BENCH'] + "/{chr}_{chr_p}.{mode}_GenomicDBImport.txt"
     conda: "envs/preprocess.yaml"
     output:
-        ready=touch('labels/done_p{chr_p}.{chr}.{mode}.txt')
+        ready=touch(temp('labels/done_p{chr_p}.{chr}.{mode}.txt'))
     threads: config['GenomicDBImport']['n']
     params:
         inputs=expand(" -V {gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names,mode = [mode],allow_missing=True),
@@ -108,8 +100,9 @@ rule GenomicDBImport:
         method=DBI_method_params,
         batches='75',
     priority: 30
-    resources: mem_mb = get_mem_mb_GenomicDBI
+    resources: mem_mb = get_mem_mb_GenomicDBI,
+            tmpdir= config['tmpdir']
     shell:
         """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs} \
-            --intervals {input.intervals}  -R {ref} {params.method} {params.dbi}/ --batch-size {params.batches} \
+            --intervals {input.intervals}  -R {ref} {params.method} {params.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"""
