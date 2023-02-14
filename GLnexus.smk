@@ -38,7 +38,10 @@ use rule * from Aligner
 module Deepvariant:
     snakefile: 'Deepvarinat.smk'
     config: config
-use rule * from Deepvariant
+module gVCF:
+    snakefile: 'gVCF.smk'
+    config: config
+# use rule * from Deepvariant
 
 mode = config.get("computing_mode", "WES")
 
@@ -52,9 +55,15 @@ both_callers = ["config['gVCF']/reblock", "config['DEEPVARIANT']/gVCF"]
 if gvcf_caller == "HaplotypeCaller":
     gvcf_input = expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
     glnexus_dir = "GLnexus_on_Haplotypecaller"
+    use rule * from gVCF
+    rule_gvcf_all_input = rules.gVCF_all.input
+
 elif gvcf_caller == "Deepvariant":
     gvcf_input = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
     glnexus_dir = "GLnexus_on_Deepvariant"
+    use rule * from Deepvariant
+    rule_gvcf_all_input = rules.Deepvariant_all.input
+
 else:
     raise ValueError(
         "invalid option provided to 'caller'; please choose either 'HaplotypeCaller' or 'Deepvariant'."
@@ -79,7 +88,7 @@ rule GLnexus_all:
     input:
         expand("{cur_dir}/{types_of_gl}/{chr}/{chr}_{mode}.vcf.gz", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir + dir_appendix),
         expand("{cur_dir}/{types_of_gl}/{chr}/{chr}_{mode}.vcf.gz.tbi", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir + dir_appendix),
-        rules.Deepvariant_all.input
+        rule_gvcf_all_input
     default_target: True
 
 rule glnexus:
