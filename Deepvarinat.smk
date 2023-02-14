@@ -70,7 +70,7 @@ rule deepvariant:
     shell:
         # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
         """
-        /opt/deepvariant/bin/run_deepvariant --model_type={mode} --regions={params.bed} --ref={ref} --reads={input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}" --num_shards={threads} 2> {log}
+        /opt/deepvariant/bin/run_deepvariant --model_type={wildcards.mode} --regions={params.bed} --ref={ref} --reads={input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}" --num_shards={threads} 2> {log}
         """
 
 
