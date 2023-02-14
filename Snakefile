@@ -162,6 +162,7 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
     elif gVCF_combine_method == "GLnexus":
         use rule * from GLnexus
         rule_all_combine = rules.GLnexus_all.input
+        END_RULE = rules.GLnexus_all.input
     else:
         raise ValueError(
             "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
