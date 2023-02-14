@@ -50,10 +50,10 @@ glnexus_filtration = config.get("glnexus_filtration", "default")
 
 both_callers = ["config['gVCF']/reblock", "config['DEEPVARIANT']/gVCF"]
 if gvcf_caller == "HaplotypeCaller":
-    gvcf_input = """expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),"""
+    gvcf_input = expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
     glnexus_dir = "GLnexus_on_Haplotypecaller"
 elif gvcf_caller == "Deepvariant":
-    gvcf_input = """expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)"""
+    gvcf_input = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
     glnexus_dir = "GLnexus_on_Deepvariant"
 else:
     raise ValueError(
