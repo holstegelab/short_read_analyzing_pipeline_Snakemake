@@ -53,7 +53,7 @@ glnexus_filtration = config.get("glnexus_filtration", "default")
 
 if gvcf_caller == "HaplotypeCaller":
     gvcf_input = expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
-    glnexus_dir = "GLnexus_on_Haplotypecaller"
+    glnexus_dir = ["GLnexus_on_Haplotypecaller"]
     use rule * from gVCF
     rule_gvcf_all_input = rules.gVCF_all.input
 
