@@ -95,13 +95,18 @@ if end_point == "gVCF":
         use rule * from gVCF
         use rule * from Aligner
         END_RULE = rules.gVCF_all.input,
+        print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
+              "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
         use rule * from Deepvariant
         use rule * from Aligner
         END_RULE = rules.Deepvariant_all.input
+        print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. "
+              "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
 elif end_point == "Align" or end_point == "Aligner":
     use rule * from Aligner
     END_RULE = rules.Aligner_all.input
+    print("You will run following steps: Aligning with dragen")
 elif end_point == "Genotype" or end_point == "Genotyper":
     use rule * from Aligner
     if gvcf_caller == "HaplotypeCaller":
@@ -109,10 +114,17 @@ elif end_point == "Genotype" or end_point == "Genotyper":
         if gVCF_combine_method == "DBIMPORT" or gVCF_combine_method == "COMBINE_GVCF":
             use rule * from Genotype
             END_RULE = rules.Genotype_all.input
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GenomicDBimport and Genotyping with GATK Genotype "
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=COMBINE_GVCF'"
+                  "* To change jointgenotyping method to GLnexus pass --config Combine_gVCF_method=GLnexus")
         elif gVCF_combine_method == "GLnexus":
             use rule * from GLnexus
             rule_all_combine = rules.GLnexus_all.input
             END_RULE = rules.GLnexus_all.input
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GLnexus (default)"
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
         else:
             raise ValueError(
                 "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
@@ -122,6 +134,16 @@ elif end_point == "Genotype" or end_point == "Genotyper":
         use rule * from GLnexus
         rule_all_combine = rules.GLnexus_all.input
         END_RULE = rules.GLnexus_all.input
+        print("You will run following steps: Aligning with dragen, gVCF calling with Deepvariant, merging gVCFs with GLnexus (default)"
+              "* To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'"
+              "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
+    elif gvcf_caller == "BOTH":
+        use rule * from Genotype
+        use rule * from Deepvariant
+        use rule * from GLnexus
+        rule_all_combine = rules.GLnexus_all.input
+        END_RULE = rules.GLnexus_all.input
+        print("You will run following steps: Aligning with dragen, gVCF calling with Haplotypecaller, merging gVCFs with GLnexus (default) and separete gVCF calling with Deepvariant")
     else:
         raise ValueError(
             "invalid option provided to 'caller'; please choose either 'HaplotypeCaller'(default) or 'Deepvariant'."
@@ -136,8 +158,17 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
         if VQSR == "RUN_VQSR":
             use rule * from VQSR
             VQSR_rule = rules.VQSR_all.input,
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GenomicDBimport and Genotyping with GATK Genotype. Additionallly VQSR will be done. "
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=COMBINE_GVCF'"
+                  "* To change jointgenotyping method to GLnexus pass --config Combine_gVCF_method=GLnexus"
+                  "* To remove VQSR step pass '--config VQSR=NO")
         elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
             VQSR_rule = []
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GenomicDBimport and Genotyping with GATK Genotype "
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=COMBINE_GVCF'"
+                  "* To change jointgenotyping method to GLnexus pass --config Combine_gVCF_method=GLnexus")
         else:
             raise ValueError(
                 "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR(default)'."
@@ -151,8 +182,17 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
         if VQSR == "RUN_VQSR":
             use rule * from VQSR
             VQSR_rule = rules.VQSR_all.input,
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with Combinegvcf and Genotyping with GATK Genotype.  Additionallly VQSR will be done. "
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=DBIMPORT'"
+                  "* To change jointgenotyping method to GLnexus pass --config Combine_gVCF_method=GLnexus"
+                  "* To remove VQSR step pass '--config VQSR=NO")
         elif VQSR == "NO" or VQSR == "NO_VQSR" or VQSR == "NO_RUN":
             VQSR_rule = []
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with Combinegvcf and Genotyping with GATK Genotype "
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=DBIMPORT'"
+                  "* To change jointgenotyping method to GLnexus pass --config Combine_gVCF_method=GLnexus")
         else:
             raise ValueError(
                 "invalid option provided to 'VQSR'; please choose either 'RUN_VQSR' or 'NO_VQSR(default)'."
@@ -160,9 +200,33 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
         use rule * from Combine_gVCF
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
-        use rule * from GLnexus
-        rule_all_combine = rules.GLnexus_all.input
-        END_RULE = rules.GLnexus_all.input
+        use rule * from Aligner
+        if gvcf_caller == "HaplotypeCaller":
+            use rule * from gVCFv
+            use rule * from GLnexus
+            END_RULE = END_RULE = rules.GLnexus_all.input
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs and Genotyping with GLnexus "
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
+                  "* To To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
+        elif gvcf_caller == "Deepvariant":
+            use rule * from Deepvariant
+            use rule * from GLnexus
+            rule_all_combine = rules.GLnexus_all.input
+            END_RULE = rules.GLnexus_all.input
+            print("You will run following steps: Aligning with dragen, gVCF calling with Deepvariant, merging gVCFs with GLnexus (default)"
+                  "* To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'"
+                  "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
+        elif gvcf_caller == "BOTH":
+            use rule * from Genotype
+            use rule * from Deepvariant
+            use rule * from GLnexus
+            rule_all_combine = rules.GLnexus_all.input
+            END_RULE = rules.GLnexus_all.input
+            print("You will run following steps: Aligning with dragen, gVCF calling with Haplotypecaller, merging gVCFs with GLnexus (default) and separete gVCF calling with Deepvariant")
+        else:
+            raise ValueError(
+                "invalid option provided to 'caller'; please choose either 'HaplotypeCaller'(default) or 'Deepvariant'."
+            )
     else:
         raise ValueError(
             "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
