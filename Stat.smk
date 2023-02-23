@@ -47,7 +47,13 @@ rule Stat_all:
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
     default_target: True
 
-
+def get_svd(wildcards):
+    sinfo = SAMPLEINFO[wildcards['sample']]
+    if 'wgs' in sinfo['sample_type']:
+        SVD =  config['RES'] + config['verifybamid_wgs']
+    else:
+        SVD = config['RES'] + config['verifybamid_exome']
+    return SVD
 rule verifybamid:
     input:
         bam = rules.markdup.output.mdbams,

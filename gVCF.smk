@@ -73,13 +73,7 @@ rule CalibrateDragstrModel:
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
 # to avoid any bugs verifybamid step runs in different conda enviroment
-def get_svd(wildcards):
-    sinfo = SAMPLEINFO[wildcards['sample']]
-    if 'wgs' in sinfo['sample_type']:
-        SVD =  config['RES'] + config['verifybamid_wgs']
-    else:
-        SVD = config['RES'] + config['verifybamid_exome']
-    return SVD
+
 
 
 def get_chrom_capture_kit(wildcards):
