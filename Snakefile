@@ -202,7 +202,7 @@ elif end_point == "VQSR" or end_point == "VCF" or end_point == "Combine":
     elif gVCF_combine_method == "GLnexus":
         use rule * from Aligner
         if gvcf_caller == "HaplotypeCaller":
-            use rule * from gVCFv
+            use rule * from gVCF
             use rule * from GLnexus
             END_RULE = END_RULE = rules.GLnexus_all.input
             print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs and Genotyping with GLnexus "
