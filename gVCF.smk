@@ -34,7 +34,10 @@ module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 use rule * from Aligner
-
+module Stat:
+    snakefile: 'Stat.smk'
+    config: config
+use rule verifybamid from Stat
 mode = config.get("computing_mode", "WES")
 
 rule gVCF_all:
@@ -78,25 +81,6 @@ def get_svd(wildcards):
         SVD = config['RES'] + config['verifybamid_exome']
     return SVD
 
-rule verifybamid:
-    input:
-        bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai,
-    output:
-        VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
-    # end of this file hardcoded in Haplotypecaller and read_contam_w
-    threads: config['verifybamid']['n']
-    benchmark: config['BENCH'] + "/{sample}_verifybamid.txt"
-    priority: 27
-    params:
-        VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
-        SVD = get_svd
-        # SVD = config['RES'] + config['verifybamid_exome']
-    conda: 'envs/verifybamid.yaml'
-    shell:
-        """
-        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
-        """
 
 def get_chrom_capture_kit(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']

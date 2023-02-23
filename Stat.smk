@@ -47,6 +47,28 @@ rule Stat_all:
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
     default_target: True
 
+
+rule verifybamid:
+    input:
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup_index.output.mdbams_bai,
+    output:
+        VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
+    # end of this file hardcoded in Haplotypecaller and read_contam_w
+    threads: config['verifybamid']['n']
+    benchmark: config['BENCH'] + "/{sample}_verifybamid.txt"
+    priority: 27
+    params:
+        VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
+        SVD = get_svd
+        # SVD = config['RES'] + config['verifybamid_exome']
+    conda: 'envs/verifybamid.yaml'
+    shell:
+        """
+        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
+        """
+
+
 # return interval_list file instead of bed file
 def get_capture_kit_interval_list(wildcards):
     if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
@@ -90,6 +112,9 @@ rule hs_stats:
 
 def get_mem_mb_Artifact_stats(wildcrads, attempt):
     return (attempt * int(config['Artifact_stats']['mem']))
+
+
+
 
 rule Artifact_stats:
     input:
