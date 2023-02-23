@@ -39,12 +39,12 @@ module Stat:
     config: config
 use rule verifybamid from Stat
 mode = config.get("computing_mode", "WES")
-
+cur_dir = os.getcwd()
 rule gVCF_all:
     input:
-        expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
-        expand("{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
-        expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
+        expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, cd =cur_dir, mode = mode),
+        expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, cd =cur_dir, mode = mode),
+        expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, cd =cur_dir, mode = mode),
         rules.Aligner_all.input
     default_target: True
 
@@ -128,8 +128,8 @@ rule HaplotypeCaller:
         contam= rules.verifybamid.output.VBID_stat,
         bai = rules.markdup_index.output.mdbams_bai
     output:
-        gvcf= ensure(os.path.join(config['gVCF'], "{chr}/{sample}.{chr}.{mode}.g.vcf.gz"), non_empty=True),
-        tbi = ensure(os.path.join(config['gVCF'], "{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi"), non_empty=True),
+        gvcf= ensure(os.path.join(cur_dir, config['gVCF'], "{chr}/{sample}.{chr}.{mode}.g.vcf.gz"), non_empty=True),
+        tbi = ensure(os.path.join(cur_dir, config['gVCF'], "{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi"), non_empty=True),
     log:
         HaplotypeCaller=config['LOG'] + "/{sample}_{chr}_{mode}_haplotypecaller.log"
     benchmark:
@@ -162,8 +162,8 @@ rule reblock_gvcf:
     input:
         gvcf = rules.HaplotypeCaller.output.gvcf,
         idx = rules.HaplotypeCaller.output.tbi
-    output: gvcf_reblock = ensure(os.path.join(config['gVCF'], "reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"), non_empty=True),
-            tbi = ensure(os.path.join(config['gVCF'], "reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi"), non_empty=True)
+    output: gvcf_reblock = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz"), non_empty=True),
+            tbi = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi"), non_empty=True)
     log: Reblock=config['LOG'] + "/{sample}_{chr}_{mode}_reblock.log"
     benchmark:
         config['BENCH'] + "/{sample}_{chr}_{mode}_reblock.txt"
