@@ -40,6 +40,7 @@ mode = config.get("computing_mode", "WES")
 rule gVCF_all:
     input:
         expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
+        expand("{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
         expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz.tbi", gvcfs=config['gVCF'], chr = main_chrs, sample = sample_names, mode = mode),
         rules.Aligner_all.input
     default_target: True

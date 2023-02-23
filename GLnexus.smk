@@ -54,7 +54,7 @@ glnexus_filtration = config.get("glnexus_filtration", "default")
 if gvcf_caller == "HaplotypeCaller":
     use rule * from gVCF
     rule_gvcf_all_input = rules.gVCF_all.input
-    gvcf_input = expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
+    gvcf_input = expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=mode,allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller"]
 
 elif gvcf_caller == "Deepvariant":
@@ -67,7 +67,7 @@ elif gvcf_caller == "BOTH":
     use rule * from gVCF
     use rule * from Deepvariant
     rule_gvcf_all_input = [rules.gVCF_all.input, rules.Deepvariant_all.input]
-    gvcf_input = expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
+    gvcf_input = expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
 
 else:
