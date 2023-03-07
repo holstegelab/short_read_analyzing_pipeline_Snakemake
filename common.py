@@ -3,6 +3,7 @@ import csv
 from collections import OrderedDict
 
 import read_samples
+from read_samples import PROTOCOLS
 import utils
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -60,6 +61,8 @@ valid_chr_p = {'chr1': chr_p[:84],
                'chrY': chr_p[850:]}
 
 SAMPLEFILE_TO_SAMPLES = {}
+MAX_BATCH_SIZE = 2 * 1024 #2TB
+
 
 #function to read in and cache a samplefile
 def samplefile(sfilename, config):
@@ -87,6 +90,8 @@ def load_samplefiles(filedir, config):
     if not 'SAMPLE_FILES' in config:
         SAMPLE_FILES = []
         SAMPLEINFO = {}
+        SAMPLE_TO_BATCH = {}
+        SAMPLEFILE_TO_BATCHES = {}
 
         #read in all tsv files in current workdir as samplefiles
         for f in os.listdir(filedir):
@@ -95,7 +100,7 @@ def load_samplefiles(filedir, config):
                 with open(f, 'r', encoding='utf-8') as fopen:
                     ncount = len(fopen.readline().split('\t'))
 
-                if ncount == 8 or ncount == 9: #sample file
+                if ncount == 7 or ncount == 8 or ncount == 9: #sample file
                     basename = os.path.splitext(os.path.basename(f))[0]
                     SAMPLE_FILES.append(basename)
                     w = samplefile(f, config)
@@ -105,15 +110,59 @@ def load_samplefiles(filedir, config):
                         if sample in SAMPLEINFO:
                             print('WARNING!: Sample ' + sample + ' is defined in more than one sample files.')
                         SAMPLEINFO[sample] = info
+                        SAMPLE_TO_BATCH[sample] = None #default
                    
-                    for key,value in w.items():
-                        if len(value['readgroups']) == 0:
-                            print('WARNING: %s has no readgroups' % key)
+                        if len(info.get('readgroups',[])) == 0:
+                            print('WARNING: %s has no readgroups' % sample)
 
+                    #assign to batches for staging from archive or dcache
+                    cursize_full = 0 #size if all files need to be staged
+                    cursize_actual = 0 #size excluding files that are already retrieved
+                    
+                    cursize = {p:{'full':0, 'actual':0} for p in PROTOCOLS}
+
+                    new_batch = {p:[] for p in PROTOCOLS}
+                    SAMPLEFILE_TO_BATCHES[basename] = {p:[] for p in PROTOCOLS}
+                    for sample,info in list(w.items()):
+                        if not info['from_external']: #sample is already on active storage
+                            continue
+
+                        info['need_retrieval'] = True
+                        filesize = info['filesize']
+                        
+                        if os.path.exists(os.path.join(os.getcwd(), config['SOURCEDIR'], sample + '.retrieved')) or \
+                            os.path.exists(os.path.join(os.getcwd(), config['SOURCEDIR'], sample + '.finished')):
+                            info['need_retrieval'] = False
+                            filesize=0
+                        
+                        protocol = info['from_external']
+                        
+                        if (cursize[protocol]['full'] + info['filesize']) > MAX_BATCH_SIZE: #stable batch allocation
+                            w[sample] = info
+                            SAMPLEFILE_TO_BATCHES[basename][protocol].append({'samples':new_batch[protocol], 'size':cursize[protocol]['actual']})
+                            new_batch[protocol] = []
+                            cursize[protocol]['actual'] = 0
+                            cursize[protocol]['full'] = 0
+
+                        new_batch[protocol].append(sample)
+                        cursize[protocol]['full'] += info['filesize']
+                        cursize[protocol]['actual'] += filesize
+                        
+
+                    #print(sample, filesize, cursize_full, cursize_actual, info)
+                    for p in PROTOCOLS:
+                        if new_batch[p]:
+                            SAMPLEFILE_TO_BATCHES[basename][p].append({'samples':new_batch[p], 'size':cursize[p]['actual']})
+
+                        for pos, batch in enumerate(SAMPLEFILE_TO_BATCHES[basename][p]):
+                            for sample in batch['samples']:
+                                SAMPLE_TO_BATCH[sample] = f'{p}_{pos}'
 
         SAMPLE_FILES.sort()
-        config['SAMPLE_FILES'] = SAMPLE_FILES
-        config['SAMPLEFILE_TO_SAMPLES'] = SAMPLEFILE_TO_SAMPLES
-        config['SAMPLEINFO'] = SAMPLEINFO
 
-    return (config['SAMPLE_FILES'], config['SAMPLEFILE_TO_SAMPLES'], config['SAMPLEINFO'])
+
+    return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
+
+
+
+   

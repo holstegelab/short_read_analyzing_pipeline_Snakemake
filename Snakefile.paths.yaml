@@ -6,7 +6,7 @@ RES: '/gpfs/work3/0/qtholstg/hg38_res/'
 #path to intervals file with targets
 kit_folder: 'intervals/'
 
-#folder with cram reference fasta files
+#resource folder with cram reference fasta files
 CRAMREFS: 'cram_refs'
 
 #conda env's paths
@@ -14,6 +14,9 @@ CONDA_VERIFYBAMID: 'envs/verifybamid.yaml'
 CONDA_MAIN: 'envs/preprocess.yaml'
 
 #OUTPUT FOLDERS
+SOURCEDIR: 'source'
+SAMPLEINFODIR: 'sampleinfo'
+FETCHDIR: 'fetch'
 LOG: 'logs'
 BENCH: 'benchmark'
 BAM: 'bams'

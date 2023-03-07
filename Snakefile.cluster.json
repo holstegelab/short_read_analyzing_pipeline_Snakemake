@@ -9,17 +9,7 @@ __default__:
     partition: compute
 
 
-split_alignments_by_readgroup:
-    n: 8
-    mem: 1000
 
-external_alignments_to_fastq:
-    n: 4
-    mem: 1000
-
-mCRAM:
-        n: 2
-        mem: 1000
 adapter_removal:
     n: 4
     mem: 1000

@@ -15,6 +15,8 @@ import argparse
 
 import utils
 
+PROTOCOLS = ['archive','dcache']
+
 def gzipFileSize(filename):
     """return UNCOMPRESSED filesize of a gzipped file.
     """
@@ -160,14 +162,14 @@ def read_samplefile_simple(filename, config, prefixpath=None):
             error(len(row) == 7 or len(row) == 8 or len(row) == 9, 'Row encountered with != 8 or 9 fields: ' + str(row))
             if len(row) == 8:
                 study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2 = row
-                filesize = None
+                sample_config = {}
             elif len(row) == 7:
                 study, sample_id, file_type, sample_type, capture_kit, sex, filenames1 = row
                 filenames2 = ""
-                filesize = None
+                sample_config = {}
             else:
-                study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2, filesize = row
-            
+                study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2, sample_config = row
+                sample_config = dict([tuple(e.split('=')) for e in sample_config.split(',')])
 
             warning(sample_id.startswith(study),
                     'Sample id needs to start with study name to prevent sample name conflicts for ' + sample_id)
@@ -181,6 +183,7 @@ def read_samplefile_simple(filename, config, prefixpath=None):
             else:
                 base_filesize_factor = 1.0
 
+            filesize = sample_config.get('filesize',None)
             if filesize is None:
                 if sample_type == 'illumina_exome':
                     warning(capture_kit != '', 'Need to fill in capture kit for exome')
@@ -222,12 +225,21 @@ def read_samplefile_simple(filename, config, prefixpath=None):
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
                     'target':targetpath,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
-                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex}
-            
-            if any([not (append_prefix(prefixpath,f).startswith("/archive") or append_prefix(prefixpath,f).startswith('dcache:')) for f in itertools.chain(filenames1,filenames2)]):
+                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 'no_dedup':sample_config.get('no_dedup',False)}
+            all_files = [append_prefix(prefixpath,f) for f in itertools.chain(filenames1,filenames2)] 
+            protocols = set([f.split(':')[0] for f in all_files if ':' in f])
+
+            if protocols:
+               assert len(protocols) == 1, f'Cannot combine multiple external data sources for sample {sample_id}: {protocols}'
+               assert all([e in PROTOCOLS for e in protocols]), f'Unknown protocol for sample {sample_id}: {protocols}'
+
+               res['from_external'] = protocols.pop()
+            else:
                 res, warnings = get_readgroups(res, prefixpath, config)
                 for w in warnings:
                     warning(False, w)
+                res['from_external'] = False
+
             samples.append(res)
 
     for capture_kit in capture_kits:
