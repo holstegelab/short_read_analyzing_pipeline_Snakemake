@@ -10,6 +10,7 @@ samtools = config['samtools']
 bcftools = config['bcftools']
 dragmap = config['dragmap']
 verifybamid2 = config['verifybamid2']
+cur_dir = os.getcwd()
 
 ref = config['RES'] + config['ref']
 
@@ -85,7 +86,7 @@ def get_mem_mb_GenomicDBI(wildcrads, attempt):
 
 rule GenomicDBImport:
     input:
-        g=expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names, mode = [mode], allow_missing=True),
+        g=expand("{cd}/{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names, mode = [mode], cd = cur_dir, allow_missing=True),
         intervals=os.path.join(config['RES'],config['kit_folder'],'BINS','interval_list','{chr}_{chr_p}.interval_list'),
         labels = labels
     log: config['LOG'] + "/GenomicDBImport.{chr_p}.{chr}.{mode}.log"

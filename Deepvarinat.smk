@@ -54,14 +54,15 @@ def get_chrom_capture_kit_bed(wildcards):
 
 rule deepvariant:
     input:
-        bam =  os.path.join(current_dir,rules.markdup.output.mdbams),
-        bai = os.path.join(current_dir,rules.markdup_index.output.mdbams_bai)
+        bam =  rules.markdup.output.mdbams,
+        bai = rules.markdup_index.output.mdbams_bai
     output:
         vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chr}","{chr}.{sample}.{mode}.vcf.gz"),
         gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chr}","{chr}.{sample}.{mode}.g.vcf.gz"),
     threads: config['deepvariant']['n']
     params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'DV_intermediate', "{chr}.{sample}.{mode}"),
-            bed=get_chrom_capture_kit_bed
+            bed=get_chrom_capture_kit_bed,
+            cd = current_dir + '/'
     #conda: "envs/deepvariant.yaml"
     container: 'docker://google/deepvariant:1.4.0'
     benchmark:
@@ -70,7 +71,7 @@ rule deepvariant:
     shell:
         # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
         """
-        /opt/deepvariant/bin/run_deepvariant --model_type={wildcards.mode} --regions={params.bed} --ref={ref} --reads={input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}" --num_shards={threads} 2> {log}
+        /opt/deepvariant/bin/run_deepvariant --model_type={wildcards.mode} --regions={params.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}" --num_shards={threads} 2> {log}
         """
 
 

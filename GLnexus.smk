@@ -84,7 +84,10 @@ elif glnexus_filtration == 'custom':
 
 def conf_filter(wildcards):
     if glnexus_filtration == 'default':
-        conf_filters = "DeepVariant" + wildcards.mode
+        if gvcf_caller == "Deepvariant":
+            conf_filters = "DeepVariant" + wildcards.mode
+        elif gvcf_caller == "HaplotypeCaller":
+            conf_filters = "gatk"
         # dir_appendix = "default"
     elif glnexus_filtration == 'custom':
         conf_filters = "/gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml"
@@ -113,7 +116,7 @@ rule glnexus:
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = get_chrom_capture_kit_bed,
             mem_gb = int(config['glnexus']['mem'] // 1024),
-            scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus.DB",
+            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus.DB"),
             conf_filters = conf_filter
     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus.log")
     benchmark:
@@ -134,7 +137,7 @@ if gvcf_caller == "BOTH":
     use rule glnexus as glnexus_2 with:
         input: expand("{cd}/{dp}/gVCF/{chr}/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
         output: vcf=os.path.join(current_dir,glnexus_dir[1] + dir_appendix,"{chr}","{chr}_{mode}.vcf.gz")
-        params: scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus_2.DB",
+        params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus_2.DB"),
                 bed= get_chrom_capture_kit_bed,
                 mem_gb= int(config['glnexus']['mem'] // 1024),
                 conf_filters= conf_filter
@@ -143,106 +146,6 @@ if gvcf_caller == "BOTH":
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
         output: tbi = os.path.join(current_dir, glnexus_dir[1] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")
-
-
-
-
-
-
-
-    # rule norma_gln:
-    #     input: rules.glnexus.output.vcf
-    #     output: normVCF = os.path.join(current_dir, "glnexus_norm", "{chr}", "{chr}_{mode}.vcf.gz")
-    #     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.norma_gln.log")
-    #     conda: "envs/preprocess.yaml"
-    #     benchmark:
-    #         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.norma_gln.txt")
-    #     shell: "bcftools norm -f {ref} {input} -m -both -O v | bcftools norm --check-ref ws -d exact -f {ref} -O z > {output.normVCF} 2> {log}"
-
-
-    # rule glnexus_custom:
-#     input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
-#     output: vcf = os.path.join(current_dir, "glnexus_custom", "{chr}", "{chr}_{mode}.vcf.gz")
-#     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
-#     params: bed = get_chrom_capture_kit_bed,
-#             mem_gb = int(config['glnexus']['mem'] // 1024),
-#             scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus_custom.DB"
-#     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus_custom.log")
-#     benchmark:
-#         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_custom.txt")
-#     threads: config['glnexus']['n']
-#     resources: mem_mb = config['glnexus']['mem']
-#     shell:
-#         # --bed {params.bed}
-#         """
-#         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config /gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
-#         """
-#
-# rule glnexus_custom_on_haplotypecaller:
-#     input: gvcf = expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names, mode = [mode], allow_missing=True),
-#     output: vcf = os.path.join(current_dir, "glnexus_custom_on_haplotypecaller", "{chr}", "{chr}_{mode}.vcf.gz")
-#     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
-#     params: bed = get_chrom_capture_kit_bed,
-#             mem_gb = int(config['glnexus']['mem'] // 1024),
-#             scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus_custom_on_haplotypecaller.DB"
-#     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus_customon_haplotypecaller.log")
-#     benchmark:
-#         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_custom_on_haplotypecaller.txt")
-#     threads: config['glnexus']['n']
-#     resources: mem_mb = config['glnexus']['mem']
-#     shell:
-#         # --bed {params.bed}
-#         """
-#         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config /gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
-#         """
-#
-# rule glnexus_default_on_haplotypecaller:
-#     input: gvcf = expand("{gvcfs}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",gvcfs=config['gVCF'],sample=sample_names, mode = [mode], allow_missing=True),
-#     output: vcf = os.path.join(current_dir, "glnexus_custom_on_haplotypecaller", "{chr}", "{chr}_{mode}.vcf.gz")
-#     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
-#     params: bed = get_chrom_capture_kit_bed,
-#             mem_gb = int(config['glnexus']['mem'] // 1024),
-#             scratch_dir =  current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus_default_on_haplotypecaller.DB"
-#     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus_default_on_haplotypecaller.log")
-#     benchmark:
-#         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_default_on_haplotypecaller.txt")
-#     threads: config['glnexus']['n']
-#     resources: mem_mb = config['glnexus']['mem']
-#     shell:
-#         # --bed {params.bed}
-#         """
-#         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config DeepVariant{wildcards.mode} {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log}
-#         """
-#
-#
-#
-# rule index_deep:
-#     input: os.path.join(current_dir, "glnexus_custom_on_haplotypecaller", "{chr}", "{chr}_{mode}.vcf.gz")
-#     output: tbi = expand(os.path.join(current_dir, "glnexus_custom_on_haplotypecaller", "{chr}", "{chr}_{mode}.vcf.gz.tbi"), types_of_gl = prog, allow_missing=True)
-#     conda: "envs/preprocess.yaml"
-#     shell: "gatk IndexFeatureFile -I {input}"
-#
-# rule index_deep_glnexus_custom:
-#     input: os.path.join(current_dir,"glnexus_custom","{chr}","{chr}_{mode}.vcf.gz")
-#     output: tbi = expand(os.path.join(current_dir,"glnexus_custom","{chr}","{chr}_{mode}.vcf.gz.tbi"),types_of_gl=prog,allow_missing=True)
-#     conda: "envs/preprocess.yaml"
-#     shell: "gatk IndexFeatureFile -I {input}"
-#
-# rule index_deep_glnexux:
-#     input: os.path.join(current_dir,"glnexus","{chr}","{chr}_{mode}.vcf.gz")
-#     output: tbi = expand(os.path.join(current_dir,"glnexus","{chr}","{chr}_{mode}.vcf.gz.tbi"),types_of_gl=prog,allow_missing=True)
-#     conda: "envs/preprocess.yaml"
-#     shell: "gatk IndexFeatureFile -I {input}"
-#
-# rule index_deep_glnexux_on_HC:
-#     input: os.path.join(current_dir,"glnexus_default_on_haplotypecaller","{chr}","{chr}_{mode}.vcf.gz")
-#     output: tbi = expand(os.path.join(current_dir,"glnexus","{chr}","{chr}_{mode}.vcf.gz.tbi"),types_of_gl=prog,allow_missing=True)
-#     conda: "envs/preprocess.yaml"
-#     shell: "gatk IndexFeatureFile -I {input}"
-
-
-
-
 
 # rule norma_gln:
 #     input: rules.glnexus.output.vcf

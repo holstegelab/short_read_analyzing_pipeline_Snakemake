@@ -24,6 +24,7 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.',config)
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
+current_dir = os.getcwd()
 
 rule Aligner_all:
     input:

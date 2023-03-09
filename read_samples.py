@@ -422,6 +422,14 @@ def read_fastqfile(filename):
                 run_id = '0'
             elif len(machine_fields) == 7:
                 instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y = machine_fields
+            elif len(machine_fields) == 1:
+                instrument_name = 'Artificial_reads'
+                run_id = '0'
+                flowcell_id = '0'
+                flowcell_lane = '0'
+                tile_number = '0'
+                x = '0'
+                y = '0'
             else:
                 error(len(machine_fields) == 6, 'Unexpected fastq header format: ' + header)
 
