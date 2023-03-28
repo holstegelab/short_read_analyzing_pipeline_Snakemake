@@ -1,3 +1,4 @@
+
 __default__:
     time: 100
     mem: 1700
@@ -10,29 +11,7 @@ __default__:
 
 
 
-adapter_removal:
-    n: 4
-    mem: 1000
-adapter_removal_identify:
-    n: 4
-    mem: 1000
-dechimer:
-    n: 4
-align_reads:
-    n: 50
-    mem: 52000
-    time: 1400
-merge_bam_alignment:
-    n: 2
-    mem: 13000
-    time: 3000
-sort_bam_alignment:
-    n: 2
-    mem: 13000
-    time: 1500
-index_sort:
-        n: 2
-        mem: 100
+
 merge_rgs:
         n: 1
         mem: 2000

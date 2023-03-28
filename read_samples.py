@@ -19,6 +19,9 @@ PROTOCOLS = ['archive','dcache']
 
 def gzipFileSize(filename):
     """return UNCOMPRESSED filesize of a gzipped file.
+    
+    :param filename: name of the gzipped file
+    :return: uncompressed filesize in bytes
     """
     rsize = os.path.getsize(filename)
     fo = open(filename, 'rb')
@@ -34,6 +37,11 @@ def gzipFileSize(filename):
 
 
 def file_size(fname):
+    """Return the size of a file in bytes.
+    
+    :param fname: name of the file
+    :return: size in bytes.
+    """
     if fname.endswith('gz'):
         return gzipFileSize(fname)
     elif fname.endswith('bz2'):
@@ -43,6 +51,10 @@ def file_size(fname):
 
 
 def get_bam_readgroups(fname, filetype):
+    """Return the readgroups of a bam file.
+    :param fname: name of the bam file
+    :param filetype: type of the file (bam, cram, extracted_bam, recalibrated_bam, recalibrated_cram, extracted_cram)
+    :return: list of readgroups."""
     p = subprocess.Popen('samtools view -H %s | grep ^@RG' % fname, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             shell=True)
        
@@ -63,6 +75,9 @@ def get_bam_readgroups(fname, filetype):
 
 
 def get_sra_readgroups(fname):
+    """Return the readgroups of a sra file.
+    :param fname: name of the sra file
+    :return: list of readgroups."""
     attempts = 3
     success = False
     while not success and attempts > 0:
@@ -124,7 +139,26 @@ sexes = set(['F', 'M'])
 
 
 
-def read_samplefile_simple(filename, config, prefixpath=None):
+def read_samplefile(filename, config, prefixpath=None):
+    """Read a sample file and return a list of samples.
+
+    Sample file format:
+    study, sample_id, file_type, sample_type, capture_kit, sex, filenames1[, filenames2[, sample_config]]
+    
+    if filenames2 is not present, it is assumed to be empty.
+    if sample_config is not present, it is assumed to be empty.
+
+    Prefixpath can be given by a .source file in the same directory as the sample file.
+    Targetpath can be given by a .target file in the same directory as the sample file.
+
+    Paths can be prepended by a protocol (e.g. archive:/path/to/data) to indicate that the data is not local.
+    Accepted protocol values: archive, dcache
+
+
+    :param filename: name of the sample file
+    :param config: configuration dictionary
+    :param prefixpath: path to prepend to all filenames
+    :return: list of sample dictionaries."""
     orig_filename = filename
     filename = os.path.realpath(filename)
 
@@ -132,7 +166,7 @@ def read_samplefile_simple(filename, config, prefixpath=None):
     if os.path.exists(basename + '.source'):
         with open(basename + '.source','r') as fsource:
             prefixpath = fsource.readline().strip()
-        print(f'Data path overridden by {basename}.source file to {prefixpath}')            
+        print(f'SOURCE PATH OVERRIDE: by {basename}.source file to {prefixpath}')            
 
     if not prefixpath:
         prefixpath = os.path.dirname(filename)
@@ -140,10 +174,10 @@ def read_samplefile_simple(filename, config, prefixpath=None):
     if os.path.exists(basename + '.target'):
         with open(basename + '.target','r') as ftarget:
             targetpath = ftarget.readline().strip()
-        print(f'Archive target path set to {targetpath}') 
+        print(f'TARGET PATH set to {targetpath}') 
     else:
         targetpath = None
-        print(f'Archive target path not set (no .target file)') 
+        print(f'TARGET PATH not set (no .target file)') 
 
 
     samples = []
@@ -252,11 +286,13 @@ def read_samplefile_simple(filename, config, prefixpath=None):
 
 
 def check(warnings, condition, message):
+    """Checks a condition and appends a warning if it is not met"""
     if not condition:
         warnings.append(message)
 
 
 def append_prefix(prefix, filename):
+    """Appends a prefix to a filename if it is not an absolute path"""
     if not os.path.isabs(filename):
         return os.path.join(prefix, filename)
     else:
@@ -264,6 +300,12 @@ def append_prefix(prefix, filename):
 
 
 def get_readgroups(sample, sourcedir, config):
+    """Obtains readgroups from fastq, SRA, or bam/cram files. Stores in the sample dictionary.
+    :param sample: sample dictionary
+    :param sourcedir: directory where the files are located
+    :param config: config dictionary
+    :return: sample dictionary, list of warnings
+    """
     sample = sample.copy()
     sample_id = sample['sample']
     sample_type = sample['sample_type']
@@ -387,6 +429,12 @@ def get_readgroups(sample, sourcedir, config):
 
 
 def read_fastqfile(filename):
+    """
+    Reads a fastq file and returns a dictionary containing the information from the header line.
+    :param filename: the fastq file
+    :return: a dictionary containing the information from the header line
+
+    """
     if filename.endswith('gz'):
         o = gzip.open
     elif filename.endswith('bz2'):
@@ -476,5 +524,5 @@ if __name__ == '__main__':
 
     samplefiles = [os.path.expanduser(sample_file) for sample_file in args.samplefiles]
     for samplefile in samplefiles:
-        read_samplefile_simple(samplefile, config, args.data_root)
+        read_samplefile(samplefile, config, args.data_root)
 

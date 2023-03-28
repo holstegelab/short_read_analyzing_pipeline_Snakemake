@@ -75,7 +75,7 @@ def samplefile(sfilename, config):
         if not os.path.isfile(datfilename):
             if not os.path.isfile(sfilename):
                 raise RuntimeError('Sample file ' + sfilename + ' does not exist')
-            samplelist = read_samples.read_samplefile_simple(sfilename, config)
+            samplelist = read_samples.read_samplefile(sfilename, config)
             #using ordereddict to main stable order
             sampleinfodict = OrderedDict([(a['sample'], a) for a in samplelist])
             utils.save(sampleinfodict,datfilename)
