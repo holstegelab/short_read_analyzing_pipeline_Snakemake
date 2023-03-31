@@ -39,7 +39,7 @@ rule SV_delly_all:
 rule delly_call:
     input:
         bam = rules.markdup.output.mdbams,
-        bai = rules.markdup_index.output.mdbams_bai
+        bai = rules.markdup.output.mdbams_bai
     output:
         call = config['DELLY'] + '/first_call/{sample}.bcf'
     conda: 'envs/preprocess.yaml'

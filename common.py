@@ -8,6 +8,8 @@ import utils
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
+main_chrs_ploidy_male = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY', 'chrXH','chrYH']
+main_chrs_ploidy_female = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
 chr_p = [str('0') + str(e) for e in range(0, 10)] + [str(i) for i in range(10, 90)] + [str(a) for a in range(9000, 9762)]
 main_chrs_db = []
 main_chrs_db.extend(['chr1']*84)
@@ -163,6 +165,30 @@ def load_samplefiles(filedir, config):
 
     return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
 
+def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
+    """If samples are on tape, we do not have sample readgroup info.
+    That is, the 'readgroups' field is empty.
+
+    This function first checks if the readgroup info is available on disk,
+    in the file config['SAMPLEINFODIR']/<sample>.dat. 
+
+    Alternatively, the function injects a checkpoint rule to load this readgroup info.
+    """
+
+    sinfo = SAMPLEINFO[sample]
+    if not 'readgroups' in sinfo:
+        rgpath = os.path.join(config['SAMPLEINFODIR'], sample + ".adat")
+        if os.path.exists(rgpath):
+            xsample = utils.load(rgpath)
+        elif checkpoint: 
+            #no readgroup info yet
+            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            xsample = utils.load(filename)
+        sinfo = sinfo.copy()
+        sinfo['readgroups'] = xsample['readgroups']
+        sinfo['alternative_names'] = sinfo['alternative_names'].union(xsample['alternative_names'])
+        SAMPLEINFO[sample] = sinfo
+    return sinfo
 
 
    

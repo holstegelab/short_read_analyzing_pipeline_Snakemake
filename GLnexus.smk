@@ -36,7 +36,7 @@ module Aligner:
     config: config
 use rule * from Aligner
 module Deepvariant:
-    snakefile: 'Deepvarinat.smk'
+    snakefile: 'Deepvariant.smk'
     config: config
 module gVCF:
     snakefile: 'gVCF.smk'
@@ -97,7 +97,7 @@ def conf_filter(wildcards):
 def get_chrom_capture_kit_bed(wildcards):
     chr = wildcards.chr
     if mode == 'WES':
-        capture_kit_chr_path_bed = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list.bed'
+        capture_kit_chr_path_bed = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'] + '_hg38', config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list.bed')
     elif mode == 'WGS':
         capture_kit_chr_path_bed = chr
     return capture_kit_chr_path_bed

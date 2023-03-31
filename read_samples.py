@@ -251,8 +251,7 @@ def read_samplefile(filename, config, prefixpath=None):
             elif file_type == 'cram' or file_type == 'recalibrated_cram' or file_type == 'extracted_cram':
                 error(len(filenames2) == 1 and (filenames2[0].endswith('fa') or filenames2[0].endswith('fasta')),
                       'Second filename for CRAM filetype should be fasta reference file')
-                error(os.path.exists(filenames2[0]),
-                      'Fasta reference file for CRAM filetype does not exist: %s' % filenames2[0])
+                
             else:
                 warning(len(filenames2) == 0, 'No second filename can be given for bam files: ' + sample_id)
 

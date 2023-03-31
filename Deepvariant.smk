@@ -20,13 +20,13 @@ os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    chr = "[\w\d]+",
+    chrom = "[\w\d]+",
     # readgroup="[\w\d_\-@]+"
 
 
 from read_samples import *
 from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO = load_samplefiles('.', config)
+SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
@@ -38,40 +38,61 @@ use rule * from Aligner
 
 mode = config.get("computing_mode", "WES")
 
+def generate_gvcf(wildcards):
+    """Generate gvcf file name."""
+    res = []
+    for sample in sample_names:
+        sinfo = SAMPLEINFO[sample]
+        if sinfo['sex'] == 'F':
+            for chrom in main_chrs_ploidy_female:
+                res.append(os.path.join(current_dir, config['DEEPVARIANT'], 'gVCF', chrom, sample + '.' + chrom + '.female.g.vcf.gz'))
+        else:
+            for chrom in main_chrs_ploidy_female:
+                res.append(os.path.join(current_dir, config['DEEPVARIANT'], 'gVCF', chrom, sample + '.' + chrom + '.male.g.vcf.gz'))
+    return res
+
 rule Deepvariant_all:
     input:
-        expand("{cur_dir}/{deepvarinat}/gVCF/{chr}/{chr}.{sample}.{mode}.g.vcf.gz", cur_dir = current_dir, deepvarinat = config['DEEPVARIANT'], sample = sample_names, mode = mode, chr = main_chrs),
+        generate_gvcf,
         rules.Aligner_all.input
     default_target: True
 
 def get_chrom_capture_kit_bed(wildcards):
-    chr = wildcards.chr
-    if mode == 'WES':
-        capture_kit_chr_path_bed = config['RES'] + config['kit_folder'] + config['MERGED_CAPTURE_KIT'] + '_hg38/' + config['MERGED_CAPTURE_KIT'] + '_hg38_' + chr + '.interval_list.bed'
-    elif mode == 'WGS':
-        capture_kit_chr_path_bed = chr
+    chrom = wildcards.chrom
+    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+        capture_kit_chr_path_bed = chrom
+    else:
+        capture_kit_chr_path_bed = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'] + '_hg38', config['MERGED_CAPTURE_KIT'] + '_hg38_' + chrom + '.interval_list.bed')                  
     return capture_kit_chr_path_bed
+
+def get_sequencing_mode(wildcards):
+    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+        mode = 'WGS'
+    else:
+        mode = 'WES'
+    return mode        
 
 rule deepvariant:
     input:
         bam =  rules.markdup.output.mdbams,
-        bai = rules.markdup_index.output.mdbams_bai
+        bai = rules.markdup.output.mdbams_bai
     output:
-        vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chr}","{chr}.{sample}.{mode}.vcf.gz"),
-        gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chr}","{chr}.{sample}.{mode}.g.vcf.gz"),
-    threads: config['deepvariant']['n']
-    params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'DV_intermediate', "{chr}.{sample}.{mode}"),
+        vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.{sex}.vcf.gz"),
+        gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.{sex}.g.vcf.gz")
+    params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}.{sex}"),
             bed=get_chrom_capture_kit_bed,
-            cd = current_dir + '/'
-    #conda: "envs/deepvariant.yaml"
-    container: 'docker://google/deepvariant:1.4.0'
+            cd = current_dir + '/',
+            mode=get_sequencing_mode
+    container: 'docker://google/deepvariant:1.5.0'
     benchmark:
-        os.path.join(current_dir, config['BENCH'],"{chr}_{sample}.{mode}.wholedeepvariant.txt")
-    log: os.path.join(current_dir, config['LOG'],"{chr}_{sample}.{mode}.wholedeepvariant.log")
+        os.path.join(current_dir, config['BENCH'],"{sample}.{chrom}.{sex}.wholedeepvariant.txt")
+    resources:
+        n=2, #set in profile using singularity-args. Waiting for rule-specific args. 
+        mem_mb=3000       
+    log: os.path.join(current_dir, config['LOG'],"{sample}.{chrom}.{sex}.wholedeepvariant.log")
     shell:
-        # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
         """
-        /opt/deepvariant/bin/run_deepvariant --model_type={wildcards.mode} --regions={params.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}" --num_shards={threads} 2> {log}
+        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={params.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
         """
 
 
@@ -92,16 +113,16 @@ rule deepvariant:
 #         bam =  os.path.join(current_dir,rules.markdup.output.mdbams),
 #         bai = os.path.join(current_dir,rules.markdup_index.output.mdbams_bai)
 #     output:
-#         pregvcf = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chr}.{sample}.{mode}.gvcf.trfrecord.gz"),
-#         examples = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chr}.{sample}.{mode}.examples.gz"),
+#         pregvcf = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chrom}.{sample}.{mode}.gvcf.trfrecord.gz"),
+#         examples = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chrom}.{sample}.{mode}.examples.gz"),
 #     threads: config['make_examples']['n']
-#     params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chr}.{sample}.{mode}"),
+#     params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chrom}.{sample}.{mode}"),
 #             # change to merged bed capture kit divided per BINs
 #             bed= get_chrom_capture_kit_bed
 #     container: 'docker://google/deepvariant:1.4.0'
 #     benchmark:
-#         os.path.join(current_dir, config['BENCH'],"{chr}.{sample}.{mode}.makeexamples.txt")
-#     log: os.path.join(current_dir, config['LOG'],"{chr}.{sample}.{mode}.makeexamples.log")
+#         os.path.join(current_dir, config['BENCH'],"{chrom}.{sample}.{mode}.makeexamples.txt")
+#     log: os.path.join(current_dir, config['LOG'],"{chrom}.{sample}.{mode}.makeexamples.log")
 #     shell:
 #         # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
 #         """
@@ -120,13 +141,13 @@ rule deepvariant:
 #     input:
 #         examples =  os.path.join(current_dir,rules.make_examples.output.examples),
 #     output:
-#         precall = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chr}.{sample}.{mode}.intermediate_out.gz"),
+#         precall = os.path.join(current_dir, config['DEEPVARIANT'],'intermediate', "{chrom}.{sample}.{mode}.intermediate_out.gz"),
 #     params: model = get_model
 #     container: 'docker://google/deepvariant:1.4.0'
 #     threads: config['call_variants']['n']
 #     benchmark:
-#         os.path.join(current_dir, config['BENCH'],"{chr}_{sample}.{mode}.call_variants.txt")
-#     log: os.path.join(current_dir, config['LOG'],"{chr}_{sample}.{mode}.call_variants.log")
+#         os.path.join(current_dir, config['BENCH'],"{chrom}_{sample}.{mode}.call_variants.txt")
+#     log: os.path.join(current_dir, config['LOG'],"{chrom}_{sample}.{mode}.call_variants.log")
 #     shell:
 #         """
 #         /opt/deepvariant/bin/call_variants --examples {input.examples} --outfile {output.precall} --checkpoint {params.model} 2> {log}
@@ -137,13 +158,13 @@ rule deepvariant:
 #         non_variant_records =  os.path.join(current_dir,rules.make_examples.output.pregvcf),
 #         precall= os.path.join(current_dir,rules.call_variants.output.precall),
 #     output:
-#         vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chr}.{sample}.{mode}.vcf.gz"),
-#         gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chr}.{sample}.{mode}.g.vcf.gz"),
+#         vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chrom}.{sample}.{mode}.vcf.gz"),
+#         gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chrom}.{sample}.{mode}.g.vcf.gz"),
 #     params: model = get_model
 #     container: 'docker://google/deepvariant:1.4.0'
 #     benchmark:
-#         os.path.join(current_dir, config['BENCH'],"{chr}_{sample}.{mode}.postprocess_variants.txt")
-#     log: os.path.join(current_dir, config['LOG'],"{chr}_{sample}.{mode}.postprocess_variants.log")
+#         os.path.join(current_dir, config['BENCH'],"{chrom}_{sample}.{mode}.postprocess_variants.txt")
+#     log: os.path.join(current_dir, config['LOG'],"{chrom}_{sample}.{mode}.postprocess_variants.log")
 #     threads: config['postprocess_variants']['n']
 #     shell:
 #             """

@@ -19,7 +19,7 @@ from read_samples import *
 from common import *
 SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
 
-
+   
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
@@ -56,7 +56,7 @@ module Encrypt:
     config: config
 use rule * from Encrypt
 module Deepvariant:
-    snakefile: 'Deepvarinat.smk'
+    snakefile: 'Deepvariant.smk'
     config: config
 
 module GLnexus:
@@ -64,19 +64,19 @@ module GLnexus:
     config: config
 
 
-SV = config.get("SV", "RUN_SV")
-if SV == "RUN_SV":
-    use rule * from SV_delly
-    SV_rule = rules.SV_delly_all.input
-else:
-    SV_rule = []
+#SV = config.get("SV", "RUN_SV")
+#if SV == "RUN_SV":
+#    use rule * from SV_delly
+#    SV_rule = rules.SV_delly_all.input
+#else:
+#    SV_rule = []
 
-CNV = config.get("CNV", "RUN_CNV")
-if CNV == "RUN_CNV":
-    use rule * from CNV_with_cnvkit_Module
-    CNV_rule = rules.CNV_with_cnvkit_Module_all.input
-else:
-    CNV_rule = []
+#CNV = config.get("CNV", "RUN_CNV")
+#if CNV == "RUN_CNV":
+#    use rule * from CNV_with_cnvkit_Module
+#    CNV_rule = rules.CNV_with_cnvkit_Module_all.input
+#else:
+#    CNV_rule = []
 
 gVCF_combine_method = config.get("Combine_gVCF_method", "GLnexus")
 
@@ -241,12 +241,12 @@ else:
 rule all:
     input:
         END_RULE,
-        rule_all_combine,
-        VQSR_rule,
-        rules.Stat_all.input,
-        SV_rule,
-        CNV_rule,
-        rules.Encrypt_all.input,
+        #rule_all_combine,
+        #VQSR_rule,
+        #rules.Stat_all.input,
+        #SV_rule,
+        #CNV_rule,
+        #rules.Encrypt_all.input,
     default_target: True
 
 

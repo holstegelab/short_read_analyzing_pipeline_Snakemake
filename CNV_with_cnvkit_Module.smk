@@ -49,7 +49,7 @@ rule CNV_with_cnvkit_Module_all:
 rule neewBams:
     input:
         bam_files = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output:
         NBams = config['BAM'] + '/extracted_for_CNV/{sample}.extracted.bam'
     params: interval = config['RES'] + config['main_chr_bed']
@@ -67,7 +67,7 @@ def get_capture_kit_antitarget(wildcards):
 
 def get_capture_kit_bed(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    capture_kit_path = config['RES'] + config['kit_folder'] + capture_kit + '_hg38.uniq.bed'
+    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.uniq.bed')
     return capture_kit_path
 
 rule autobin:

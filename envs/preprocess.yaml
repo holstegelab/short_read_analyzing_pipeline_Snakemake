@@ -9,7 +9,6 @@ dependencies:
 - pigz=2.6
 - bcftools=1.16
 - bedtools=2.30.0
-- dragmap=1.2.1
 - gatk4=4.3.0.0
 - scipy=1.9.1
 - delly=1.1.3

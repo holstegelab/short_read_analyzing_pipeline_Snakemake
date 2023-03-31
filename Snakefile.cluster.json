@@ -12,29 +12,12 @@ __default__:
 
 
 
-merge_rgs:
-        n: 1
-        mem: 2000
-markdup:
-        n: 4
-        mem: 500
-markdup_index:
-        n: 2
-        mem: 500
+
 bamstats_all:
         n: 1
         mem: 250
-CalibrateDragstrModel:
-        n: 2
-        mem: 7100
-        time: 400
-HaplotypeCaller:
-        n: 2
-        mem: 2500
-        time: 2500
-deepvariant:
-        n: 4
-        mem: 6600
+
+
 GenomicDBImport:
         n: 1
         mem: 3500
@@ -106,9 +89,6 @@ OXOG_metrics:
         n: 1
         mem: 5500
         time: 1500
-verifybamid:
-        n: 2
-        mem: 400
 resort_by_readname:
         n: 16
 declip:
@@ -130,9 +110,7 @@ combinegvcfs:
 delly_call:
         mem: 1700
         n: 1
-reblock_gvcf:
-        mem: 2500
-        n: 2
+
 norm_per_chr:
         n: 1
         mem: 150

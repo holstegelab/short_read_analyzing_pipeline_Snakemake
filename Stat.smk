@@ -48,30 +48,35 @@ rule Stat_all:
     default_target: True
 
 def get_svd(wildcards):
+    """Returns the VerifyBamID SVD file for the sample type of the sample"""
     sinfo = SAMPLEINFO[wildcards['sample']]
     if 'wgs' in sinfo['sample_type']:
-        SVD =  config['RES'] + config['verifybamid_wgs']
+        SVD =  os.path.join(config['RES'], config['verifybamid_wgs'])
     else:
-        SVD = config['RES'] + config['verifybamid_exome']
+        SVD = os.path.join(config['RES'],  config['verifybamid_exome'])
     return SVD
+
+
 rule verifybamid:
+    """Estimates contamination in a sample using the verifybamid2 tool"""
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai,
+        bai= rules.markdup.output.mdbams_bai,
     output:
-        VBID_stat = config['STAT'] + '/contam/{sample}_verifybamid.pca2.selfSM'
+        VBID_stat = config['STAT'] + '/contam/{sample}.{sex}.verifybamid.pca2.selfSM'
     # end of this file hardcoded in Haplotypecaller and read_contam_w
-    threads: config['verifybamid']['n']
-    benchmark: config['BENCH'] + "/{sample}_verifybamid.txt"
+    benchmark: config['BENCH'] + "/{sample}.{sex}.verifybamid.txt"
     priority: 27
     params:
-        VBID_prefix = config['STAT'] + '/contam/{sample}_verifybamid.pca2',
+        VBID_prefix = os.path.join(config['STAT'], 'contam/{sample}.{sex}.verifybamid.pca2'),
         SVD = get_svd
-        # SVD = config['RES'] + config['verifybamid_exome']
     conda: 'envs/verifybamid.yaml'
+    resources:
+        mem_mb=400,
+        n=2
     shell:
         """
-        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {threads} --Output {params.VBID_prefix}
+        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}
         """
 
 
@@ -91,7 +96,7 @@ def get_mem_mb_hs_stats(wildcrads, attempt):
 rule hs_stats:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output:
         HS_metrics=os.path.join(config['STAT'], "{sample}_hs_metrics")
     log: os.path.join(config['LOG'], "HS_stats_{sample}.log")
@@ -125,7 +130,7 @@ def get_mem_mb_Artifact_stats(wildcrads, attempt):
 rule Artifact_stats:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output:
         Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
         Pre_adapter = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
@@ -154,7 +159,7 @@ def get_mem_mb_OXOG_metrics(wildcrads, attempt):
 rule OXOG_metrics:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output:
         Artifact_matrics = os.path.join(config['STAT'], "{sample}.OXOG")
     priority: 99
@@ -173,7 +178,7 @@ rule OXOG_metrics:
 rule samtools_stat:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output: samtools_stat = ensure(os.path.join(config['STAT'], "{sample}_samtools.stat"), non_empty=True)
     priority: 99
     log: os.path.join(config['LOG'], "samtools_{sample}.log")
@@ -201,7 +206,7 @@ def get_capture_kit_bed(wildcards):
 rule samtools_stat_exome:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output: samtools_stat_exome = ensure(os.path.join(config['STAT'], "{sample}_samtools.exome.stat"), non_empty=True)
     priority: 99
     params:
@@ -220,7 +225,7 @@ rule bamstats_all:
         # first command has not been executed
         # and in shell wildcard (instead of iutput of function) has putted
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output:
         All_exome_stats = ensure(os.path.join(config['STAT'],'{sample}.bam_all.tsv'), non_empty=True)
     benchmark: os.path.join(config['BENCH'],"bamstats_all_{sample}.txt")
@@ -234,7 +239,7 @@ rule bamstats_all:
 rule bamstats_exome:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup_index.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai
     output:
         All_exome_stats = ensure(os.path.join(config['STAT'], '{sample}.bam_exome.tsv'),  non_empty=True)
     benchmark: os.path.join(config['BENCH'],"bamstats_exome_{sample}.txt")
@@ -255,7 +260,7 @@ def get_quality_stats(wildcards):
     for sample in samples:
         files.append(os.path.join(config['STAT'],  f"{sample}_samtools.stat"))
         files.append(os.path.join(config['STAT'],  f'{sample}_samtools.exome.stat'))
-        files.append(os.path.join(config['STAT'], 'contam',  f'{sample}_verifybamid.pca2.selfSM'))
+        files.append(os.path.join(config['STAT'], 'contam',  f'{sample}.{sex}.verifybamid.pca2.selfSM'))
         files.append(os.path.join(config['STAT'], f'{sample}.bam_all.tsv'))
         files.append(os.path.join(config['STAT'], f'{sample}.bam_exome.tsv'))
         files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_summary_metrics'))

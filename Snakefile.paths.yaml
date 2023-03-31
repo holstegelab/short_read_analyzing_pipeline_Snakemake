@@ -3,8 +3,11 @@
 miniconda: '~/miniconda3/envs/preprocess/'
 RES: '/gpfs/work3/0/qtholstg/hg38_res/'
 
+
+SOFTWARE: 'software'
+DEFAULT_JAVA_OPTIONS: ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 #path to intervals file with targets
-kit_folder: 'intervals/'
+kit_folder: 'intervals'
 
 #resource folder with cram reference fasta files
 CRAMREFS: 'cram_refs'
@@ -48,12 +51,25 @@ DECHIMER: 'bam_dechimer.py'
 DECHIMER_THRESHOLD: 0.005
 
 #path to ref and add ref files
-ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
-ref_dir: 'Ref/'
-mask_bed: 'Ref/hg38_alt_mask.bed'
-str_ref: 'Ref/GRCh38.str.zip'
+ref: 'RefMale/GRCh38_full_analysis_set_plus_decoy_hla.fa'
+ref_dir: 'RefMale/'
+mask_bed: 'RefMale/hg38_alt_mask.male.bed'
+str_ref: 'RefMale/GRCh38.str.zip'
+
+ref_female: 'RefFemale/GRCh38_full_analysis_set_plus_decoy_hla.fa'
+ref_female_dir: 'RefFemale/'
+mask_female_bed: 'RefFemale/hg38_alt_mask.female.bed'
+
+
+ref_male: 'RefMale/GRCh38_full_analysis_set_plus_decoy_hla.fa'
+ref_male_dir: 'RefMale/'
+mask_male_bed: 'RefMale/hg38_alt_mask.male.bed'
+
+
 bin_file_ref: 'BINS'
-SD: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.dict'
+
+SD: 'RefMale/GRCh38_full_analysis_set_plus_decoy_hla.dict'
+
 main_chr_bed: 'standard_chrs.bed'
 verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
 verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.100k.b38.vcf.gz.dat'
