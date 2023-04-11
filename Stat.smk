@@ -79,9 +79,8 @@ rule verifybamid:
         verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}
         """
 
-
-# return interval_list file instead of bed file
 def get_capture_kit_interval_list(wildcards):
+    """Returns the capture kit interval list file for the sample type of the sample"""
     if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
         capture_kit = MERGED_CAPTURE_KIT
     else:
@@ -90,10 +89,10 @@ def get_capture_kit_interval_list(wildcards):
     return capture_kit_path
 
 def get_mem_mb_hs_stats(wildcrads, attempt):
-    return (attempt * int(config['hs_stats']['mem']))
-#hsmetrics
-#include off-target metrics
+    return (attempt * int(8500))
+
 rule hs_stats:
+    """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
@@ -104,15 +103,13 @@ rule hs_stats:
     priority: 99
     params:
         interval = get_capture_kit_interval_list,
-        #minimum Base Quality for a base to contribute cov
-        #def is 20
+        #minimum Base Quality for a base to contribute cov (default=20)
         Q=10,
-        #minimin Mapping Quality for a read to contribute cov
-        #def is 20
+        #minimum Mapping Quality for a read to contribute cov(default=20)
         MQ=10,
     conda: "envs/preprocess.yaml"
     resources: mem_mb = get_mem_mb_hs_stats,
-                tmpdir = tmpdir
+               tmpdir = tmpdir,              
     shell:
         """
             gatk  CollectHsMetrics --java-options "-Xmx{resources.mem_mb}m"  --TMP_DIR {resources.tmpdir} \
@@ -122,7 +119,7 @@ rule hs_stats:
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"""
 
 def get_mem_mb_Artifact_stats(wildcrads, attempt):
-    return (attempt * int(config['Artifact_stats']['mem']))
+    return (attempt * int(7000))
 
 
 
@@ -152,7 +149,7 @@ rule Artifact_stats:
     shell:
         """
             gatk  CollectSequencingArtifactMetrics --java-options "-Xmx{resources.mem_mb}m" --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
-        -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> log"""
+        -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"""
 
 def get_mem_mb_OXOG_metrics(wildcrads, attempt):
     return (attempt * int(config['OXOG_metrics']['mem']))

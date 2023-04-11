@@ -69,10 +69,7 @@ norm:
 basic_stats_per_chr:
         n: 2
         mem: 4500
-hs_stats:
-        n: 1
-        mem: 8500
-        time: 2000
+
 samtools_stat:
         n: 1
         mem: 100
@@ -81,10 +78,7 @@ samtools_stat_exome:
         n: 1
         mem: 100
         time: 1200
-Artifact_stats:
-        n: 1
-        mem: 7000
-        time: 2000
+
 OXOG_metrics:
         n: 1
         mem: 5500

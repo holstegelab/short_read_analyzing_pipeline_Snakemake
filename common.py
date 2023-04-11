@@ -165,30 +165,6 @@ def load_samplefiles(filedir, config):
 
     return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
 
-def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
-    """If samples are on tape, we do not have sample readgroup info.
-    That is, the 'readgroups' field is empty.
-
-    This function first checks if the readgroup info is available on disk,
-    in the file config['SAMPLEINFODIR']/<sample>.dat. 
-
-    Alternatively, the function injects a checkpoint rule to load this readgroup info.
-    """
-
-    sinfo = SAMPLEINFO[sample]
-    if not 'readgroups' in sinfo:
-        rgpath = os.path.join(config['SAMPLEINFODIR'], sample + ".adat")
-        if os.path.exists(rgpath):
-            xsample = utils.load(rgpath)
-        elif checkpoint: 
-            #no readgroup info yet
-            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
-            xsample = utils.load(filename)
-        sinfo = sinfo.copy()
-        sinfo['readgroups'] = xsample['readgroups']
-        sinfo['alternative_names'] = sinfo['alternative_names'].union(xsample['alternative_names'])
-        SAMPLEINFO[sample] = sinfo
-    return sinfo
 
 
    
