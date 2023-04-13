@@ -121,9 +121,6 @@ rule hs_stats:
 def get_mem_mb_Artifact_stats(wildcrads, attempt):
     return (attempt * int(7000))
 
-
-
-
 rule Artifact_stats:
     input:
         bam = rules.markdup.output.mdbams,

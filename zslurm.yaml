@@ -1,0 +1,33 @@
+use-conda: True
+use-singularity: True
+conda-prefix: /home/hulsmanm/.snakemake 
+cluster: 
+    zsbatch 
+        --mem {resources.mem_mb} 
+        -t {resources.time} 
+        -c {resources.n} 
+        -p {resources.partition} 
+        --arch-use-add {resources.arch_use_add} 
+        --arch-use-remove {resources.arch_use_remove} 
+        --dcache-use-add {resources.dcache_use_add} 
+        --dcache-use-remove {resources.dcache_use_remove} 
+        --active-use-add {resources.active_use_add} 
+        --active-use-remove {resources.active_use_remove}
+default-resources:
+    - partition=compute
+    - time=3600
+    - arch_use_add=0
+    - arch_use_remove=0
+    - dcache_use_add=0
+    - dcache_use_remove=0
+    - active_use_add=0
+    - active_use_remove=0
+    - n=1
+    - mem_mb=500
+jobs: 45000 
+max-jobs-per-second: 1000 
+keep-going: True    
+rerun-incomplete: True
+printshellcmds: True
+scheduler: greedy
+restart-times: 3
