@@ -159,6 +159,7 @@ def read_samplefile(filename, config, prefixpath=None):
     :param config: configuration dictionary
     :param prefixpath: path to prepend to all filenames
     :return: list of sample dictionaries."""
+    
     orig_filename = filename
     filename = os.path.realpath(filename)
 

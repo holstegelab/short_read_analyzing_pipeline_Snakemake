@@ -89,7 +89,10 @@ def samplefile(sfilename, config):
 
 
 def load_samplefiles(filedir, config):
+    
     if not 'SAMPLE_FILES' in config:
+        #already loaded
+
         SAMPLE_FILES = []
         SAMPLEINFO = {}
         SAMPLE_TO_BATCH = {}
@@ -101,7 +104,6 @@ def load_samplefiles(filedir, config):
                 f = os.path.join(filedir, f)
                 with open(f, 'r', encoding='utf-8') as fopen:
                     ncount = len(fopen.readline().split('\t'))
-
                 if ncount == 7 or ncount == 8 or ncount == 9: #sample file
                     basename = os.path.splitext(os.path.basename(f))[0]
                     SAMPLE_FILES.append(basename)
@@ -121,14 +123,19 @@ def load_samplefiles(filedir, config):
                     cursize_full = 0 #size if all files need to be staged
                     cursize_actual = 0 #size excluding files that are already retrieved
                     
+                    #PROTOCOLS = ['dcache', 'archive']
                     cursize = {p:{'full':0, 'actual':0} for p in PROTOCOLS}
 
+                    
                     new_batch = {p:[] for p in PROTOCOLS}
                     SAMPLEFILE_TO_BATCHES[basename] = {p:[] for p in PROTOCOLS}
+                    
                     for sample,info in list(w.items()):
-                        if not info['from_external']: #sample is already on active storage
+                        #check if sample is on active storage
+                        if not info['from_external']: 
                             continue
 
+                        #check if sample is already retrieved
                         info['need_retrieval'] = True
                         filesize = info['filesize']
                         
@@ -137,25 +144,31 @@ def load_samplefiles(filedir, config):
                             info['need_retrieval'] = False
                             filesize=0
                         
+                        
                         protocol = info['from_external']
                         
+                        #check if batch is full
                         if (cursize[protocol]['full'] + info['filesize']) > MAX_BATCH_SIZE: #stable batch allocation
                             w[sample] = info
                             SAMPLEFILE_TO_BATCHES[basename][protocol].append({'samples':new_batch[protocol], 'size':cursize[protocol]['actual']})
                             new_batch[protocol] = []
                             cursize[protocol]['actual'] = 0
                             cursize[protocol]['full'] = 0
-
+                        #add to batch
                         new_batch[protocol].append(sample)
+                        #update batch size
                         cursize[protocol]['full'] += info['filesize']
                         cursize[protocol]['actual'] += filesize
                         
 
-                    #print(sample, filesize, cursize_full, cursize_actual, info)
+                    
+                    
                     for p in PROTOCOLS:
+                        #add last batch
                         if new_batch[p]:
                             SAMPLEFILE_TO_BATCHES[basename][p].append({'samples':new_batch[p], 'size':cursize[p]['actual']})
 
+                        #assign batches to samples
                         for pos, batch in enumerate(SAMPLEFILE_TO_BATCHES[basename][p]):
                             for sample in batch['samples']:
                                 SAMPLE_TO_BATCH[sample] = f'{p}_{pos}'

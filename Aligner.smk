@@ -15,7 +15,8 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     extension='sam|bam|cram',
     filetype = 'fq|fastq',
-    sex = 'male|female'
+    sex = 'male|female',
+    batchnr='[\d]+'
     # readgroup="[\w\d_\-@]+"
 
 from read_samples import *
@@ -179,11 +180,12 @@ def retrieve_batch(wildcards):
     batch = SAMPLE_TO_BATCH[wildcards['sample']]
 
     if sample['from_external']:
+        #batch has format <protocol>_<batchnr>  (e.g. 'archive_0')
         if batch is None:
             # sample is not assigned to a batch, this should generate an error
             return ancient(os.path.join(config['FETCHDIR'], wildcards['sample'] + ".finished_samples_not_assigned_to_retrieval_batch"))
         else:
-            return ancient(os.path.join(config['FETCHDIR'], os.path.basename(sample['samplefile'])+ "." + str(batch) + ".retrieved"))
+            return ancient(os.path.join(config['FETCHDIR'], os.path.basename(sample['samplefile'])+ f".{batch}.retrieved"))
 
     else:
         return []
@@ -240,7 +242,7 @@ rule archive_to_active:
         n=1,
         mem_mb=50
     output:
-        temp(os.path.join(config['SOURCEDIR'], "{sample}.retrieved"))
+        temp(os.path.join(config['SOURCEDIR'], "{sample}.archive_retrieved"))
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         prefixpath = sample['prefix']
