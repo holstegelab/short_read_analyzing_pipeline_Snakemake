@@ -1,3 +1,4 @@
+#copy to ~/.config/snakemake/zslurm/config.yaml
 use-conda: True
 use-singularity: True
 conda-prefix: /home/hulsmanm/.snakemake 
