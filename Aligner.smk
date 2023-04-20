@@ -635,7 +635,7 @@ rule sort_bam_alignment:
         mem_mb = 13000
     params:
         temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}_{sex}"),
-        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] * 1000) / (resources['n'] * 1024))-500)        
+        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
     shell:
         """
             (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {resources.n} -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
