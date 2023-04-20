@@ -18,12 +18,12 @@ from bam_utils import *
 
 
 def rg_prune(readgroup, stats, stats_prefix, args):
+
     #prunes split alignments such that overlapping parts between the alignments are pruned from both sides
-    #if remaining part of cigar ends in an insert/delete, it is pruned completely
-    #print(readgroup['primary'].qname)
-    #if(readgroup['primary'].qname == "A01641:36:HGJYVDSX2:1:1101:6705:7247"):
-    #    util.debug_here()
-    stats[f"{stats_prefix}_with_supplementary_alignments"] = stats.get(f"{stats_prefix}_with_supplementary_alignments",0) + 1
+    #if remaining part of cigar ends in an insert/delete, the insert/delete is pruned completely
+    assert 'supplementary' in readgroup
+
+    stats[f"{stats_prefix}_has_supplementary_alignments"] = stats.get(f"{stats_prefix}_has_supplementary_alignments",0) + 1
     readgroup = readgroup.copy()
     reads = [readgroup['primary']] + readgroup['supplementary']
     rpos = [r.get_read_position(orig_orientation=True) for r in reads]
@@ -226,8 +226,8 @@ def dechimer(reads1, reads2, stats, args):
                 r1 = r1.clip_end(cigar1[-1][1], orig_orientation=True)
                 stats[f'read1_dechimer_clip'] = stats.get('read1_dechimer_clip',0) + 1
                 modified1 = True
-            if args.loose_ends and cigar2[0][0] == 'SH':
-                r1 = r1.clip_start(cigar2[0][1], orig_orientation=True)
+            if args.loose_ends and cigar1[0][0] == 'SH':
+                r1 = r1.clip_start(cigar1[0][1], orig_orientation=True)
                 stats[f'read1_loose_end_clip'] = stats.get('read1_loose_end_clip',0) + 1
                 modified1 = True
         reads1['primary'] = r1
@@ -598,8 +598,8 @@ if __name__ == '__main__':
     parser.add_argument("-s", help='stats file')
     parser.add_argument("-d", action='store_true', default=False, help='disable validation')
     parser.add_argument("--loose_ends", action='store_true', default=False, help='Remove loose soft clipping ends at the outside of correctly paired alignments')
-    parser.add_argument("--min_align_length", default=40, help='Minimum length below which alignments are discarded')
-    parser.add_argument("--max_read_dist", default=100000, help='Maximum read distance to consider reads still regularly paired')
+    parser.add_argument("--min_align_length", default=30, help='Minimum length below which alignments are discarded (default: 30)')
+    parser.add_argument("--max_read_dist", default=100000, help='Maximum read distance to consider reads still regularly paired (default:100000bp)')
     args = parser.parse_args()
    
 

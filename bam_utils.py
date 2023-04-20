@@ -2,7 +2,7 @@ import sys
 import re
 import os
 import copy
-
+import math
 from Bio.Seq import Seq
 
 convert_tag_type = {'i':int, 'f': float, 'A':str, 'Z':str}
@@ -36,6 +36,13 @@ class BamRecord:
     def toSamRecord(self):
         tags = ['%s:%s:%s' % (tag, extract_tag_type[tag_value.__class__], tag_value)  for tag, tag_value in self.tags.items()]
         return '\t'.join([self.qname, str(self.flag), self.rname, self.pos, self.mapq, self.cigar, self.rnext, self.pnext, self.tlen, self.seq, self.qual] + tags)
+
+    def toFastqRecord(self):
+        self = self.unmap()
+        readnr = 1 if self.flag & 0x40 else 2
+        header = '@%s/%d' % (self.qname, readnr)
+        record = header + '\n' + self.seq + '\n+\n' + self.qual + '\n'
+        return record
 
     def getTagValue(self, name, default=''):
         return self.tags.get(name, default)
@@ -71,27 +78,34 @@ class BamRecord:
     def is_reversed(self):
         return bool(self.flag & 0x10)
 
-    def unmap(self):
-        if not self.is_unmapped():
+    def unmap(self, restore_seq=True):
+        has_tag = False
+        if restore_seq:
+            for k in ['YB','YQ','ZB','ZQ']:
+                if k in self.tags:
+                    has_tag = True
+                    break
+
+        if (not self.is_unmapped()) or has_tag:
             read = self.copy()
             read.cigar = '*'
             read.pos = '0'
-            read.flag = read.flag | 0x4
+            
             read.mapq = '0'
             read.rname = '*'
-            if read.is_reversed():
-                read.seq = str(Seq(read.orig_seq()).reverse_complement())
-                read.qual = read.orig_qual()[::-1]
-                read.flag = read.flag & (~0x10)
-            else:
-                read.seq = read.orig_seq()
-                read.qual = read.orig_qual()
+            
+            read.seq = read.orig_seq(orig_orientation=restore_seq, include_prefix=restore_seq, include_postfix=restore_seq)
+            read.qual = read.orig_qual(orig_orientation=restore_seq, include_prefix=restore_seq, include_postfix=restore_seq)
+            read.flag = read.flag & (~0x10)
 
-            for k in ['YB','YQ','ZB','ZQ']:
-                if k in read.tags:
-                    del read.tags[k]
+            read.flag = read.flag | 0x4
+            if restore_seq:
+                for k in ['YB','YQ','ZB','ZQ']:
+                    if k in read.tags:
+                        del read.tags[k]
 
             return read
+                    
         return self            
 
             
@@ -190,12 +204,15 @@ class BamRecord:
 
 
     def clip_start(self, read_start_pos, orig_orientation=True):
+        if self.is_unmapped():
+                return self
+        
         if not orig_orientation and self.is_reversed():
             return self.clip_end(self.get_orig_read_length() - read_start_pos, orig_orientation=True)
 
         scigar = self.split_cigar()
         scigar = scigar[::-1] if self.is_reversed() else scigar
-
+        
         scigar, ref_pos_shift, read_pos, hard_clip_start = prune_cigar_end(scigar[::-1], read_start_pos)
         
         if all([e[0] in ['S','H'] for e in scigar]):
@@ -235,6 +252,9 @@ class BamRecord:
         return read
     
     def clip_end(self, read_end_pos, orig_orientation=True):
+        if self.is_unmapped():
+            return self
+        
         if not orig_orientation and self.is_reversed():
             return self.clip_start(self.get_orig_read_length() - read_end_pos, orig_orientation=True)
         
@@ -483,6 +503,7 @@ def prune_cigar_end(scigar, pos):
     read_pos = 0
     ref_pos = 0
     #pop till we are at read pos, then readd clip
+    
     if scigar[-1][0] == 'H':
         hard_clip_start = scigar[-1][1]
     else:
