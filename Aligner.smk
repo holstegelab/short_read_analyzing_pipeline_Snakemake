@@ -52,7 +52,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
 
     sinfo = SAMPLEINFO[sample]
     if not 'readgroups' in sinfo:
-        rgpath = os.path.join(config['SAMPLEINFODIR'], sample + ".adat")
+        rgpath = os.path.join(config['SAMPLEINFODIR'], sample + ".dat")
         if os.path.exists(rgpath):
             xsample = utils.load(rgpath)
         elif checkpoint: 
@@ -61,9 +61,18 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']
-        sinfo['alternative_names'] = sinfo['alternative_names'].union(xsample['alternative_names'])
+        sinfo['alternative_names'] = sinfo.get('alternative_names',set()).union(xsample['alternative_names'])
         SAMPLEINFO[sample] = sinfo
     return sinfo
+
+def ensure_readgroup_info(wildcards):
+    """Make sure the readgroup info for a sample is available."""
+    sample = wildcards['sample']
+    sinfo = SAMPLEINFO[sample]
+    if not 'readgroups' in sinfo:       
+        filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+        return [filename]
+    return []
 
 
 def generate_crams(wildcards):
@@ -82,9 +91,6 @@ rule Aligner_all:
         generate_crams,
         rules.Reference_preparation_all.input
     default_target: True
-
-
-
 
 
 def get_source_files(wildcards):
@@ -137,21 +143,22 @@ checkpoint get_readgroups:
         sample,warnings = read_samples.get_readgroups(sample, prefixpath, config)
         if warnings:
             warningfile = os.path.join(config['SAMPLEINFODIR'], wildcards['sample'] + '.warnings')
-            with open(warningfile,'w') as f:
-                print ("WARNING: " + w)
-                for w in warnings:
-                    f.write(w + '\n')
-        save(sample, str(output))
+            if warnings:
+                with open(warningfile,'w') as f:
+                    for w in warnings:
+                        print ("WARNING: " + w)
+                        f.write(w + '\n')
+        utils.save(sample, str(output))
 
 rule archive_get:
-    """Get a batch of files from archive.
+    """Stage a batch of files from archive.
 
     The batch is defined in SAMPLEFILE_TO_BATCHES.
     Once the batch is retrieved, an indicator file is written to indicate that the batch is available.
     """
 
     output:
-        temp(os.path.join(config['FETCHDIR'], '{samplefile}.archive_{batchnr}.retrieved'))
+        os.path.join(config['FETCHDIR'], '{samplefile}.archive_{batchnr}.retrieved')
     resources:
         arch_use_add=lambda wildcards: SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]['size'],
         partition="archive",
@@ -256,8 +263,12 @@ rule archive_to_active:
             if not e or os.path.isabs(e):
                 continue
             source = os.path.join(prefixpath, e)
+            if ':/' in source: #remove protocol
+                source = source.split(':/')[1]
+
             destination = os.path.join(destinationpath, e)
             shell("""
+            mkdir -p `dirname {destination}`
             rsync --size-only {source} {destination}
             dmput -r -w {source}
             """)
@@ -503,7 +514,7 @@ def get_prepared_fastq(wildcards):
 
 
 def get_ref_by_sex(wildcards):
-    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    sinfo = SAMPLEINFO[wildcards['sample']]
     if sinfo['sex'] == 'F':
         ref_dir=os.path.join(config['RES'],config['ref_female_dir'])
     else:
@@ -514,12 +525,14 @@ def get_ref_by_sex(wildcards):
 rule align_reads:
     """Align reads to reference genome."""
     input:
-        get_prepared_fastq
+        get_prepared_fastq,
+        ensure_readgroup_info
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.aligned.bam")
     params:
         ref_dir=get_ref_by_sex,
-        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os')
+        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
+        rg_params=get_readgroup_params
     conda: "envs/preprocess.yaml"
     log:
         dragmap_log=os.path.join(config['LOG'],"{sample}.{readgroup}.{sex}.dragmap.log"),

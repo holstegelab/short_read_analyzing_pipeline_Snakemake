@@ -82,7 +82,6 @@ rule deepvariant:
     params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}.{sex}"),
             bed=get_chrom_capture_kit_bed,
             cd = current_dir + '/',
-            mode=get_sequencing_mode
     container: 'docker://google/deepvariant:1.5.0'
     benchmark:
         os.path.join(current_dir, config['BENCH'],"{sample}.{chrom}.{sex}.wholedeepvariant.txt")
