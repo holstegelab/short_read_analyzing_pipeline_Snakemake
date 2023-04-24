@@ -51,19 +51,24 @@ DECHIMER: 'bam_dechimer.py'
 DECHIMER_THRESHOLD: 0.005
 
 #path to ref and add ref files
-ref: 'RefMale/GRCh38_full_analysis_set_plus_decoy_hla.fa'
-ref_dir: 'RefMale/'
+ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
+ref_dir: 'Ref/'
 mask_bed: 'RefMale/hg38_alt_mask.male.bed'
 str_ref: 'RefMale/GRCh38.str.zip'
 
 ref_female: 'RefFemale/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_female_dir: 'RefFemale/'
+ref_female_bed: 'RefFemale/hg38_alt_mask.female.bed'
+ref_female_str: 'RefFemale/hg38_female.str.zip'
 mask_female_bed: 'RefFemale/hg38_alt_mask.female.bed'
-
+ref_female_hash: 'RefFemale/hash_table.cfg'
 
 ref_male: 'RefMale/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_male_dir: 'RefMale/'
+ref_male_bed: 'RefMale/hg38_alt_mask.male.bed'
 mask_male_bed: 'RefMale/hg38_alt_mask.male.bed'
+ref_male_hash: 'RefMale/hash_table.cfg'
+ref_male_str: 'RefMmale/hg38_male.str.zip'
 
 
 bin_file_ref: 'BINS'

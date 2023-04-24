@@ -54,20 +54,20 @@ glnexus_filtration = config.get("glnexus_filtration", "default")
 if gvcf_caller == "HaplotypeCaller":
     use rule * from gVCF
     rule_gvcf_all_input = rules.gVCF_all.input
-    gvcf_input = expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=mode,allow_missing=True),
+    gvcf_input = expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{sex}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=mode,allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller"]
 
 elif gvcf_caller == "Deepvariant":
     use rule * from Deepvariant
     rule_gvcf_all_input = rules.Deepvariant_all.input
-    gvcf_input = expand("{cd}/{dp}/gVCF/{chr}/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
+    gvcf_input = expand("{cd}/{dp}/gVCF/{chr}/{chr}.{sample}.{sex}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
     glnexus_dir = ["GLnexus_on_Deepvariant"]
 
 elif gvcf_caller == "BOTH":
     use rule * from gVCF
     use rule * from Deepvariant
     rule_gvcf_all_input = [rules.gVCF_all.input, rules.Deepvariant_all.input]
-    gvcf_input = expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{mode}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
+    gvcf_input = expand("{cd}/{gvcfs}/{chr}/{sample}.{chr}.{sex}.g.vcf.gz",cd = current_dir, gvcfs=config['gVCF'],sample=sample_names,mode=[mode],allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
 
 else:
@@ -104,23 +104,23 @@ def get_chrom_capture_kit_bed(wildcards):
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}_{mode}.vcf.gz", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}_{mode}.vcf.gz.tbi", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}_{sex}.vcf.gz", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}_{sex}.vcf.gz.tbi", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
         rule_gvcf_all_input
     default_target: True
 
 rule glnexus:
     input: gvcf_input
-    # input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
-    output: vcf = os.path.join(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz")
+    # input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.{sex}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
+    output: vcf = os.path.join(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}_{sex}.vcf.gz")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = get_chrom_capture_kit_bed,
             mem_gb = int(config['glnexus']['mem'] // 1024),
-            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus.DB"),
+            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_{sex}_glnexus.DB"),
             conf_filters = conf_filter
-    log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.glnexus.log")
+    log: os.path.join(current_dir,config['LOG'],"{chr}_{sex}.glnexus.log")
     benchmark:
-        os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus.txt")
+        os.path.join(current_dir,config['BENCH'],"{chr}_{sex}.glnexus.txt")
     threads: config['glnexus']['n']
     resources: mem_mb = config['glnexus']['mem']
     shell:
@@ -129,29 +129,29 @@ rule glnexus:
         """
 rule index_deep:
     input: rules.glnexus.output.vcf
-    output: tbi = os.path.join(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")
+    output: tbi = os.path.join(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}_{sex}.vcf.gz.tbi")
     conda: "envs/preprocess.yaml"
     shell: "gatk IndexFeatureFile -I {input}"
 
 if gvcf_caller == "BOTH":
     use rule glnexus as glnexus_2 with:
-        input: expand("{cd}/{dp}/gVCF/{chr}/{chr}.{sample}.{mode}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
-        output: vcf=os.path.join(current_dir,glnexus_dir[1] + dir_appendix,"{chr}","{chr}_{mode}.vcf.gz")
-        params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_{mode}_glnexus_2.DB"),
+        input: expand("{cd}/{dp}/gVCF/{chr}/{chr}.{sample}.{sex}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
+        output: vcf=os.path.join(current_dir,glnexus_dir[1] + dir_appendix,"{chr}","{chr}_{sex}.vcf.gz")
+        params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_{sex}_glnexus_2.DB"),
                 bed= get_chrom_capture_kit_bed,
                 mem_gb= int(config['glnexus']['mem'] // 1024),
                 conf_filters= conf_filter
         benchmark:
-            os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.glnexus_2.txt")
+            os.path.join(current_dir,config['BENCH'],"{chr}_{sex}.glnexus_2.txt")
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
-        output: tbi = os.path.join(current_dir, glnexus_dir[1] + dir_appendix, "{chr}", "{chr}_{mode}.vcf.gz.tbi")
+        output: tbi = os.path.join(current_dir, glnexus_dir[1] + dir_appendix, "{chr}", "{chr}_{sex}.vcf.gz.tbi")
 
 # rule norma_gln:
 #     input: rules.glnexus.output.vcf
-#     output: normVCF = os.path.join(current_dir, "glnexus_norm", "{chr}", "{chr}_{mode}.vcf.gz")
-#     log: os.path.join(current_dir,config['LOG'],"{chr}_{mode}.norma_gln.log")
+#     output: normVCF = os.path.join(current_dir, "glnexus_norm", "{chr}", "{chr}_{sex}.vcf.gz")
+#     log: os.path.join(current_dir,config['LOG'],"{chr}_{sex}.norma_gln.log")
 #     conda: "envs/preprocess.yaml"
 #     benchmark:
-#         os.path.join(current_dir,config['BENCH'],"{chr}_{mode}.norma_gln.txt")
+#         os.path.join(current_dir,config['BENCH'],"{chr}_{sex}.norma_gln.txt")
 #     shell: "bcftools norm -f {ref} {input} -m -both -O v | bcftools norm --check-ref ws -d exact -f {ref} -O z > {output.normVCF} 2> {log}"

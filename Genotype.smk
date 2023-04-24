@@ -65,7 +65,7 @@ rule Genotype_all:
 
 
 def get_mem_mb_genotype(wildcrads, attempt):
-    return attempt*int(config['GenotypeDBI']['mem'])
+    return attempt*int(5500)
 
 def get_parts_capture_kit(wildcards):
     chr = wildcards.chr

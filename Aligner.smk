@@ -18,7 +18,9 @@ wildcard_constraints:
     sex = 'male|female',
     batchnr='[\d]+'
     # readgroup="[\w\d_\-@]+"
-
+module Reference_preparation:
+    snakefile: "Reference_preparation.smk"
+    config: config
 from read_samples import *
 import utils
 from common import *
@@ -77,7 +79,8 @@ def generate_crams(wildcards):
 
 rule Aligner_all:
     input:
-        generate_crams
+        generate_crams,
+        rules.Reference_preparation_all.input
     default_target: True
 
 
