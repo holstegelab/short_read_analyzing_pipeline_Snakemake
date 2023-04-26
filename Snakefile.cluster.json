@@ -13,10 +13,6 @@ __default__:
 
 
 
-bamstats_all:
-        n: 1
-        mem: 250
-
 
 GenomicDBImport:
         n: 1
@@ -70,19 +66,6 @@ basic_stats_per_chr:
         n: 2
         mem: 4500
 
-samtools_stat:
-        n: 1
-        mem: 100
-        time: 600
-samtools_stat_exome:
-        n: 1
-        mem: 100
-        time: 1200
-
-OXOG_metrics:
-        n: 1
-        mem: 5500
-        time: 1500
 resort_by_readname:
         n: 16
 declip:
@@ -93,9 +76,7 @@ mask_adapters:
         n: 2
         mem: 12000
         time: 3000
-bamstats_exome:
-        n: 1
-        mem: 250
+
 neewBams:
         n: 16
 combinegvcfs:

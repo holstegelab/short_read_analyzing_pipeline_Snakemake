@@ -1,5 +1,6 @@
 import pandas as pd
 import read_stats
+import itertools
 import os
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
@@ -94,7 +95,7 @@ if end_point == "gVCF":
     if gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
         use rule * from Aligner
-        END_RULE = rules.gVCF_all.input,
+        END_RULE = [rules.gVCF_all.input, rules.Stat_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
@@ -113,7 +114,7 @@ elif end_point == "Genotype" or end_point == "Genotyper":
         use rule * from gVCF
         if gVCF_combine_method == "DBIMPORT" or gVCF_combine_method == "COMBINE_GVCF":
             use rule * from Genotype
-            END_RULE = rules.Genotype_all.input
+            END_RULE = rules.gVCF_all.input
             print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GenomicDBimport and Genotyping with GATK Genotype "
                   "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
                   "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=COMBINE_GVCF'"
