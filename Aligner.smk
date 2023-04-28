@@ -87,8 +87,7 @@ def ensure_readgroup_info(wildcards):
 
 rule Aligner_all:
     input:
-        expand("{cram}/{sample_sex}.mapped_hg38.cram",sample_sex=sample_sex_names, cram = config['CRAM']),
-        rules.Reference_preparation_all.input
+        expand("{cram}/{sample_sex}.mapped_hg38.cram",sample_sex=sample_sex_names, cram = config['CRAM'])
     default_target: True
 
 
