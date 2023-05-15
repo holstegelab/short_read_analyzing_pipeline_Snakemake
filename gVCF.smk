@@ -52,7 +52,7 @@ def generate_gvcf(wildcards):
             for chrom in main_chrs_ploidy_female:
                 res.append(os.path.join(cur_dir, config['gVCF'], chrom, sample + '.' + chrom + '.female.g.vcf.gz'))
         else:
-            for chrom in main_chrs_ploidy_female:
+            for chrom in main_chrs_ploidy_male:
                 res.append(os.path.join(cur_dir, config['gVCF'], chrom, sample + '.' + chrom + '.male.g.vcf.gz'))
     return res
 
@@ -167,15 +167,16 @@ rule HaplotypeCaller:
         # command to get path to capture_kit interval list from SAMPLEFILE
         interval= get_chrom_merged_capture_kit,
         ploidy = get_chrom_ploidy,
-        java_options=config['DEFAULT_JAVA_OPTIONS']
+        java_options=config['DEFAULT_JAVA_OPTIONS'],
+        dragen_mode = lambda wildcards: '--dragen-mode true' if not 'H' in wildcards['chrom'] else ''
     priority: 28
     shell:
         """ 
-                {gatk} HaplotypeCaller  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}"   \
+                {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
                  -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {resources.n}  --create-output-variant-index true\
-                  --dragen-mode true --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
+                  {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
 
 
 def get_mem_mb_reblock_gvcf(wildcrads, attempt):
@@ -199,5 +200,5 @@ rule reblock_gvcf:
         n=2,
         mem_mb = get_mem_mb_reblock_gvcf
     shell:
-        """{gatk} ReblockGVCF  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
+        """{gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF   --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
 

@@ -25,7 +25,7 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
-
+sample_sex_names = get_sample_sex_combi(SAMPLEINFO)
 
 tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
 
@@ -38,11 +38,23 @@ use rule * from Aligner
 # module VCF:
 #     snakefile: 'gVCF.smk'
 
+
+   
+def get_ref_by_sex(wildcards):
+    if wildcards['sex'] == 'female':
+        ref_dir=os.path.join(config['RES'],config['ref_female'])
+    else:
+        ref_dir=os.path.join(config['RES'],config['ref_male'])
+
+    return ref_dir
+   
+
+
 rule Stat_all:
     input:
-        expand("{stats}/{sample}_hs_metrics",sample=sample_names, stats = config['STAT']),
-        expand("{stats}/{sample}.OXOG", sample=sample_names, stats = config['STAT']),
-        expand("{stats}/{sample}_samtools.stat", sample=sample_names, stats = config['STAT']),
+        expand("{stats}/{sample_sex}.hs_metrics",sample_sex=sample_sex_names, stats = config['STAT']),
+        expand("{stats}/{sample_sex}.OXOG", sample_sex=sample_sex_names, stats = config['STAT']),
+        expand("{stats}/{sample_sex}.samtools.stat", sample_sex=sample_sex_names, stats = config['STAT']),
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
     default_target: True
@@ -97,23 +109,26 @@ rule hs_stats:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        HS_metrics=os.path.join(config['STAT'], "{sample}_hs_metrics")
-    log: os.path.join(config['LOG'], "HS_stats_{sample}.log")
-    benchmark: os.path.join(config['BENCH'],  "HS_stats_{sample}.txt")
+        HS_metrics=os.path.join(config['STAT'], "{sample}.{sex}.hs_metrics")
+    log: os.path.join(config['LOG'], "HS_stats_{sample}.{sex}.log")
+    benchmark: os.path.join(config['BENCH'],  "HS_stats_{sample}.{sex}.txt")
     priority: 99
     params:
+        ref=get_ref_by_sex,
         interval = get_capture_kit_interval_list,
         #minimum Base Quality for a base to contribute cov (default=20)
         Q=10,
         #minimum Mapping Quality for a read to contribute cov(default=20)
         MQ=10,
+        java_options=config['DEFAULT_JAVA_OPTIONS'],
     conda: "envs/preprocess.yaml"
     resources: mem_mb = get_mem_mb_hs_stats,
-               tmpdir = tmpdir,              
+               tmpdir = tmpdir,  
+               n=1            
     shell:
         """
-            gatk  CollectHsMetrics --java-options "-Xmx{resources.mem_mb}m"  --TMP_DIR {resources.tmpdir} \
-            -I {input.bam} -R {ref} -BI {params.interval} -TI {params.interval} \
+            gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
+            -I {input.bam} -R {params.ref} -BI {params.interval} -TI {params.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"""
@@ -126,61 +141,67 @@ rule Artifact_stats:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
-        Pre_adapter = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
-        Bait_bias_det = os.path.join(config['STAT'],'{sample}.bait_bias.bait_bias_detail_metrics'),
-        Pre_adapter_det = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_detail_metrics'),
+        Bait_bias = os.path.join(config['STAT'], '{sample}.{sex}.bait_bias.bait_bias_summary_metrics'),
+        Pre_adapter = os.path.join(config['STAT'], '{sample}.{sex}.bait_bias.pre_adapter_summary_metrics'),
+        Bait_bias_det = os.path.join(config['STAT'],'{sample}.{sex}.bait_bias.bait_bias_detail_metrics'),
+        Pre_adapter_det = os.path.join(config['STAT'], '{sample}.{sex}.bait_bias.pre_adapter_detail_metrics'),
         # Artifact_matrics = config['STAT'] + "/{sample}.bait_bias.bait_bias_detail_metrics"
     priority: 99
-    log: os.path.join(config['LOG'], "Artifact_stats_{sample}.log")
-    benchmark: os.path.join(config['BENCH'], "Artifact_stats_{sample}.txt")
+    log: os.path.join(config['LOG'], "Artifact_stats_{sample}.{sex}.log")
+    benchmark: os.path.join(config['BENCH'], "Artifact_stats_{sample}.{sex}.txt")
     params:
         interval = get_capture_kit_interval_list,
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
-        out = os.path.join(config['STAT'], "{sample}.bait_bias"),
-        dbsnp = os.path.join(config['RES'], config['dbsnp'])
+        out = os.path.join(config['STAT'], "{sample}.{sex}.bait_bias"),
+        dbsnp = os.path.join(config['RES'], config['dbsnp']),
+        java_options=config['DEFAULT_JAVA_OPTIONS'],
     conda: "envs/preprocess.yaml"
     resources: mem_mb = get_mem_mb_Artifact_stats,
-                tmpdir= tmpdir
+                tmpdir= tmpdir,
+                n=1
     shell:
         """
-            gatk  CollectSequencingArtifactMetrics --java-options "-Xmx{resources.mem_mb}m" --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
+            gatk --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectSequencingArtifactMetrics  --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
         -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"""
 
 def get_mem_mb_OXOG_metrics(wildcrads, attempt):
-    return (attempt * int(config['OXOG_metrics']['mem']))
+    return (attempt * int(5500))
 rule OXOG_metrics:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        Artifact_matrics = os.path.join(config['STAT'], "{sample}.OXOG")
+        Artifact_matrics = os.path.join(config['STAT'], "{sample}.{sex}.OXOG")
     priority: 99
-    log: os.path.join(config['LOG'], "OXOG_stats_{sample}.log")
-    benchmark: os.path.join(config['BENCH'], "OxoG_{sample}.txt")
+    log: os.path.join(config['LOG'], "OXOG_stats_{sample}.{sex}.log")
+    benchmark: os.path.join(config['BENCH'], "OxoG_{sample}.{sex}.txt")
     params:
         interval = get_capture_kit_interval_list,
+        java_options=config['DEFAULT_JAVA_OPTIONS'],
     conda: "envs/preprocess.yaml"
     resources:
                 mem_mb = get_mem_mb_OXOG_metrics,
-                tmpdir= tmpdir
+                tmpdir= tmpdir,
+                n=1
     shell:
-        """gatk CollectOxoGMetrics --java-options "-Xmx{resources.mem_mb}m" -I {input.bam} -O {output} -R {ref} \
+        """gatk  --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
          --INTERVALS {params.interval} 2> {log}"""
 
 rule samtools_stat:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
-    output: samtools_stat = ensure(os.path.join(config['STAT'], "{sample}_samtools.stat"), non_empty=True)
+    output: samtools_stat = ensure(os.path.join(config['STAT'], "{sample}.{sex}.samtools.stat"), non_empty=True)
     priority: 99
-    log: os.path.join(config['LOG'], "samtools_{sample}.log")
-    benchmark: os.path.join(config['BENCH'], "samtools_stat_{sample}.txt")
-    threads: config['samtools_stat']['n']
+    log: os.path.join(config['LOG'], "samtools_{sample}.{sex}.log")
+    benchmark: os.path.join(config['BENCH'], "samtools_stat_{sample}.{sex}.txt")
+    resources:
+        mem_mb=100,
+        n=1
     conda: "envs/preprocess.yaml"
     shell:
-        "samtools stat -@ {threads} -r {ref} {input.bam} > {output}"
+        "samtools stat -@ {resources.n} -r {ref} {input.bam} > {output}"
 
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
@@ -201,16 +222,18 @@ rule samtools_stat_exome:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
-    output: samtools_stat_exome = ensure(os.path.join(config['STAT'], "{sample}_samtools.exome.stat"), non_empty=True)
+    output: samtools_stat_exome = ensure(os.path.join(config['STAT'], "{sample}.{sex}.samtools.exome.stat"), non_empty=True)
     priority: 99
     params:
         bed_interval = get_capture_kit_bed
-    log: os.path.join(config['LOG'], "samtools_exome_{sample}.log")
-    benchmark: os.path.join(config['BENCH'],"samtools_stat_exome_{sample}.txt")
-    threads: config['samtools_stat']['n']
+    log: os.path.join(config['LOG'], "samtools_exome_{sample}.{sex}.log")
+    benchmark: os.path.join(config['BENCH'],"samtools_stat_exome_{sample}.{sex}.txt")
+    resources:
+        mem_mb=100,
+        n=1
     conda: "envs/preprocess.yaml"
     shell:
-        "samtools stat -@ {threads} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
+        "samtools stat -@ {resources.n} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
 
 rule bamstats_all:
     input:
@@ -221,44 +244,49 @@ rule bamstats_all:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        All_exome_stats = ensure(os.path.join(config['STAT'],'{sample}.bam_all.tsv'), non_empty=True)
-    benchmark: os.path.join(config['BENCH'],"bamstats_all_{sample}.txt")
-    threads: config['bamstats_all']['n']
+        All_exome_stats = ensure(os.path.join(config['STAT'],'{sample}.{sex}.bam_all.tsv'), non_empty=True)
+    benchmark: os.path.join(config['BENCH'],"bamstats_all_{sample}.{sex}.txt")
     params:
         py_stats = srcdir(config['BAMSTATS'])
+    resources:
+        mem_mb=250,
+        n=1        
     conda: "envs/pypy.yaml"
     shell:
-        "samtools view -s 0.05 -h {input.bam} --threads {threads}  | pypy {params.py_stats} stats > {output}"
+        "samtools view -s 0.05 -h {input.bam} --threads {resources.n}  | pypy {params.py_stats} stats > {output}"
 
 rule bamstats_exome:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        All_exome_stats = ensure(os.path.join(config['STAT'], '{sample}.bam_exome.tsv'),  non_empty=True)
-    benchmark: os.path.join(config['BENCH'],"bamstats_exome_{sample}.txt")
-    threads: config['bamstats_exome']['n']
+        All_exome_stats = ensure(os.path.join(config['STAT'], '{sample}.{sex}.bam_exome.tsv'),  non_empty=True)
+    benchmark: os.path.join(config['BENCH'],"bamstats_exome_{sample}.{sex}.txt")   
+    resources:
+        mem_mb=250,
+        n=1
     params:
         py_stats = srcdir(config['BAMSTATS']),
         bed_interval= get_capture_kit_bed,
     conda: "envs/pypy.yaml"
     shell:
-        "samtools view -s 0.05 -h {input.bam} --threads {threads} -L {params.bed_interval} | pypy {params.py_stats} stats > {output}"
+        "samtools view -s 0.05 -h {input.bam} --threads {resources.n} -L {params.bed_interval} | pypy {params.py_stats} stats > {output}"
 
 
 def get_quality_stats(wildcards):
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     files = []
-    samples = list(sampleinfo.keys())
-    samples.sort()
-    for sample in samples:
-        files.append(os.path.join(config['STAT'],  f"{sample}_samtools.stat"))
-        files.append(os.path.join(config['STAT'],  f'{sample}_samtools.exome.stat'))
-        files.append(os.path.join(config['STAT'], 'contam',  f'{sample}.{sex}.verifybamid.pca2.selfSM'))
-        files.append(os.path.join(config['STAT'], f'{sample}.bam_all.tsv'))
-        files.append(os.path.join(config['STAT'], f'{sample}.bam_exome.tsv'))
-        files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_summary_metrics'))
-        files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.bait_bias_summary_metrics'))
+    samples_sex = [sample + '.' + ('female' if info['sex'] == 'F' else 'male') for sample, info in sampleinfo.items()]
+    
+    samples_sex.sort()
+    for sample_sex in samples_sex:
+        files.append(os.path.join(config['STAT'],  f"{sample_sex}.samtools.stat"))
+        files.append(os.path.join(config['STAT'],  f'{sample_sex}.samtools.exome.stat'))
+        files.append(os.path.join(config['STAT'], 'contam',  f'{sample_sex}.verifybamid.pca2.selfSM'))
+        files.append(os.path.join(config['STAT'], f'{sample_sex}.bam_all.tsv'))
+        files.append(os.path.join(config['STAT'], f'{sample_sex}.bam_exome.tsv'))
+        files.append(os.path.join(config['STAT'], f'{sample_sex}.bait_bias.pre_adapter_summary_metrics'))
+        files.append(os.path.join(config['STAT'], f'{sample_sex}.bait_bias.bait_bias_summary_metrics'))
     return files
 
 rule gatherstats:
@@ -270,6 +298,9 @@ rule gatherstats:
     benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherstat.txt")
     output:
         '{samplefile}.bam_quality.tab'
+    resources:
+        n=1,
+        mem_mb=10000        
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
@@ -284,11 +315,11 @@ rule gatherstats:
 def get_oxo_stats(wildcards):
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     files = []
-    samples = list(sampleinfo.keys())
-    samples.sort()
-    for sample in samples:
-        files.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_detail_metrics'))
-        files.append(os.path.join(config['STAT'],f'{sample}.bait_bias.bait_bias_detail_metrics'))
+    samples_sex = [sample + '.' + ('female' if info['sex'] == 'F' else 'male') for sample, info in sampleinfo.items()]
+    samples_sex.sort()
+    for sample_sex in samples_sex:
+        files.append(os.path.join(config['STAT'], f'{sample_sex}.bait_bias.pre_adapter_detail_metrics'))
+        files.append(os.path.join(config['STAT'],f'{sample_sex}.bait_bias.bait_bias_detail_metrics'))
     return files
 
 rule gatherosostats:
@@ -297,6 +328,9 @@ rule gatherosostats:
     output:
         '{samplefile}.oxo_quality.tab'
     benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherOXOstat.txt")
+    resources:
+        n=1,
+        mem_mb=10000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())

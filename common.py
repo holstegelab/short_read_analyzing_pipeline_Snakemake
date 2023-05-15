@@ -178,6 +178,13 @@ def load_samplefiles(filedir, config):
 
     return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
 
+def get_sample_sex_combi(sampleinfo):
+    res = []
+    for sample, info in sampleinfo.items():
+        if info['sex'] == 'F':
+            res.append(f"{sample}.female")
+        else:
+            res.append(f"{sample}.male")
+    return res
 
 
-   

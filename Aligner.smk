@@ -39,6 +39,16 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 
 
 sample_names = SAMPLEINFO.keys()
+sample_sex_names = get_sample_sex_combi(SAMPLEINFO)
+
+
+def get_refdir_by_sex(wildcards):
+    if wildcards['sex'] == 'female':
+        ref_dir=os.path.join(config['RES'],config['ref_female_dir'])
+    else:
+        ref_dir=os.path.join(config['RES'],config['ref_male_dir'])
+
+    return ref_dir
 
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
     """If samples are on tape, we do not have sample readgroup info.
@@ -75,21 +85,9 @@ def ensure_readgroup_info(wildcards):
     return []
 
 
-def generate_crams(wildcards):
-    """Generate gvcf file name."""
-    res = []
-    for sample in sample_names:
-        sinfo = SAMPLEINFO[sample]
-        if sinfo['sex'] == 'F':
-            res.append(os.path.join(config['CRAM'], sample + '.female.mapped_hg38.cram'))
-        else:
-            res.append(os.path.join(config['CRAM'], sample + '.male.mapped_hg38.cram'))
-    return res
-
 rule Aligner_all:
     input:
-        generate_crams,
-        rules.Reference_preparation_all.input
+        expand("{cram}/{sample_sex}.mapped_hg38.cram",sample_sex=sample_sex_names, cram = config['CRAM'])
     default_target: True
 
 
@@ -139,7 +137,7 @@ checkpoint get_readgroups:
         if sample['from_external']:
             prefixpath = config['SOURCEDIR'] # location where the data is downloaded from the external data repository
         else:
-            prefixpath = sample['prefix']
+            prefixpath = sample['prefix']               
         sample,warnings = read_samples.get_readgroups(sample, prefixpath, config)
         if warnings:
             warningfile = os.path.join(config['SAMPLEINFODIR'], wildcards['sample'] + '.warnings')
@@ -286,7 +284,13 @@ def get_cram_ref(wildcards):
     :return: string with cram reference file option for samtools, e.g. "--reference /path/to/ref.fa" or "" if file type is not cram
     """
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
-    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+
+    wildcards = dict(wildcards)
+    if 'readgroup' in wildcards:
+        readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    else:       
+        readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']][0]
+        
     if readgroup['file_type'] == 'cram':
         cram_options = '--reference ' + readgroup['reference_file']
     else:
@@ -307,14 +311,10 @@ def get_source_aligned_file(wildcards):
     #there might be multiple bam/cram files as source for a sample (e.g. if sequenced multiple times)
     #look for a read group for which the source file matches wildcard 'filename'
     #return the full file path
-    readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['info']['file']][0]
-    
-    if sinfo['from_external']:
-        prefixpath = config['SOURCEDIR']
-    else:
-        prefixpath = readgroup['prefix']
-   
-    return os.path.join(prefixpath, readgroup['file'])
+
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']][0]
+
+    return readgroup['file']
 
 
 rule split_alignments_by_readgroup:
@@ -335,16 +335,18 @@ rule split_alignments_by_readgroup:
     params:
         cramref=get_cram_ref
     run:
-        sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
-        readgroups = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['file'].endswith(wildcards['filename'])]
+        sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)        
+        readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
 
         n = len(readgroups)
         if n == 1: #nothing to split, single readgroup, just link the source file
-            extension = os.path.splitext(wildcards['filename'])[1]
+            extension = os.path.splitext(input[0])[1][1:].lower()
+            readgroup_id = readgroups[0]['info']['ID']
+            
             cmd = """
                 mkdir -p {output}
                 #switching to cp instead of hard link as hard links als update modification time of input[0]
-                cp {input[0]} {output}/{wildcards.sample}.{readgroups[0]['info']['ID']}.{extension}
+                cp {input[0]} {output}/{wildcards.sample}.{readgroup_id}.{extension}
                 """
             shell(cmd)                    
         else:
@@ -352,12 +354,15 @@ rule split_alignments_by_readgroup:
             if readgroups[0]['file_type'] == 'cram': 
                 #keep cram format, much more efficient, and even slighly faster
                 output_fmt = 'cram,version=3.1'
+                extension = 'cram'
             else:
                 output_fmt = 'bam'
+                extension = 'bam'
 
             cmd = """
                 mkdir -p {output}
-                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f '{output}/{wildcards.sample}.%!.%.'
+                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
+
                 """
             shell(cmd,conda_env=config['CONDA_MAIN'])
 
@@ -374,6 +379,14 @@ def get_aligned_readgroup_folder(wildcards):
     folder = os.path.join(config['READGROUPS'], wildcards['sample'] + '_' + sfile)
     return folder
 
+def get_extension(wildcards):
+    """Utility function to get the extension of the input file for a sample (bam/cram)."""
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    res =  os.path.splitext(readgroup['file'])[1][1:].lower()
+    
+    return res
+
 
 
 rule external_alignments_to_fastq:
@@ -387,20 +400,22 @@ rule external_alignments_to_fastq:
         singletons = temp(config['FQ'] + "/{sample}.{readgroup}.extracted_singletons.fq.gz"),
     resources:
         n= 2,
-        mem_mb = 5000
+        mem_mb = 5000,
+        tmpdir=tmpdir
     log:
         fastq=os.path.join(config['LOG'],"{sample}.{readgroup}.align2fq.log"),
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.align2fq.txt")
     params:
-        cramref=get_cram_ref
+        cramref=get_cram_ref,
+        extension=get_extension
     priority: 10
     conda: config['CONDA_MAIN']
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size becomes biased to genome location)
     #samtools fastq only uses ~2 threads, while collate uses much more. Therefore,pipe directly into adapterremoval to make use of the extra cores. Also save a store/load cycle.
     shell:
         """
-            samtools collate -u -@ {resources.n} {cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{extension} {TMPDIR}/{wilcards.sample}.{wildcards.readgroup}.collate |
+            samtools collate -u -@ {resources.n} {params.cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} {resources.tmpdir}/{wildcards.sample}.{wildcards.readgroup}.collate |
             samtools fastq -O -N -@ {resources.n} -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq} 
         """
 
@@ -513,15 +528,6 @@ def get_prepared_fastq(wildcards):
     return [file1,file2]
 
 
-def get_ref_by_sex(wildcards):
-    sinfo = SAMPLEINFO[wildcards['sample']]
-    if sinfo['sex'] == 'F':
-        ref_dir=os.path.join(config['RES'],config['ref_female_dir'])
-    else:
-        ref_dir=os.path.join(config['RES'],config['ref_male_dir'])
-
-    return ref_dir
-
 rule align_reads:
     """Align reads to reference genome."""
     input:
@@ -530,7 +536,7 @@ rule align_reads:
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.aligned.bam")
     params:
-        ref_dir=get_ref_by_sex,
+        ref_dir=get_refdir_by_sex,
         dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
         rg_params=get_readgroup_params
     conda: "envs/preprocess.yaml"
@@ -635,7 +641,7 @@ rule sort_bam_alignment:
         mem_mb = 13000
     params:
         temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}_{sex}"),
-        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] * 1000) / (resources['n'] * 1024))-500)        
+        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
     shell:
         """
             (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {resources.n} -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
