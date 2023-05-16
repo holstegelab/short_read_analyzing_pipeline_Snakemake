@@ -17,7 +17,8 @@ wildcard_constraints:
     filetype = 'fq|fastq',
     sex = 'male|female',
     batchnr='[\d]+',
-    sex_ref = 'ref_male|ref_female'
+    sex_ref = 'ref_male|ref_female',
+    sex_ref_hash = ''
     # readgroup="[\w\d_\-@]+"
 
 from read_samples import *
@@ -28,32 +29,94 @@ sex_ref_hash = ['ref_male_hash', 'ref_female_hash']
 sex_ref_str = ['ref_male_str', 'ref_female_str']
 RES = config['RES']
 rule Reference_preparation_all:
-    input: expand('{RES}/{sex_ref_hash}', RES = RES, sex_ref_hash = sex_ref_hash),
-            expand('{RES}/{sex_ref_str}', RES = RES, sex_ref_str = sex_ref_str),
+    input:
+        expand('{RES}{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_male_hash']),
+        expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_male_str']),
+        expand('{RES}{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_female_hash']),
+        expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_female_str']),
     default_target: True
+
+
+rule create_dict:
+    input: fasta=os.path.join(config['RES'], config['ref_male'])
+    output: dict =os.path.join(config['RES'], config['ref_male_dict'])
+    conda: "envs/preprocess.yaml"
+    shell: "gatk CreateSequenceDictionary -R {input}"
+
+rule create_dict_1:
+    input: fasta=os.path.join(config['RES'], config['ref_female'])
+    output: dict =os.path.join(config['RES'], config['ref_female_dict'])
+    conda: "envs/preprocess.yaml"
+    shell: "gatk CreateSequenceDictionary -R {input}"
+
 
 
 rule create_hash:
     input:
-            fasta = os.path.join(config['RES'], config['{sex_ref}']),
-            dir = os.path.join(config['RES'], config['{sex_ref}_dir']),
-            bed = os.path.join(config['RES'], config['{sex_ref}_bed'])
-    output: os.path.join(config['RES'], config['{sex_ref}_hash'])
-    resources: mem_mb = 60000,
-                n = 32
-    shell: 
+        fasta=os.path.join(config['RES'], config['ref_male']),
+        dir=os.path.join(config['RES'], config['ref_male_dir']),
+        bed=os.path.join(config['RES'], config['ref_male_bed']),
+        dict = os.path.join(config['RES'], config['ref_male_dict'] )
+    conda: "envs/preprocess.yaml"
+    output:
+        os.path.join(config['RES'], config[sex_ref_hash[0]])
+    params:
+        dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
+    resources:
+        mem_mb=250000,
+        n=64
+    shell:
             """
-            dragen-os --build-hash-table true --ht-reference {input.fasta} --output-directory {input.dir} --ht-mask-bed {input.bed} 
+            {params.dragmap} --build-hash-table true --ht-reference {input.fasta} --output-directory {input.dir} --ht-mask-bed {input.bed} 
             """
 
 rule ComposeSTRTableFile:
-    input: fasta = os.path.join(config['RES'], config['{sex_ref}']),
-    output: str_file = os.path.join(config['RES'], config['{sex_ref}_str'])
-    resources: mem_mb = 12000,
-                n = 2
+    input:
+        fasta=os.path.join(config['RES'], config['ref_male']),
+        dict= os.path.join(config['RES'],config['ref_male_dict'])
+    output:
+        str_file=os.path.join(config['RES'], config['ref_male_str'])
+    conda: "envs/preprocess.yaml"
+    resources:
+        mem_mb=12000,
+        n=2
     shell:
         """
-        gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}M" -R {input} -O {output}
+        gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}M" -R {input.fasta} -O {output.str_file}
+        """
+
+rule create_hash_1:
+    input:
+        fasta=os.path.join(config['RES'], config['ref_female']),
+        dir=os.path.join(config['RES'], config['ref_female_dir']),
+        bed=os.path.join(config['RES'], config['ref_female_bed']),
+        dict= os.path.join(config['RES'],config['ref_female_dict'])
+    conda: "envs/preprocess.yaml"
+    output:
+        os.path.join(config['RES'], config['ref_female_hash'])
+    params:
+        dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
+    resources:
+        mem_mb=256000,
+        n=64
+    shell:
+            """
+            {params.dragmap} --build-hash-table true --ht-reference {input.fasta} --output-directory {input.dir} --ht-mask-bed {input.bed} 
+            """
+
+rule ComposeSTRTableFile_1:
+    input:
+        fasta=os.path.join(config['RES'], config['ref_female']),
+        dict= os.path.join(config['RES'],config['ref_female_dict'])
+    output:
+        str_file=os.path.join(config['RES'], config['ref_female_str'])
+    conda: "envs/preprocess.yaml"
+    resources:
+        mem_mb=12000,
+        n=2
+    shell:
+        """
+        gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}M" -R {input.fasta} -O {output.str_file}
         """
 
 
