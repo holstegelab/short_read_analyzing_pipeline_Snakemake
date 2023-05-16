@@ -37,14 +37,28 @@ rule Reference_preparation_all:
     default_target: True
 
 
-rule create_dict:
+rule create_fai:
     input: fasta=os.path.join(config['RES'], config['ref_male'])
+    output: fai =os.path.join(config['RES'], config['ref_male_fai'])
+    conda: "envs/preprocess.yaml"
+    shell: "samtools faidx {input}"
+
+rule create_fai_1:
+    input: fasta=os.path.join(config['RES'], config['ref_female'])
+    output: fai =os.path.join(config['RES'], config['ref_female_fai'])
+    conda: "envs/preprocess.yaml"
+    shell: "samtools faidx {input}"
+
+rule create_dict:
+    input: fasta=os.path.join(config['RES'], config['ref_male']),
+            fai = os.path.join(config['RES'], config['ref_male_fai'])
     output: dict =os.path.join(config['RES'], config['ref_male_dict'])
     conda: "envs/preprocess.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_1:
-    input: fasta=os.path.join(config['RES'], config['ref_female'])
+    input: fasta=os.path.join(config['RES'], config['ref_female']),
+            fai = os.path.join(config['RES'], config['ref_female_fai'])
     output: dict =os.path.join(config['RES'], config['ref_female_dict'])
     conda: "envs/preprocess.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
