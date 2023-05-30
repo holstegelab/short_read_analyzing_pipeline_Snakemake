@@ -304,9 +304,13 @@ def get_readgroups(sample, sourcedir, config):
     :param sample: sample dictionary
     :param sourcedir: directory where the files are located
     :param config: config dictionary
+    
     :return: sample dictionary, list of warnings
     """
+    # Make a copy of the sample dictionary to avoid modifying the original
     sample = sample.copy()
+    
+    # Extract relevant information from the sample dictionary
     sample_id = sample['sample']
     sample_type = sample['sample_type']
     study = sample['study']
@@ -315,25 +319,35 @@ def get_readgroups(sample, sourcedir, config):
     alternative_names = sample['alt_name']
     file_type = sample['file_type']
     warnings = []
-
+    
+    # Initialize an empty list to store the readgroups
     readgroups = []
+    
+    # Check the file type and obtain readgroups accordingly
     if file_type == 'fastq_paired':
+        # Obtain readgroups from paired-end fastq files
         for pos, (f1, f2) in enumerate(zip(filenames1, filenames2)):
             info_f1 = read_fastqfile(f1)
             info_f2 = read_fastqfile(f2)
-
+            
+            # Check that the metadata of the fastq files match
             check(warnings,
                   info_f1['instrument'] == info_f2['instrument'] and info_f1['run'] == info_f2['run'] and info_f1[
                       'flowcell'] == info_f2['flowcell'] and info_f1['lane'] == info_f2['lane'] and \
                   info_f1['index'] == info_f2['index'],
                   'Fastq files for sample ' + sample_id + ' have nonmatching metadata')
+            
+             # Check that the fastq files are in the correct order
             check(warnings, info_f1['pair'] == '1' and info_f2['pair'] == '2',
                   'Fastq files are incorrect order for sample ' + sample_id)
+            
+             # Check that the paired fastq files have equal size
             fs1 = file_size(f1)
             fs2 = file_size(f2)
             check(warnings, fs1 == fs2,
                   'Paired fastq files are unequal in size (%d, %d) for sample ' % (fs1, fs2) + sample_id)
 
+            # Define the readgroup information
             readgroup_info = {'ID': sample_id + '_rg%d' % pos, \
                               'PL': sample_type, \
                               'PU': info_f1['instrument'] + '.' + info_f1['flowcell'] + '.' + info_f1['lane'] + '.' +
@@ -343,9 +357,13 @@ def get_readgroups(sample, sourcedir, config):
                                   '%Y-%m-%dT%H:%M:%S+01:00'), \
                               'CN': study, \
                               'SM': sample_id}
+            # Define the readgroup dictionary
             readgroup = {'info': readgroup_info, 'file_type': file_type, 'file1': f1, 'file2': f2, 'prefix': sourcedir}
+            
+            # Append the readgroup to the list of readgroups
             readgroups.append(readgroup)
     elif file_type == 'sra_paired' or file_type == 'sra_single':
+        # Obtain readgroups from SRA file
         for sraid in filenames1:
             try:
                 readgroups_info = get_sra_readgroups(sraid)
@@ -362,9 +380,11 @@ def get_readgroups(sample, sourcedir, config):
                 if 'SM' in readgroup_info:
                     alternative_names.add(readgroup_info['SM'])
                 readgroup_info['SM'] = sample_id
-
+                
+                # Define the readgroup dictionary
                 readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': sraid,
                              'nreadgroups': len(readgroups_info), 'prefix': sourcedir}
+                # Append the readgroup to the list of readgroups
                 readgroups.append(readgroup)
     elif file_type == 'gvcf':
         for filename in filenames1:
@@ -376,9 +396,14 @@ def get_readgroups(sample, sourcedir, config):
             readgroup_info['CN'] = study
             readgroup_info['PL'] = sample_type
             readgroup_info['SM'] = sample_id
+            
+            # Define the readgroup dictionary
             readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename, 'nreadgroups': 1}
+            
+            # Append the readgroup to the list of readgroups
             readgroups.append(readgroup)
     else:
+        # Obtain readgroups from bam/cram files
         used_readgroups = set()
         for filename in [e for e in filenames1 if not e.endswith('crai') or e.endswith('bai')]:
             fstat = os.stat(filename)
@@ -407,10 +432,12 @@ def get_readgroups(sample, sourcedir, config):
                 if 'SM' in readgroup_info:
                     alternative_names.add(readgroup_info['SM'])
                 readgroup_info['SM'] = sample_id
-
+                
+                # Define the readgroup dictionary
                 readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename,
                              'nreadgroups': len(readgroups_info), 'prefix': sourcedir, 'reference_file': reference_file}
                 
+                # Check if the readgroup ID has already been used
                 if readgroup_info['ID'] in used_readgroups:
                     readgroup_info['oldname'] = readgroup_info['ID']
                     counter = 2
@@ -419,12 +446,18 @@ def get_readgroups(sample, sourcedir, config):
                     readgroup_info['ID'] = readgroup_info['ID'] + '.' + str(counter)
 
                 used_readgroups.add(readgroup_info['ID'])
-
+                
+                # Append the readgroup to the list of readgroups
                 readgroups.append(readgroup)
+    
+    # Check that at least one readgroup was defined
     check(warnings, len(readgroups) > 0, 'No readgroups defined for sample: ' + sample_id)
 
+    # Update the sample dictionary with the alternative names and readgroups
     sample['alternative_names'] = alternative_names
     sample['readgroups'] = readgroups
+    
+    # Return the updated sample dictionary and the list of warnings
     return (sample, warnings)
 
 
@@ -496,6 +529,7 @@ def read_fastqfile(filename):
             index_seq = '0'
             pairid = read_fields.strip('\n')
         else:
+            pairid = '0'
             error(False, 'Unexpected fastq header formaat: ' + header)
         # BONN has pair id of 3 which means 2 .....???
         if pairid.strip() == '3':

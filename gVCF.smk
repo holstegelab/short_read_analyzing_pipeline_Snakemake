@@ -40,6 +40,11 @@ module Stat:
     config: config
 use rule verifybamid from Stat
 
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+use rule BedToIntervalList from Tools
+
 mode = config.get("computing_mode", "WES")
 cur_dir = os.getcwd()
 
@@ -62,23 +67,57 @@ rule gVCF_all:
         rules.Aligner_all.input
     default_target: True
 
+
+rule ComposeSTRTableFile:
+    input:
+        ref_fasta = "{path}.fa"
+    output:
+        str_table = "{path}.str.zip"
+    params:
+        java_options=config['DEFAULT_JAVA_OPTIONS']
+    resources: 
+        n = 1,
+        mem_mb = 3000
+    conda: "envs/preprocess.yaml"        
+    shell:
+        """gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}m {params.java_options}" -R {input.ref_fasta} -O {output.str_table}"""
+
+
+
+
 def get_mem_mb_CalibrateDragstrModel(wildcards, attempt):
     return attempt * int(7100)
 
+def get_strref_by_sex(wildcards):
+    if wildcards['sex'] == 'female':
+        ref=os.path.join(config['RES'],config['ref_female_str'])
+    else:
+        ref=os.path.join(config['RES'],config['ref_male_str'])
 
+    return ref
+   
+def get_ref_by_sex(wildcards):
+    if wildcards['sex'] == 'female':
+        ref=os.path.join(config['RES'],config['ref_female'])
+    else:
+        ref=os.path.join(config['RES'],config['ref_male'])
+
+    return ref
+   
 rule CalibrateDragstrModel:
     """CalibrateDragstrModel. Estimates the parameters of the dragstr model from a set of aligned reads.
     Provides better STR variant calling.
     """
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai,
+        str_ref = get_strref_by_sex
     output:
         dragstr_model = config['BAM'] + "/{sample}-{sex}-dragstr.txt"
     priority: 26
     params:
-        str_ref = os.path.join(config['RES'], config['str_ref']),
-        java_options=config['DEFAULT_JAVA_OPTIONS']
+        java_options=config['DEFAULT_JAVA_OPTIONS'],
+        ref = get_ref_by_sex
     resources: 
         n = 2,
         mem_mb = get_mem_mb_CalibrateDragstrModel
@@ -86,7 +125,7 @@ rule CalibrateDragstrModel:
     log: config['LOG'] + '/' + "{sample}_{sex}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_{sex}_calibrate_dragstr.txt"
     shell:
-        """{gatk} CalibrateDragstrModel --java-options "-Xmx{resources.mem_mb}m {params.java_options}"  -R {ref} -I {input.bam} -O {output} -str {params.str_ref} 2>{log}"""
+        """{gatk} CalibrateDragstrModel --java-options "-Xmx{resources.mem_mb}m {params.java_options}"  -R {params.ref} -I {input.bam} -O {output} -str {input.str_ref} 2>{log}"""
 
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
