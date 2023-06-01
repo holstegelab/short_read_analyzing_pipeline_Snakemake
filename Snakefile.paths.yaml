@@ -37,6 +37,7 @@ CNVKIT: 'cnvkit'
 DELLY: 'SV_delly'
 MULTICOHORT: 'Multicohort'
 DEEPVARIANT: 'deepvariant'
+chrM: 'chrM_analysis'
 #programs
 gatk: 'gatk'
 samtools: 'samtools'
@@ -55,6 +56,13 @@ ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_dir: 'Ref/'
 mask_bed: 'Ref_phix_Male/hg38_alt_mask.male.bed'
 str_ref: 'Ref_phix_Male/GRCh38.str.zip'
+SHIFTED_MT: 'ShiftBack.chain'
+SHIFTED_MT_fa: 'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.fasta'
+MT_CHAIN: 'ShiftBack.chain/ShiftBack.chain'
+ORIG_MT_fa: 'MT_ref/chrM_hg38.fasta'
+ORIG_MT: 'MT_ref'
+
+
 
 ref_female: 'Ref_phix_Female/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_female_dir: 'Ref_phix_Female/'
