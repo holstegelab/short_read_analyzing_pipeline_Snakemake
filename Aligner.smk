@@ -84,10 +84,19 @@ def ensure_readgroup_info(wildcards):
         return [filename]
     return []
 
+def ensure_validated_sex_info(wildcards):
+    """Make sure the sex info for a sample is available."""
+    sample = wildcards['sample']
+    sinfo = SAMPLEINFO[sample]
+    filename = checkpoints.get_validated_sex.get(sample=sample).output[0]
+    return [filename]
+
+
 
 rule Aligner_all:
     input:
-        expand("{cram}/{sample_sex}.mapped_hg38.cram",sample_sex=sample_sex_names, cram = config['CRAM'])
+        #expand("{cram}/{sample_sex}.mapped_hg38.cram",sample_sex=sample_sex_names, cram = config['CRAM']),
+        expand("{kmer}/{sample}.result.dat",sample=sample_names, kmer = config['KMER'])
     default_target: True
 
 
@@ -521,6 +530,14 @@ def get_mem_mb_align_reads(wildcards, attempt):
     MEM_DEFAULT_USAGE = 44000
     return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
+def get_mem_mb_kmer_reads(wildcards, attempt):
+    """Utility function to get the memory for the align_reads rule.
+
+    """
+    MEM_DEFAULT_USAGE =12000
+    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
+
+
 def get_prepared_fastq(wildcards):
     """Utility function to get the path to the (adapter-removed) fastq files for a sample."""
     file1 = os.path.join(config['FQ'], wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_1.fq.gz')
@@ -528,11 +545,128 @@ def get_prepared_fastq(wildcards):
     return [file1,file2]
 
 
+rule kmer_reads:
+    input:
+        fastq=get_prepared_fastq
+    output:
+        out1=temp(os.path.join(config['KMER'],"{sample}.{readgroup}.kmc_pre")),
+        out2=temp(os.path.join(config['KMER'],"{sample}.{readgroup}.kmc_suf")),
+        lst=temp(os.path.join(config['KMER'],"{sample}.{readgroup}.lst"))
+    params:
+        rg_params=get_readgroup_params,
+        tmpdir = os.path.join(tmpdir, "kmer_{sample}"),
+        kmerdir=config['KMER']
+    conda: "envs/kmc.yaml"
+    log:
+        kmer_log=os.path.join(config['LOG'],"{sample}.{readgroup}.kmer.log"),
+    benchmark:
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.kmer.txt")
+    priority: 15
+    resources:
+        n=32, #reducing thread count, as first part of dragmap is single threaded
+        mem_mb=get_mem_mb_kmer_reads,
+    shell:
+        """
+            mkdir -p {params.kmerdir}
+            mkdir -p {params.tmpdir}
+            echo '{input.fastq[0]}' > {output.lst}
+            echo '{input.fastq[1]}' >> {output.lst}
+            kmc -fq -k{resources.n} -cs8192 -t6 -m12 @{output.lst} {params.kmerdir}/{wildcards.sample}.{wildcards.readgroup} {params.tmpdir}
+        """
+# # function to get information about readgroups
+# # needed if sample contain more than 1 fastq files
+def get_kmer_combine_by_readgroup(wildcards):
+    """Get sorted bam files for all readgroups for a given sample."""
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    files = []
+    
+    for readgroup in readgroups_b:
+        files.append(os.path.join(config['KMER'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.kmc_pre'))
+        files.append(os.path.join(config['KMER'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.kmc_suf'))
+    return files
+
+
+
+rule kmer_combine:
+    input:
+        in_files=get_kmer_combine_by_readgroup,
+        rg=ensure_readgroup_info
+    output:
+        out1=temp(os.path.join(config['KMER'],"{sample}.kmc_pre")),
+        out2=temp(os.path.join(config['KMER'],"{sample}.kmc_suf"))
+    log:
+        kmer_log=os.path.join(config['LOG'],"{sample}.kmer.log"),
+    benchmark:
+        os.path.join(config['BENCH'],"{sample}.kmer.txt")
+    priority: 15
+    resources:
+        n=1, #reducing thread count, as first part of dragmap is single threaded
+        mem_mb=get_mem_mb_kmer_reads,
+    run:
+        final = output.out1[:-8]
+        shell("cp {input.in_files[0]} {final}.kmc_pre")
+        shell("cp {input.in_files[1]} {final}.kmc_suf")
+        
+        for i in range(2, len(input['in_files']),2):
+            fname = input['in_files'][i][:-8]
+            shell("""mv {final}.kmc_pre {final}.tmp.kmc_pre
+                mv {final}.kmc_suf {final}.tmp.kmc_suf
+                kmc_tools simple {final}.tmp {fname} kmers_subtract {final}
+                rm {final}.tmp.kmc_suf
+                rm {final}.tmp.kmc_pre""", conda_env='envs/kmc.yaml')
+
+checkpoint get_validated_sex:
+    input:
+       out1=os.path.join(config['KMER'],"{sample}.kmc_pre"),
+       out2=os.path.join(config['KMER'],"{sample}.kmc_suf")
+    output:
+       chry=os.path.join(config['KMER'],"{sample}.chry.tsv"),
+       chrx=os.path.join(config['KMER'],"{sample}.chrx.tsv"),
+       chrm=os.path.join(config['KMER'],"{sample}.chrm.tsv"),
+       auto=os.path.join(config['KMER'],"{sample}.auto.tsv"),
+       res=os.path.join(config['KMER'],"{sample}.result.dat"), #ibidas format
+       yaml=os.path.join(config['KMER'],"{sample}.result.yaml")
+    params:
+        #paths to kmer files of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
+        kmerchry=os.path.join(config['RES'], config['kmerchry']),
+        kmerchrx=os.path.join(config['RES'], config['kmerchrx']),
+        kmerchrm=os.path.join(config['RES'], config['kmerchrm']),
+        kmerauto=os.path.join(config['RES'], config['kmerauto']),
+        kmerdir=config['KMER'],
+        process_sex = srcdir('process_sex.py')
+    shell:  """
+           #intersecting fastq kmers with kmers of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
+           kmc_tools simple {params.kmerdir}/{wildcards.sample} {params.kmerchry} -cx1 intersect {output.chry}.tmp  -ocleft
+           #make sure that all kmers in chrY are present (as chrY is not always present in samples)
+           kmc_tools simple {output.chry}.tmp {params.kmerchry} union {output.chry}  -ocsum
+           
+           kmc_tools simple {params.kmerdir}/{wildcards.sample} {params.kmerchrx} -cx1 intersect {output.chrx} -ocleft
+           kmc_tools simple {params.kmerdir}/{wildcards.sample} {params.kmerchrm} -cx1 intersect {output.chrm}  -ocleft
+           kmc_tools simple {params.kmerdir}/{wildcards.sample} {params.kmerauto} -cx1 intersect {output.auto} -ocleft
+
+           #dumping kmers to tsv files            
+           kmc_tools transform {output.chry} dump {output.chry}
+           kmc_tools transform {output.chrx} dump {output.chrx}
+           kmc_tools transform {output.chrm} dump {output.chrm}
+           kmc_tools transform {output.auto} dump {output.auto}
+           
+           #removing temporary files (kmer databases)
+           rm {output.chry}.*
+           rm {output.chrm}.*
+           rm {output.chrx}.*
+           rm {output.auto}.*
+
+           #calculate summary statistics
+           python {params.process_sex} {output.auto} {output.chry} {output.chrx} {output.chrm} {output.res} {output.yaml}
+        """
+
 rule align_reads:
     """Align reads to reference genome."""
     input:
         get_prepared_fastq,
-        ensure_readgroup_info
+        ensure_readgroup_info,
+        ensure_validated_sex_info
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.aligned.bam")
     params:

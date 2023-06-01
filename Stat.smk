@@ -38,15 +38,18 @@ use rule * from Aligner
 # module VCF:
 #     snakefile: 'gVCF.smk'
 
-
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+use rule BedToIntervalList from Tools
    
 def get_ref_by_sex(wildcards):
     if wildcards['sex'] == 'female':
-        ref_dir=os.path.join(config['RES'],config['ref_female'])
+        ref=os.path.join(config['RES'],config['ref_female'])
     else:
-        ref_dir=os.path.join(config['RES'],config['ref_male'])
+        ref=os.path.join(config['RES'],config['ref_male'])
 
-    return ref_dir
+    return ref
    
 
 
@@ -80,6 +83,8 @@ rule verifybamid:
     benchmark: config['BENCH'] + "/{sample}.{sex}.verifybamid.txt"
     priority: 27
     params:
+        ref=get_ref_by_sex,
+        #minimum Base Quality for a base to contribute cov (default=20)
         VBID_prefix = os.path.join(config['STAT'], 'contam/{sample}.{sex}.verifybamid.pca2'),
         SVD = get_svd
     conda: 'envs/verifybamid.yaml'
@@ -88,7 +93,7 @@ rule verifybamid:
         n=2
     shell:
         """
-        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}
+        verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {params.ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}
         """
 
 def get_capture_kit_interval_list(wildcards):
@@ -107,7 +112,8 @@ rule hs_stats:
     """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai,
+        interval = get_capture_kit_interval_list
     output:
         HS_metrics=os.path.join(config['STAT'], "{sample}.{sex}.hs_metrics")
     log: os.path.join(config['LOG'], "HS_stats_{sample}.{sex}.log")
@@ -115,7 +121,6 @@ rule hs_stats:
     priority: 99
     params:
         ref=get_ref_by_sex,
-        interval = get_capture_kit_interval_list,
         #minimum Base Quality for a base to contribute cov (default=20)
         Q=10,
         #minimum Mapping Quality for a read to contribute cov(default=20)
@@ -128,7 +133,7 @@ rule hs_stats:
     shell:
         """
             gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
-            -I {input.bam} -R {params.ref} -BI {params.interval} -TI {params.interval} \
+            -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}_hs_metrics 2> {log}"""
@@ -139,7 +144,8 @@ def get_mem_mb_Artifact_stats(wildcrads, attempt):
 rule Artifact_stats:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai,
+        interval = get_capture_kit_interval_list,
     output:
         Bait_bias = os.path.join(config['STAT'], '{sample}.{sex}.bait_bias.bait_bias_summary_metrics'),
         Pre_adapter = os.path.join(config['STAT'], '{sample}.{sex}.bait_bias.pre_adapter_summary_metrics'),
@@ -150,7 +156,8 @@ rule Artifact_stats:
     log: os.path.join(config['LOG'], "Artifact_stats_{sample}.{sex}.log")
     benchmark: os.path.join(config['BENCH'], "Artifact_stats_{sample}.{sex}.txt")
     params:
-        interval = get_capture_kit_interval_list,
+        ref=get_ref_by_sex,
+        #minimum Base Quality for a base to contribute cov (default=20)
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
         out = os.path.join(config['STAT'], "{sample}.{sex}.bait_bias"),
@@ -163,21 +170,23 @@ rule Artifact_stats:
     shell:
         """
             gatk --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectSequencingArtifactMetrics  --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
-        -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {params.interval} 2> {log}"""
+        -R {params.ref} --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> {log}"""
 
 def get_mem_mb_OXOG_metrics(wildcrads, attempt):
     return (attempt * int(5500))
 rule OXOG_metrics:
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup.output.mdbams_bai
+        bai= rules.markdup.output.mdbams_bai,
+        interval = get_capture_kit_interval_list,
     output:
         Artifact_matrics = os.path.join(config['STAT'], "{sample}.{sex}.OXOG")
     priority: 99
     log: os.path.join(config['LOG'], "OXOG_stats_{sample}.{sex}.log")
     benchmark: os.path.join(config['BENCH'], "OxoG_{sample}.{sex}.txt")
     params:
-        interval = get_capture_kit_interval_list,
+        ref=get_ref_by_sex,
+        #minimum Base Quality for a base to contribute cov (default=20)
         java_options=config['DEFAULT_JAVA_OPTIONS'],
     conda: "envs/preprocess.yaml"
     resources:
@@ -185,8 +194,8 @@ rule OXOG_metrics:
                 tmpdir= tmpdir,
                 n=1
     shell:
-        """gatk  --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
-         --INTERVALS {params.interval} 2> {log}"""
+        """gatk  --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectOxoGMetrics -I {input.bam} -O {output} -R {params.ref} \
+         --INTERVALS {input.interval} 2> {log}"""
 
 rule samtools_stat:
     input:
@@ -196,12 +205,14 @@ rule samtools_stat:
     priority: 99
     log: os.path.join(config['LOG'], "samtools_{sample}.{sex}.log")
     benchmark: os.path.join(config['BENCH'], "samtools_stat_{sample}.{sex}.txt")
+    params:
+        ref = get_ref_by_sex
     resources:
         mem_mb=100,
         n=1
     conda: "envs/preprocess.yaml"
     shell:
-        "samtools stat -@ {resources.n} -r {ref} {input.bam} > {output}"
+        "samtools stat -@ {resources.n} -r {params.ref} {input.bam} > {output}"
 
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
@@ -225,7 +236,8 @@ rule samtools_stat_exome:
     output: samtools_stat_exome = ensure(os.path.join(config['STAT'], "{sample}.{sex}.samtools.exome.stat"), non_empty=True)
     priority: 99
     params:
-        bed_interval = get_capture_kit_bed
+        bed_interval = get_capture_kit_bed,
+        ref  = get_ref_by_sex
     log: os.path.join(config['LOG'], "samtools_exome_{sample}.{sex}.log")
     benchmark: os.path.join(config['BENCH'],"samtools_stat_exome_{sample}.{sex}.txt")
     resources:
@@ -233,7 +245,7 @@ rule samtools_stat_exome:
         n=1
     conda: "envs/preprocess.yaml"
     shell:
-        "samtools stat -@ {resources.n} -t {params.bed_interval} -r {ref} {input.bam} > {output}"
+        "samtools stat -@ {resources.n} -t {params.bed_interval} -r {params.ref} {input.bam} > {output}"
 
 rule bamstats_all:
     input:

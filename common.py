@@ -110,6 +110,7 @@ def load_samplefiles(filedir, config):
                     w = samplefile(f, config)
                     
                     #generate some indices
+                    no_readgroup = []
                     for sample,info in w.items():
                         if sample in SAMPLEINFO:
                             print('WARNING!: Sample ' + sample + ' is defined in more than one sample files.')
@@ -117,7 +118,10 @@ def load_samplefiles(filedir, config):
                         SAMPLE_TO_BATCH[sample] = None #default
                    
                         if len(info.get('readgroups',[])) == 0:
-                            print('WARNING: %s has no readgroups' % sample)
+                            no_readgroup.append(sample)
+                    if no_readgroup:
+                        print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w)))
+                    
 
                     #assign to batches for staging from archive or dcache
                     cursize_full = 0 #size if all files need to be staged
