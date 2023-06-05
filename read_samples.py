@@ -226,14 +226,14 @@ def read_samplefile(filename, config, prefixpath=None):
                     filesize = 8.0 * base_filesize_factor
                 else:
                     warning(capture_kit == '' or capture_kit.startswith('WGS'),
-                            'Capture kit filled in for ' + sample_type + ' sample')
+                            'Capture kit is not empty or WGS for a' + sample_type + ' sample')
                     filesize = 75.0 * base_filesize_factor
 
             filenames1 = [a.strip() for a in filenames1.split(',') if a.strip() != '']
             filenames2 = [a.strip() for a in filenames2.split(',') if a.strip() != '']
-            alternative_names.add(
-                os.path.splitext(os.path.commonprefix([os.path.basename(e) for e in (filenames1 + filenames2)]))[
-                    0].strip('_'))
+            cpref = os.path.splitext(os.path.commonprefix([os.path.basename(e) for e in (filenames1 + filenames2)]))[0].strip('_')
+            if len(cpref) > 8:
+                alternative_names.add(cpref)
 
             if file_type == 'fastq_paired':
                 warning(len(filenames1) > 0, 'No filename given for sample ' + sample_id)
@@ -456,7 +456,7 @@ def get_readgroups(sample, sourcedir, config):
     # Update the sample dictionary with the alternative names and readgroups
     sample['alternative_names'] = alternative_names
     sample['readgroups'] = readgroups
-    
+    print(sample)
     # Return the updated sample dictionary and the list of warnings
     return (sample, warnings)
 

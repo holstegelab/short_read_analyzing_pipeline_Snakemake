@@ -2,6 +2,7 @@ import pandas as pd
 import read_stats
 import os
 import getpass
+import yaml
 
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
@@ -15,7 +16,6 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     extension='sam|bam|cram',
     filetype = 'fq|fastq',
-    sex = 'male|female',
     batchnr='[\d]+'
     # readgroup="[\w\d_\-@]+"
 module Reference_preparation:
@@ -39,11 +39,11 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 
 
 sample_names = SAMPLEINFO.keys()
-sample_sex_names = get_sample_sex_combi(SAMPLEINFO)
 
 
 def get_refdir_by_sex(wildcards):
-    if wildcards['sex'] == 'female':
+    sex = get_validated_sex(wildcards['sample'])
+    if sex == 'female':
         ref_dir=os.path.join(config['RES'],config['ref_female_dir'])
     else:
         ref_dir=os.path.join(config['RES'],config['ref_male_dir'])
@@ -84,21 +84,14 @@ def ensure_readgroup_info(wildcards):
         return [filename]
     return []
 
-def ensure_validated_sex_info(wildcards):
-    """Make sure the sex info for a sample is available."""
-    sample = wildcards['sample']
-    sinfo = SAMPLEINFO[sample]
-    filename = checkpoints.get_validated_sex.get(sample=sample).output[0]
-    return [filename]
+
 
 
 
 rule Aligner_all:
     input:
-        #expand("{cram}/{sample_sex}.mapped_hg38.cram",sample_sex=sample_sex_names, cram = config['CRAM']),
-        expand("{kmer}/{sample}.result.dat",sample=sample_names, kmer = config['KMER'])
+        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names, cram = config['CRAM'])
     default_target: True
-
 
 def get_source_files(wildcards):
     """Make sure the source files for a sample are available.
@@ -337,9 +330,9 @@ rule split_alignments_by_readgroup:
         ancient(os.path.join(config['SOURCEDIR'], "{sample}.started"))
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.        
-        readgroups=temp(directory(os.path.join(config['READGROUPS'], "{sample}_{filename}")))
+        readgroups=temp(directory(os.path.join(config['READGROUPS'], "{sample}.sourcefile.{filename}")))
     resources:
-        n=8,
+        n=1,
         mem_mb=1000
     params:
         cramref=get_cram_ref
@@ -385,7 +378,7 @@ def get_aligned_readgroup_folder(wildcards):
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
-    folder = os.path.join(config['READGROUPS'], wildcards['sample'] + '_' + sfile)
+    folder = os.path.join(config['READGROUPS'], wildcards['sample'] + '.sourcefile.' + sfile)
     return folder
 
 def get_extension(wildcards):
@@ -409,7 +402,7 @@ rule external_alignments_to_fastq:
         singletons = temp(config['FQ'] + "/{sample}.{readgroup}.extracted_singletons.fq.gz"),
     resources:
         n= 2,
-        mem_mb = 5000,
+        mem_mb = 1500,
         tmpdir=tmpdir
     log:
         fastq=os.path.join(config['LOG'],"{sample}.{readgroup}.align2fq.log"),
@@ -420,8 +413,7 @@ rule external_alignments_to_fastq:
         extension=get_extension
     priority: 10
     conda: config['CONDA_MAIN']
-    #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size becomes biased to genome location)
-    #samtools fastq only uses ~2 threads, while collate uses much more. Therefore,pipe directly into adapterremoval to make use of the extra cores. Also save a store/load cycle.
+    #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)
     shell:
         """
             samtools collate -u -@ {resources.n} {params.cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} {resources.tmpdir}/{wildcards.sample}.{wildcards.readgroup}.collate |
@@ -479,12 +471,12 @@ rule adapter_removal:
     priority: 10
     conda: "envs/preprocess.yaml"
     resources: 
-        n=4,
+        n=3, #practical average use for 4 threads is 2.7 cores
         mem_mb=200
-    ##FIXME: combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
+    ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
     shell:
         """
-		    AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads {resources.n} 
+		    AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 
 		"""
 
 rule adapter_removal_identify:
@@ -497,12 +489,12 @@ rule adapter_removal_identify:
     priority: 5
     conda: "envs/preprocess.yaml"
     resources: 
-        n=4,
+        n=2, #practical average use for 4 threads is 1.7 cores
         mem_mb=200
     benchmark: os.path.join(config['BENCH'],"{sample}.{readgroup}.adapter_removal_identify.txt")
     shell:
         """
-		AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]}  --threads {resources.n} > {output.stats}
+		AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]}  --threads 4 > {output.stats}
 		"""
 
 
@@ -519,16 +511,6 @@ def get_readgroup_params(wildcards):
             'CN': res.get('CN','unknown'), 'DT': res.get('DT','unknown')}
 
 
-# rule to align reads from cutted fq on hg38 ref
-# use dragmap aligner
-# samtools fixmate for future step with samtools mark duplicates
-
-def get_mem_mb_align_reads(wildcards, attempt):
-    """Utility function to get the memory for the align_reads rule.
-
-    """
-    MEM_DEFAULT_USAGE = 44000
-    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
 def get_mem_mb_kmer_reads(wildcards, attempt):
     """Utility function to get the memory for the align_reads rule.
@@ -563,15 +545,15 @@ rule kmer_reads:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.kmer.txt")
     priority: 15
     resources:
-        n=32, #reducing thread count, as first part of dragmap is single threaded
-        mem_mb=get_mem_mb_kmer_reads,
+        n=3, #practical average usage is about 2.85 cores
+        mem_mb=get_mem_mb_kmer_reads
     shell:
         """
             mkdir -p {params.kmerdir}
             mkdir -p {params.tmpdir}
             echo '{input.fastq[0]}' > {output.lst}
             echo '{input.fastq[1]}' >> {output.lst}
-            kmc -fq -k{resources.n} -cs8192 -t6 -m12 @{output.lst} {params.kmerdir}/{wildcards.sample}.{wildcards.readgroup} {params.tmpdir}
+            kmc -fq -k32 -cs8192 -t6 -m12 @{output.lst} {params.kmerdir}/{wildcards.sample}.{wildcards.readgroup} {params.tmpdir}
         """
 # # function to get information about readgroups
 # # needed if sample contain more than 1 fastq files
@@ -601,8 +583,8 @@ rule kmer_combine:
         os.path.join(config['BENCH'],"{sample}.kmer.txt")
     priority: 15
     resources:
-        n=1, #reducing thread count, as first part of dragmap is single threaded
-        mem_mb=get_mem_mb_kmer_reads,
+        n=1, #very low usage (<1)
+        mem_mb=1000,
     run:
         final = output.out1[:-8]
         shell("cp {input.in_files[0]} {final}.kmc_pre")
@@ -616,17 +598,20 @@ rule kmer_combine:
                 rm {final}.tmp.kmc_suf
                 rm {final}.tmp.kmc_pre""", conda_env='envs/kmc.yaml')
 
-checkpoint get_validated_sex:
+rule get_validated_sex:
     input:
        out1=os.path.join(config['KMER'],"{sample}.kmc_pre"),
        out2=os.path.join(config['KMER'],"{sample}.kmc_suf")
     output:
+       yaml=os.path.join(config['KMER'],"{sample}.result.yaml"),
+       res=os.path.join(config['KMER'],"{sample}.result.dat"), #ibidas format
        chry=os.path.join(config['KMER'],"{sample}.chry.tsv"),
        chrx=os.path.join(config['KMER'],"{sample}.chrx.tsv"),
        chrm=os.path.join(config['KMER'],"{sample}.chrm.tsv"),
-       auto=os.path.join(config['KMER'],"{sample}.auto.tsv"),
-       res=os.path.join(config['KMER'],"{sample}.result.dat"), #ibidas format
-       yaml=os.path.join(config['KMER'],"{sample}.result.yaml")
+       auto=os.path.join(config['KMER'],"{sample}.auto.tsv") 
+    resources:
+        n=1,
+        mem_mb=4500      
     params:
         #paths to kmer files of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
         kmerchry=os.path.join(config['RES'], config['kmerchry']),
@@ -660,24 +645,34 @@ checkpoint get_validated_sex:
            #calculate summary statistics
            python {params.process_sex} {output.auto} {output.chry} {output.chrx} {output.chrm} {output.res} {output.yaml}
         """
+# rule to align reads from cutted fq on hg38 ref
+# use dragmap aligner
+# samtools fixmate for future step with samtools mark duplicates
+
+def get_mem_mb_align_reads(wildcards, attempt):
+    """Utility function to get the memory for the align_reads rule.
+
+    """
+    MEM_DEFAULT_USAGE = 38000
+    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
 rule align_reads:
     """Align reads to reference genome."""
     input:
         get_prepared_fastq,
         ensure_readgroup_info,
-        ensure_validated_sex_info
+        rules.get_validated_sex.output.yaml
     output:
-        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.aligned.bam")
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.aligned.bam")
     params:
         ref_dir=get_refdir_by_sex,
         dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
         rg_params=get_readgroup_params
     conda: "envs/preprocess.yaml"
     log:
-        dragmap_log=os.path.join(config['LOG'],"{sample}.{readgroup}.{sex}.dragmap.log"),
+        dragmap_log=os.path.join(config['LOG'],"{sample}.{readgroup}.dragmap.log"),
     benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.{sex}.dragmap.txt")
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.dragmap.txt")
     priority: 15
     resources:
         n=24, #reducing thread count, as first part of dragmap is single threaded
@@ -688,7 +683,7 @@ rule align_reads:
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
 def get_mem_mb_merge_bam_alignment(wildcards, attempt):
-    MEM_DEFAULT_USAGE=12000
+    MEM_DEFAULT_USAGE=6000
     return attempt*(MEM_DEFAULT_USAGE)
 
 rule merge_bam_alignment:
@@ -698,12 +693,12 @@ rule merge_bam_alignment:
         rules.align_reads.output.bam,
         rules.adapter_removal_identify.output.stats
     output:
-        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.merged.bam"),
-        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.{sex}.merge_stats.tsv")
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.merged.bam"),
+        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.merge_stats.tsv")
     conda: "envs/pypy.yaml"
     benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.{sex}.mergebam.txt")
-    log: os.path.join(config['LOG'],"{sample}.{readgroup}.{sex}.mergebamaligment.log")
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.mergebam.txt")
+    log: os.path.join(config['LOG'],"{sample}.{readgroup}.mergebamaligment.log")
     params:
         bam_merge=srcdir(config['BAMMERGE'])
     resources: 
@@ -727,15 +722,15 @@ rule dechimer:
         bam=rules.merge_bam_alignment.output.bam,
         stats=rules.merge_bam_alignment.output.stats
     output:
-        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.dechimer.bam"),
-        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.{sex}.dechimer_stats.tsv")
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.dechimer.bam"),
+        stats=os.path.join(config['STAT'],"{sample}.{readgroup}.dechimer_stats.tsv")
     priority: 16
     benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.{sex}.dechimer.txt")
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.dechimer.txt")
     params:
         dechimer=srcdir(config['DECHIMER'])
     resources:
-        n=4,
+        n=1, #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~2 cores.
         mem_mb=1000
     run:
         with open(input['stats'],'r') as f:
@@ -762,19 +757,19 @@ rule sort_bam_alignment:
     input:
         in_bam=rules.dechimer.output.bam
     output:
-        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.sorted.bam")
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam")
     conda: "envs/preprocess.yaml"
     log:
-        samtools_sort=os.path.join(config['LOG'],"{sample}.{readgroup}.{sex}.samtools_sort.log"),
+        samtools_sort=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_sort.log"),
     benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.{sex}.sort.txt")
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.sort.txt")
     priority: 17
     resources:
         tmpdir=tmpdir,
         n = 2,
         mem_mb = 13000
     params:
-        temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}_{sex}"),
+        temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}"),
         memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
     shell:
         """
@@ -784,16 +779,16 @@ rule sort_bam_alignment:
 rule index_sort:
     """Index sorted bam alignment."""
     input: bam = rules.sort_bam_alignment.output.bam
-    output: bai = os.path.join(config['BAM'],"{sample}.{readgroup}.{sex}.sorted.bam.bai")
+    output: bai = os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam.bai")
     conda: "envs/preprocess.yaml"
-    log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.{sex}.samtools_index.log"),
+    log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log"),
     priority: 18
     benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.{sex}.index_sorted.txt")
+        os.path.join(config['BENCH'],"{sample}.{readgroup}.index_sorted.txt")
     resources:
-        n=2,
-        mem_mb=100   
-    shell: "samtools index -@ {resources.n} {input.bam} 2> {log.samtools_index}"
+        n=1,
+        mem_mb=150   
+    shell: "samtools index -@ 2 {input.bam} 2> {log.samtools_index}"
 
 # # function to get information about readgroups
 # # needed if sample contain more than 1 fastq files
@@ -804,7 +799,7 @@ def get_readgroups_bam(wildcards):
     files = []
     
     for readgroup in readgroups_b:
-        files.append(os.path.join(config['BAM'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + wildcards['sex'] + '.sorted.bam'))
+        files.append(os.path.join(config['BAM'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam'))
     return files
 
 def get_readgroups_bai(wildcards):
@@ -813,7 +808,7 @@ def get_readgroups_bai(wildcards):
     readgroups_b = sinfo['readgroups']
     files = []
     for readgroup in readgroups_b:
-        files.append(os.path.join(config['BAM'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.' + wildcards['sex'] + '.sorted.bam.bai'))
+        files.append(os.path.join(config['BAM'],wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam.bai'))
     return files
 
 # merge different readgroups bam files for same sample
@@ -824,9 +819,9 @@ rule merge_rgs:
         bam = get_readgroups_bam,
         bai = get_readgroups_bai,
     output:
-        mer_bam=os.path.join(config['BAM'],"{sample}.{sex}.merged.bam")
-    log: os.path.join(config['LOG'],"{sample}.{sex}.mergereadgroups.log")
-    benchmark: "benchmark/{sample}.{sex}.merge_rgs.txt"
+        mer_bam=os.path.join(config['BAM'],"{sample}.merged.bam")
+    log: os.path.join(config['LOG'],"{sample}.mergereadgroups.log")
+    benchmark: "benchmark/{sample}.merge_rgs.txt"
     resources:
         n=1,
         mem_mb=2000
@@ -845,10 +840,10 @@ rule markdup:
     input:
         bam = rules.merge_rgs.output.mer_bam
     output:
-        mdbams=os.path.join(config['BAM'],"{sample}.{sex}.markdup.bam"),
-        mdbams_bai=os.path.join(config['BAM'],"{sample}.{sex}.markdup.bam.bai"),
-        MD_stat=os.path.join(config['STAT'],"{sample}.{sex}.markdup.stat")
-    benchmark: "benchmark/{sample}.{sex}.markdup.txt"
+        mdbams=os.path.join(config['BAM'],"{sample}.markdup.bam"),
+        mdbams_bai=os.path.join(config['BAM'],"{sample}.markdup.bam.bai"),
+        MD_stat=os.path.join(config['STAT'],"{sample}.markdup.stat")
+    benchmark: "benchmark/{sample}.markdup.txt"
     priority: 20
     params:
         machine=2500  #change to function
@@ -856,16 +851,16 @@ rule markdup:
     # if fastq header not in known machines?
     # if not Illumina?
     log:
-        samtools_markdup=os.path.join(config['LOG'],"{sample}.{sex}.markdup.log"),
-        samtools_index_md=os.path.join(config['LOG'],"{sample}.{sex}.markdup_index.log")
+        samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log"),
+        samtools_index_md=os.path.join(config['LOG'],"{sample}.markdup_index.log")
     resources:
-        n=4,
-        mem_mb=500
+        n=2, #average core usage is 1.4 with 4 threads. 2 core reservation is therefore enough
+        mem_mb=150
     conda: "envs/preprocess.yaml"
     shell:
         """
-            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ {resources.n} {input.bam} {output.mdbams} 2> {log.samtools_markdup}
-            samtools index -@ {resources.n} {output.mdbams} 2> {log.samtools_index_md}
+            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} {output.mdbams} 2> {log.samtools_markdup}
+            samtools index -@ 4 {output.mdbams} 2> {log.samtools_index_md}
         """
     
 
@@ -875,14 +870,26 @@ rule mCRAM:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        CRAM=os.path.join(config['CRAM'],"{sample}.{sex}.mapped_hg38.cram")
+        CRAM=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram")
     resources:
         n=2,
-        mem_mb=1000
-    benchmark: os.path.join(config['BENCH'],'{sample}.{sex}.mCRAM.txt')
+        mem_mb=1500
+    benchmark: os.path.join(config['BENCH'],'{sample}.mCRAM.txt')
     priority: 30
     conda: "envs/preprocess.yaml"
     log:
-        os.path.join(config['LOG'],"{sample}.{sex}.mCRAM.log")
+        os.path.join(config['LOG'],"{sample}.mCRAM.log")
     shell:
         "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {resources.n} -o {output.CRAM} {input.bam} 2> {log}"
+
+
+rule copy_to_dcache:
+    input:
+        rules.mCRAM.output.CRAM
+    output:
+        os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied")
+    shell:
+        """
+            cp {input} {output}
+        """
+        

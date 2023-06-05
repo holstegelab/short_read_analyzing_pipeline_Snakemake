@@ -41,6 +41,7 @@ for fname, colname in zip(files, ['auto', 'chry','chrx','chrm']):
 
     #calculate median and percentiles
     result[colname] = float(numpy.median(counts))
+    #GC correction does not seem to add much, disabled for now.
     #counts = numpy.exp(numpy.log(counts + 0.01) - correction) - 0.01
     #counts[counts < 0] = 0.001
     result['dist_' + colname] = [float(e) for e in numpy.percentile(counts, numpy.linspace(0, 100, 101))]

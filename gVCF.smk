@@ -2,6 +2,7 @@ import pandas as pd
 import read_stats
 import os
 import getpass
+import yaml
 
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
@@ -48,24 +49,28 @@ use rule BedToIntervalList from Tools
 mode = config.get("computing_mode", "WES")
 cur_dir = os.getcwd()
 
-def generate_gvcf(wildcards):
-    """Generate gvcf file name."""
-    res = []
-    for sample in sample_names:
-        sinfo = SAMPLEINFO[sample]
-        if sinfo['sex'] == 'F':
-            for chrom in main_chrs_ploidy_female:
-                res.append(os.path.join(cur_dir, config['gVCF'], chrom, sample + '.' + chrom + '.female.g.vcf.gz'))
-        else:
-            for chrom in main_chrs_ploidy_male:
-                res.append(os.path.join(cur_dir, config['gVCF'], chrom, sample + '.' + chrom + '.male.g.vcf.gz'))
-    return res
+
 
 rule gVCF_all:
     input:
-        generate_gvcf,
+        expand("{gvcf}/{sample}.done",sample=sample_names, gvcf = config['gVCF']),
         rules.Aligner_all.input
     default_target: True
+
+def get_gvcf_files(wildcards):
+    sample = wildcards['sample']
+    res = []
+    for chrom in main_chrs_ploidy_male:
+        res.append(os.path.join(cur_dir, config['gVCF'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
+    return res
+
+rule gvcf_sample_done:
+    input:
+        get_gvcf_files
+    output:
+        cram = touch(os.path.join(config['gVCF'], "{sample}.done"))
+
+
 
 
 rule ComposeSTRTableFile:
@@ -78,18 +83,17 @@ rule ComposeSTRTableFile:
     resources: 
         n = 1,
         mem_mb = 3000
-    conda: "envs/preprocess.yaml"        
+    conda: "envs/gatk.yaml"        
     shell:
         """gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}m {params.java_options}" -R {input.ref_fasta} -O {output.str_table}"""
 
 
 
 
-def get_mem_mb_CalibrateDragstrModel(wildcards, attempt):
-    return attempt * int(7100)
 
 def get_strref_by_sex(wildcards):
-    if wildcards['sex'] == 'female':
+    sex = get_validated_sex(wildcards['sample'])
+    if sex == 'female':
         ref=os.path.join(config['RES'],config['ref_female_str'])
     else:
         ref=os.path.join(config['RES'],config['ref_male_str'])
@@ -97,35 +101,40 @@ def get_strref_by_sex(wildcards):
     return ref
    
 def get_ref_by_sex(wildcards):
-    if wildcards['sex'] == 'female':
+    sex = get_validated_sex(wildcards['sample'])
+    if sex == 'female':
         ref=os.path.join(config['RES'],config['ref_female'])
     else:
         ref=os.path.join(config['RES'],config['ref_male'])
 
     return ref
-   
+ 
+def get_mem_mb_CalibrateDragstrModel(wildcards, attempt):
+    return attempt * int(2500)
+
 rule CalibrateDragstrModel:
     """CalibrateDragstrModel. Estimates the parameters of the dragstr model from a set of aligned reads.
     Provides better STR variant calling.
     """
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup.output.mdbams_bai,
-        str_ref = get_strref_by_sex
+        bai= rules.markdup.output.mdbams_bai        
     output:
-        dragstr_model = config['BAM'] + "/{sample}-{sex}-dragstr.txt"
+        dragstr_model = config['BAM'] + "/{sample}-dragstr.txt"
     priority: 26
     params:
-        java_options=config['DEFAULT_JAVA_OPTIONS'],
-        ref = get_ref_by_sex
+        java_options=config['DEFAULT_JAVA_OPTIONS']
     resources: 
-        n = 2,
+        n = 1,
         mem_mb = get_mem_mb_CalibrateDragstrModel
-    conda: "envs/preprocess.yaml"
-    log: config['LOG'] + '/' + "{sample}_{sex}_calibratedragstr.log"
-    benchmark: config['BENCH'] + "/{sample}_{sex}_calibrate_dragstr.txt"
-    shell:
-        """{gatk} CalibrateDragstrModel --java-options "-Xmx{resources.mem_mb}m {params.java_options}"  -R {params.ref} -I {input.bam} -O {output} -str {input.str_ref} 2>{log}"""
+    log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
+    benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
+    run:
+        ref = get_ref_by_sex(wildcards)
+        str_ref = get_strref_by_sex(wildcards)
+        shell("""{gatk} CalibrateDragstrModel --java-options \
+                    "-Xmx{resources.mem_mb}m {params.java_options}"  -R {ref} -I {input.bam} 
+                    -O {output} -str {str_ref} 2>{log}""", conda_env='envs/gatk.yaml')
 
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
@@ -148,7 +157,7 @@ def get_chrom_capture_kit(wildcards):
 
 def read_contam_w(wildcards):
     """Read contamination from verifybamid output file."""
-    filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] + '.' + wildcards['sex'] + '.verifybamid.pca2.selfSM')
+    filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] +  '.verifybamid.pca2.selfSM')
     with open(filename,'r', encoding='utf-8') as f:
         c = csv.reader(f, delimiter='\t')
         c = iter(c)
@@ -188,15 +197,15 @@ rule HaplotypeCaller:
         contam= rules.verifybamid.output.VBID_stat,
         bai = rules.markdup.output.mdbams_bai
     output:
-        gvcf= ensure(os.path.join(cur_dir, config['gVCF'], "{chrom}/{sample}.{chrom}.{sex}.g.vcf.gz"), non_empty=True),
-        tbi = ensure(os.path.join(cur_dir, config['gVCF'], "{chrom}/{sample}.{chrom}.{sex}.g.vcf.gz.tbi"), non_empty=True),
+        gvcf= ensure(os.path.join(cur_dir, config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
+        tbi = ensure(os.path.join(cur_dir, config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True),
     log:
-        HaplotypeCaller=config['LOG'] + "/{sample}_{chrom}_{sex}_haplotypecaller.log"
+        HaplotypeCaller=config['LOG'] + "/{sample}_{chrom}_haplotypecaller.log"
     benchmark:
-        config['BENCH'] + "/{sample}_{chrom}_{sex}_haplotypecaller.txt"
-    conda: "envs/preprocess.yaml"
+        config['BENCH'] + "/{sample}_{chrom}_haplotypecaller.txt"
+    conda: "envs/gatk.yaml"
     resources: 
-               n=2,
+               n=1, #average 1.3 cores
                mem_mb = get_mem_mb_HaplotypeCaller,
                tmpdir = tmpdir_alternative
     params:
@@ -214,7 +223,7 @@ rule HaplotypeCaller:
                 {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
                  -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-                 -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads {resources.n}  --create-output-variant-index true\
+                 -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true\
                   {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
 
 
@@ -225,12 +234,12 @@ rule reblock_gvcf:
     input:
         gvcf = rules.HaplotypeCaller.output.gvcf,
         idx = rules.HaplotypeCaller.output.tbi
-    output: gvcf_reblock = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.{sex}.g.vcf.gz"), non_empty=True),
-            tbi = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.{sex}.g.vcf.gz.tbi"), non_empty=True)
-    log: Reblock=config['LOG'] + "/{sample}_{chrom}_{sex}_reblock.log"
+    output: gvcf_reblock = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
+            tbi = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True)
+    log: Reblock=config['LOG'] + "/{sample}_{chrom}_reblock.log"
     benchmark:
-        config['BENCH'] + "/{sample}_{chrom}_{sex}_reblock.txt"
-    conda: "envs/preprocess.yaml"
+        config['BENCH'] + "/{sample}_{chrom}_reblock.txt"
+    conda: "envs/gatk.yaml"
     priority: 29
     params:
         dbsnp=config['RES'] + config['dbsnp'],

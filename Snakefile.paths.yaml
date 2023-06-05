@@ -97,7 +97,7 @@ SD: 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.dict'
 
 main_chr_bed: 'standard_chrs.bed'
 verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
-verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.100k.b38.vcf.gz.dat'
+verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.phase3.100k.b38.vcf.gz.dat'
 refflat: 'refFlat.txt'
 MERGED_CAPTURE_KIT: 'merged_capturekits_and_CCDS'
 

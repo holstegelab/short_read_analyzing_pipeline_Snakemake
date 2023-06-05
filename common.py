@@ -182,13 +182,14 @@ def load_samplefiles(filedir, config):
 
     return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
 
-def get_sample_sex_combi(sampleinfo):
-    res = []
-    for sample, info in sampleinfo.items():
-        if info['sex'] == 'F':
-            res.append(f"{sample}.female")
-        else:
-            res.append(f"{sample}.male")
-    return res
+def get_validated_sex(sample):
+    #this file should exist after running 'get_validated_sex' job.
+    #it should also certainly exist after the bam file is created,
+    #as it relies on this file.
+    filename = os.path.join('kmer', sample + '.result.yaml')
+    with open(filename) as f:
+        xsample = yaml.load(f,Loader=yaml.FullLoader)
+    return 'male' if  xsample['sex'] == 'M' else 'female'
+
 
 

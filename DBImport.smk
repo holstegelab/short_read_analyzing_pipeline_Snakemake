@@ -90,7 +90,7 @@ rule GenomicDBImport:
         labels = labels
     log: config['LOG'] + "/GenomicDBImport.{chr_p}.{chr}.{mode}.log"
     benchmark: config['BENCH'] + "/{chr}_{chr_p}.{mode}_GenomicDBImport.txt"
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     output:
         ready=touch(temp('labels/done_p{chr_p}.{chr}.{mode}.txt'))
     threads: config['GenomicDBImport']['n']

@@ -1,0 +1,8 @@
+channels:
+- conda-forge
+- bioconda
+- default
+- defaults
+dependencies:
+- kmc=3.2.1
+name: kmc

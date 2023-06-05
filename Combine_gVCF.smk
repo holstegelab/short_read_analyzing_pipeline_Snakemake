@@ -49,7 +49,7 @@ rule combinegvcfs:
     log: combine =config['LOG'] + "/{chr}_{chr_p}_{mode}.combine.log"
     benchmark:
         config['BENCH'] + "/{chr}_{chr_p}_{mode}.combinegvcf_NV.txt"
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     priority: 30
     resources: mem_mb = get_mem_mb_combine_gvcf
     params:

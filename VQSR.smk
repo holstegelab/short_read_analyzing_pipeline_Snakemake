@@ -59,7 +59,7 @@ rule SelectSNPs:
     priority: 56
     log: config['LOG'] + '/' + "SelectSNPs_{chr}_{mode}.log"
     benchmark: config['BENCH'] + "/SelectSNPs_{chr}_{mode}.txt"
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     shell:
         """
         {gatk} SelectVariants \
@@ -84,7 +84,7 @@ rule VQSR_SNP:
         omni = config['RES'] + config['omni'],
         kilo_g = config['RES'] + config['kilo_g'],
         dbsnp = config['RES'] + config['dbsnp']
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     priority: 58
     shell:
         # -an InbreedingCoeff if 10+
@@ -116,7 +116,7 @@ rule ApplyVQSR_SNPs:
     params:
         ts_level='99.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
     priority: 60
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     shell:
         """
         {gatk} ApplyVQSR -R {ref} -mode SNP \
@@ -134,7 +134,7 @@ rule SelectINDELs:
     log: config['LOG'] + '/' + "SelectINDELS_{chr}_{mode}.log"
     benchmark: config['BENCH'] + "/SelectINDELs_{chr}_{mode}.txt"
     priority: 56
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     shell:
         """
         {gatk} SelectVariants \
@@ -156,7 +156,7 @@ rule VQSR_INDEL:
     params:
         mills = config['RES'] + config['mills'],
         dbsnp_indel = config['RES'] + config['dbsnp_indel']
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     shell:
         # -an InbreedingCoeff if 10+
         """
@@ -181,7 +181,7 @@ rule ApplyVQSR_INDEs:
         recal_vcf_indel=temp(config['VCF_Final'] + "/VQSR/{chr}/INDELs_recal_apply_vqsr_{chr}_{mode}.vcf")
     params:
         ts_level='97.0'  #ts-filter-level show the "stregnth" of VQSR could be from 90 to 100
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     priority: 60
     shell:
         """
@@ -199,7 +199,7 @@ rule select_norsnp_nor_indels:
     log: config['LOG'] + '/' + "SelectMix_{chr}_{mode}.log"
     benchmark: config['BENCH'] + "/SelectMix_{chr}_{mode}.txt"
     priority: 59
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     shell:
         """
         {gatk} SelectVariants \
@@ -219,7 +219,7 @@ rule combine:
     output:
         filtrVCF=(config['VCF_Final'] + "/VQSR/{chr}/Merged_after_VQSR_{chr}_{mode}.vcf")
     priority: 70
-    conda: "envs/preprocess.yaml"
+    conda: "envs/gatk.yaml"
     shell:
         "{gatk} MergeVcfs -I {input.snps} -I {input.indel} -O {output} 2> {log}"
 
