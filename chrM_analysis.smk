@@ -3,6 +3,7 @@ import read_stats
 import os
 import getpass
 
+
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 gatk = config['gatk']
@@ -45,7 +46,7 @@ def get_refdir_by_sex(wildcards):
     return ref_dir
 
 sample_names = SAMPLEINFO.keys()
-sample_sex_names = get_sample_sex_combi(SAMPLEINFO)
+sample_sex_names = get_validated_sex(SAMPLEINFO)
 
 rule chrM_analysis_all:
     input:
