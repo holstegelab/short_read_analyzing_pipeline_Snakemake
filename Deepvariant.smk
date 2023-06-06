@@ -38,24 +38,27 @@ use rule * from Aligner
 
 mode = config.get("computing_mode", "WES")
 
-def generate_gvcf(wildcards):
-    """Generate gvcf file name."""
-    res = []
-    for sample in sample_names:
-        sinfo = SAMPLEINFO[sample]
-        if sinfo['sex'] == 'F':
-            for chrom in main_chrs_ploidy_female:
-                res.append(os.path.join(current_dir, config['DEEPVARIANT'], 'gVCF', chrom, sample + '.' + chrom + '.female.g.vcf.gz'))
-        else:
-            for chrom in main_chrs_ploidy_female:
-                res.append(os.path.join(current_dir, config['DEEPVARIANT'], 'gVCF', chrom, sample + '.' + chrom + '.male.g.vcf.gz'))
-    return res
-
 rule Deepvariant_all:
     input:
-        generate_gvcf,
+        expand("{gvcf}/{sample}.done",sample=sample_names, gvcf = config['DEEPVARIANT']),
         rules.Aligner_all.input
     default_target: True
+
+
+def get_gvcf_files(wildcards):
+    sample = wildcards['sample']
+    res = []
+    for chrom in main_chrs_ploidy_male:
+        res.append(os.path.join(cur_dir, config['DEEPVARIANT'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
+    return res
+
+rule gvcf_sample_done:
+    input:
+        get_gvcf_files
+    output:
+        cram = touch(os.path.join(config['DEEPVARIANT'], "{sample}.done"))
+
+
 
 def get_chrom_capture_kit_bed(wildcards):
     chrom = wildcards.chrom
@@ -77,18 +80,18 @@ rule deepvariant:
         bam =  rules.markdup.output.mdbams,
         bai = rules.markdup.output.mdbams_bai
     output:
-        vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.{sex}.vcf.gz"),
-        gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.{sex}.g.vcf.gz")
-    params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}.{sex}"),
+        vcf = os.path.join(current_dir, config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.vcf.gz"),
+        gvcf = os.path.join(current_dir, config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.g.vcf.gz")
+    params: inter_dir = os.path.join(current_dir, config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}"),
             bed=get_chrom_capture_kit_bed,
             cd = current_dir + '/',
     container: 'docker://google/deepvariant:1.5.0'
     benchmark:
-        os.path.join(current_dir, config['BENCH'],"{sample}.{chrom}.{sex}.wholedeepvariant.txt")
+        os.path.join(current_dir, config['BENCH'],"{sample}.{chrom}.wholedeepvariant.txt")
     resources:
         n=2, #set in profile using singularity-args. Waiting for rule-specific args. 
         mem_mb=3000       
-    log: os.path.join(current_dir, config['LOG'],"{sample}.{chrom}.{sex}.wholedeepvariant.log")
+    log: os.path.join(current_dir, config['LOG'],"{sample}.{chrom}.wholedeepvariant.log")
     shell:
         """
         /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={params.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}

@@ -40,13 +40,14 @@ def generate_encrypted_crams(wildcards):
     for sample in sample_names:
         sinfo = SAMPLEINFO[sample]
         if sinfo['sex'] == 'F':
-            res.append(os.path.join(config['CRAM'], sample + '.female.mapped_hg38.cram.c4gh'))
+            res.append(os.path.join(config['CRAM'], sample + '.mapped_hg38.cram.c4gh'))
         else:
-            res.append(os.path.join(config['CRAM'], sample + '.male.mapped_hg38.cram.c4gh'))
+            res.append(os.path.join(config['CRAM'], sample + '.mapped_hg38.cram.c4gh'))
     return res
 
 rule Encrypt_all:
-    input: generate_encrypted_crams
+    input: 
+        expand("{cram}/{sample}.mapped_hg38.cram.c4gh",sample=sample_names, cram = config['CRAM'])
     default_target: True
 
 sk = config.get("private_key", os.path.join(config['RES'],".c4gh/master_key_for_encryption"))
@@ -56,10 +57,12 @@ pk2 = config.get("public_key_2", os.path.join(config['RES'],".c4gh/recipient2.pu
 PKs = [pk1, pk2]
 
 
+agh_dcache = config.get('agh_processed', os.path.join(config['RES'],".agh/agh_processed.conf"))
+
 
 rule Encrypt_crams:
     input: rules.mCRAM.output.CRAM
-    output: enCRAM=os.path.join(config['CRAM'],"{sample}.{sex}.mapped_hg38.cram.c4gh")
+    output: enCRAM=temp(os.path.join(config['CRAM'],"{sample}.{sex}.mapped_hg38.cram.c4gh"))
     params:
             private_key = sk,
             public_key = expand("--recipient_pk {PKs}", PKs = PKs)
@@ -68,3 +71,21 @@ rule Encrypt_crams:
         """
         crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
         """
+
+rule copy_to_dcache:
+    input:
+        rules.Encrypt_crams.output.enCRAM
+    output:
+        os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied")
+    run:
+        sample = SAMPLEINFO[wildcards['sample']]
+        target = sample['target']
+
+        if target is None:
+            target = sample['study'] + '/' + sample['samplefile']
+        if target.endswith('/'):
+            target = target[:-1]
+
+        shell("rclone --config {agh_dcache} copy {input} agh:processed/{target}/")    
+        shell("touch {output}")
+

@@ -883,13 +883,5 @@ rule mCRAM:
         "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {resources.n} -o {output.CRAM} {input.bam} 2> {log}"
 
 
-rule copy_to_dcache:
-    input:
-        rules.mCRAM.output.CRAM
-    output:
-        os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied")
-    shell:
-        """
-            cp {input} {output}
-        """
+
         
