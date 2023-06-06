@@ -65,6 +65,7 @@ module GLnexus:
     config: config
 
 
+
 #SV = config.get("SV", "RUN_SV")
 #if SV == "RUN_SV":
 #    use rule * from SV_delly
@@ -95,13 +96,13 @@ if end_point == "gVCF":
     if gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
         use rule * from Aligner
-        END_RULE = [rules.gVCF_all.input, rules.Stat_all.input]
+        END_RULE = [rules.gVCF_all.input, rules.Stat_all.input, rules.Encrypt_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
         use rule * from Deepvariant
         use rule * from Aligner
-        END_RULE = rules.Deepvariant_all.input
+        END_RULE = [rules.DeepVariant_all.input, rules.Stat_all.input, rules.Encrypt_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. "
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
 elif end_point == "Align" or end_point == "Aligner":

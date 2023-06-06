@@ -34,20 +34,9 @@ module Aligner:
     config: config
 use rule * from Aligner
 
-def generate_encrypted_crams(wildcards):
-    """Generate gvcf file name."""
-    res = []
-    for sample in sample_names:
-        sinfo = SAMPLEINFO[sample]
-        if sinfo['sex'] == 'F':
-            res.append(os.path.join(config['CRAM'], sample + '.mapped_hg38.cram.c4gh'))
-        else:
-            res.append(os.path.join(config['CRAM'], sample + '.mapped_hg38.cram.c4gh'))
-    return res
-
 rule Encrypt_all:
     input: 
-        expand("{cram}/{sample}.mapped_hg38.cram.c4gh",sample=sample_names, cram = config['CRAM'])
+        expand("{cram}/{sample}.mapped_hg38.cram.copied",sample=sample_names, cram = config['CRAM'])
     default_target: True
 
 sk = config.get("private_key", os.path.join(config['RES'],".c4gh/master_key_for_encryption"))
@@ -62,7 +51,7 @@ agh_dcache = config.get('agh_processed', os.path.join(config['RES'],".agh/agh_pr
 
 rule Encrypt_crams:
     input: rules.mCRAM.output.CRAM
-    output: enCRAM=temp(os.path.join(config['CRAM'],"{sample}.{sex}.mapped_hg38.cram.c4gh"))
+    output: enCRAM=temp(os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.c4gh"))
     params:
             private_key = sk,
             public_key = expand("--recipient_pk {PKs}", PKs = PKs)
@@ -86,6 +75,6 @@ rule copy_to_dcache:
         if target.endswith('/'):
             target = target[:-1]
 
-        shell("rclone --config {agh_dcache} copy {input} agh:processed/{target}/")    
+        shell("rclone --config {agh_dcache} copy {input} agh_processed:{target}/")    
         shell("touch {output}")
 

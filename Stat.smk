@@ -59,8 +59,25 @@ rule Stat_all:
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
         expand(os.path.join(config['STAT'], "{sample}.done"), sample = sample_names)
-    default_target: True
+    default_target: True        
+    conda: 'envs/gatk.yaml'        
+    output: 'gatk_loaded'
+    shell: """touch {output}"""
+    
 
+
+#preload conda environments
+#these are currently called through a shell statement, and are not used in the snakemake rules
+#due to this, they are not detected by snakemake and are not automatically loaded
+rule conda_environment_gatk:
+    conda: 'envs/gatk.yaml'
+    output: 'gatk_loaded'
+    shell: """touch {output}"""
+
+rule conda_environment_verifybamid:
+    output: 'verifybamid_loaded'
+    conda: 'envs/verifybamid.yaml'
+    shell: """touch {output}"""
 
 
 def get_stat_files(wildcards):
@@ -167,7 +184,7 @@ rule hs_stats:
     run:
         ref=get_ref_by_sex(wildcards)
         shell("""gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
-            -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.interval} \
+            -I {input.bam} -R {ref} -BI {input.interval} -TI {input.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}.hs_metrics 2> {log}""", conda_env='envs/gatk.yaml')
@@ -243,7 +260,7 @@ rule samtools_stat:
         n=1
     run:
         ref = get_ref_by_sex(wildcards)
-        shell("samtools stat -@ {resources.n} -r {params.ref} {input.bam} > {output}", conda_env='envs/preprocess.yaml')
+        shell("samtools stat -@ {resources.n} -r {ref} {input.bam} > {output}", conda_env='envs/preprocess.yaml')
 
 
 # extract info about capture kit from SAMPLEFILE
@@ -276,7 +293,7 @@ rule samtools_stat_exome:
         n=1
     run:
         ref  = get_ref_by_sex(wildcards)
-        shell("samtools stat -@ {resources.n} -t {params.bed_interval} -r {params.ref} {input.bam} > {output}",conda_env='envs/preprocess.yaml')
+        shell("samtools stat -@ {resources.n} -t {params.bed_interval} -r {ref} {input.bam} > {output}",conda_env='envs/preprocess.yaml')
 
 rule bamstats_all:
     input:
