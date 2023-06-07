@@ -129,12 +129,13 @@ rule CalibrateDragstrModel:
         mem_mb = get_mem_mb_CalibrateDragstrModel
     log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
+    conda: 'envs/gatk.yaml'
     run:
         ref = get_ref_by_sex(wildcards)
         str_ref = get_strref_by_sex(wildcards)
         shell("""{gatk} CalibrateDragstrModel --java-options \
-                    "-Xmx{resources.mem_mb}m {params.java_options}"  -R {ref} -I {input.bam} 
-                    -O {output} -str {str_ref} 2>{log}""", conda_env='envs/gatk.yaml')
+                    "-Xmx{resources.mem_mb}m {params.java_options}"  -R {ref} -I {input.bam} \
+                    -O {output} -str {str_ref} 2>{log}""")
 
 # verifybamid
 # verifybamid has some bugs and require samtools lower version

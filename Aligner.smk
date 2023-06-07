@@ -336,6 +336,7 @@ rule split_alignments_by_readgroup:
         mem_mb=1000
     params:
         cramref=get_cram_ref
+    conda: config['CONDA_MAIN']        
     run:
         sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)        
         readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
@@ -366,7 +367,7 @@ rule split_alignments_by_readgroup:
                 samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
 
                 """
-            shell(cmd,conda_env=config['CONDA_MAIN'])
+            shell(cmd)
 
 
 
@@ -585,6 +586,7 @@ rule kmer_combine:
     resources:
         n=1, #very low usage (<1)
         mem_mb=1000,
+    conda: 'envs/kmc.yaml'
     run:
         final = output.out1[:-8]
         shell("cp {input.in_files[0]} {final}.kmc_pre")
@@ -596,7 +598,7 @@ rule kmer_combine:
                 mv {final}.kmc_suf {final}.tmp.kmc_suf
                 kmc_tools simple {final}.tmp {fname} kmers_subtract {final}
                 rm {final}.tmp.kmc_suf
-                rm {final}.tmp.kmc_pre""", conda_env='envs/kmc.yaml')
+                rm {final}.tmp.kmc_pre""")
 
 rule get_validated_sex:
     input:
@@ -620,6 +622,7 @@ rule get_validated_sex:
         kmerauto=os.path.join(config['RES'], config['kmerauto']),
         kmerdir=config['KMER'],
         process_sex = srcdir('process_sex.py')
+    conda: 'envs/kmc.yaml'        
     shell:  """
            #intersecting fastq kmers with kmers of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
            kmc_tools simple {params.kmerdir}/{wildcards.sample} {params.kmerchry} -cx1 intersect {output.chry}.tmp  -ocleft
@@ -732,6 +735,7 @@ rule dechimer:
     resources:
         n=1, #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~2 cores.
         mem_mb=1000
+    conda: 'envs/pypy.yaml'        
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]
@@ -742,7 +746,7 @@ rule dechimer:
         if res > float(config['DECHIMER_THRESHOLD']):
             cmd = """(samtools view -h --threads {resources.n} {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} |
              samtools fixmate -@ {resources.n} -u -O BAM -m - {output.bam})"""
-            shell(cmd,conda_env='envs/pypy.yaml')
+            shell(cmd)
         else:
             cmd = """
                     #switching to copy instead of hard link, as hard link also updates modification time input.bam
@@ -826,10 +830,11 @@ rule merge_rgs:
         n=1,
         mem_mb=2000
     priority: 19
+    conda: "envs/preprocess.yaml"
     run:
         if len(input.bam) > 1:
             cmd = "samtools merge -@ {resources.n} {output} {input.bam} 2> {log}"
-            shell(cmd,conda_env='envs/preprocess.yaml')
+            shell(cmd)
         else:
             #switching to copy as hard link updates also time of input.bam
             cmd = "cp {input.bam} {output}"

@@ -60,24 +60,7 @@ rule Stat_all:
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
         expand(os.path.join(config['STAT'], "{sample}.done"), sample = sample_names)
     default_target: True        
-    conda: 'envs/gatk.yaml'        
-    output: 'gatk_loaded'
-    shell: """touch {output}"""
     
-
-
-#preload conda environments
-#these are currently called through a shell statement, and are not used in the snakemake rules
-#due to this, they are not detected by snakemake and are not automatically loaded
-rule conda_environment_gatk:
-    conda: 'envs/gatk.yaml'
-    output: 'gatk_loaded'
-    shell: """touch {output}"""
-
-rule conda_environment_verifybamid:
-    output: 'verifybamid_loaded'
-    conda: 'envs/verifybamid.yaml'
-    shell: """touch {output}"""
 
 
 def get_stat_files(wildcards):
@@ -145,9 +128,10 @@ rule verifybamid:
     resources:
         mem_mb=400,
         n=2
+    conda: 'envs/verifybamid.yaml'
     run:
         ref = get_ref_by_sex(wildcards)
-        shell("""verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}""", conda_env='envs/verifybamid.yaml')
+        shell("""verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}""")
 
 def get_capture_kit_interval_list(wildcards):
     """Returns the capture kit interval list file for the sample type of the sample"""
@@ -169,7 +153,6 @@ rule hs_stats:
         interval = get_capture_kit_interval_list
     output:
         HS_metrics=os.path.join(config['STAT'], "{sample}.hs_metrics")
-    log: os.path.join(config['LOG'], "HS_stats_{sample}.log")
     benchmark: os.path.join(config['BENCH'],  "HS_stats_{sample}.txt")
     priority: 99
     params:
@@ -177,17 +160,18 @@ rule hs_stats:
         Q=10,
         #minimum Mapping Quality for a read to contribute cov(default=20)
         MQ=10,
-        java_options=config['DEFAULT_JAVA_OPTIONS'],
+        java_options=config['DEFAULT_JAVA_OPTIONS']
     resources: mem_mb = get_mem_mb_hs_stats,
                tmpdir = tmpdir,  
                n=1            
+    conda: 'envs/gatk.yaml'               
     run:
         ref=get_ref_by_sex(wildcards)
         shell("""gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
             -I {input.bam} -R {ref} -BI {input.interval} -TI {input.interval} \
             -Q {params.Q} -MQ {params.MQ} \
             --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
-            -O stats/{wildcards.sample}.hs_metrics 2> {log}""", conda_env='envs/gatk.yaml')
+            -O stats/{wildcards.sample}.hs_metrics""")
 
 def get_mem_mb_Artifact_stats(wildcrads, attempt):
     return (attempt * int(3000))
@@ -216,10 +200,11 @@ rule Artifact_stats:
     resources: mem_mb = get_mem_mb_Artifact_stats,
                 tmpdir= tmpdir,
                 n=1
+    conda: 'envs/gatk.yaml'
     run:
         ref=get_ref_by_sex(wildcards)
         shell("""gatk --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectSequencingArtifactMetrics  --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
-                    -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> {log}""", conda_env='envs/gatk.yaml')
+                    -R {ref} --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> {log}""")
 
 
 def get_mem_mb_OXOG_metrics(wildcrads, attempt):
@@ -242,10 +227,11 @@ rule OXOG_metrics:
                 mem_mb = get_mem_mb_OXOG_metrics,
                 tmpdir= tmpdir,
                 n=1
+    conda: 'envs/gatk.yaml'
     run:
         ref=get_ref_by_sex(wildcards)
         shell("""gatk  --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectOxoGMetrics -I {input.bam} -O {output} -R {ref} \
-         --INTERVALS {input.interval} 2> {log}""", conda_env='envs/gatk.yaml')
+         --INTERVALS {input.interval} 2> {log}""")
 
 rule samtools_stat:
     input:
@@ -258,9 +244,10 @@ rule samtools_stat:
     resources:
         mem_mb=130,
         n=1
+    conda: 'envs/preprocess.yaml'        
     run:
         ref = get_ref_by_sex(wildcards)
-        shell("samtools stat -@ {resources.n} -r {ref} {input.bam} > {output}", conda_env='envs/preprocess.yaml')
+        shell("samtools stat -@ {resources.n} -r {ref} {input.bam} > {output}")
 
 
 # extract info about capture kit from SAMPLEFILE
@@ -291,9 +278,10 @@ rule samtools_stat_exome:
     resources:
         mem_mb=130,
         n=1
+    conda: 'envs/preprocess.yaml'
     run:
         ref  = get_ref_by_sex(wildcards)
-        shell("samtools stat -@ {resources.n} -t {params.bed_interval} -r {ref} {input.bam} > {output}",conda_env='envs/preprocess.yaml')
+        shell("samtools stat -@ {resources.n} -t {params.bed_interval} -r {ref} {input.bam} > {output}")
 
 rule bamstats_all:
     input:
