@@ -41,8 +41,8 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 sample_names = SAMPLEINFO.keys()
 
 
-def get_refdir_by_sex(wildcards):
-    sex = get_validated_sex(wildcards['sample'])
+def get_refdir_by_validated_sex(wildcards, input):
+    sex = get_validated_sex_file(input)
     if sex == 'female':
         ref_dir=os.path.join(config['RES'],config['ref_female_dir'])
     else:
@@ -662,13 +662,13 @@ def get_mem_mb_align_reads(wildcards, attempt):
 rule align_reads:
     """Align reads to reference genome."""
     input:
-        get_prepared_fastq,
-        ensure_readgroup_info,
-        rules.get_validated_sex.output.yaml
+        fastq=get_prepared_fastq,
+        rg=ensure_readgroup_info,
+        validated_sex=rules.get_validated_sex.output.yaml
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.aligned.bam")
     params:
-        ref_dir=get_refdir_by_sex,
+        ref_dir=get_refdir_by_validated_sex,
         dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
         rg_params=get_readgroup_params
     conda: "envs/preprocess.yaml"
@@ -681,7 +681,7 @@ rule align_reads:
         n=24, #reducing thread count, as first part of dragmap is single threaded
         mem_mb=get_mem_mb_align_reads,
     shell:
-        "({params.dragmap} -r {params.ref_dir} -1 {input[0]} -2 {input[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.n}  | samtools view -@ {resources.n} -o {output.bam}) 2> {log.dragmap_log} "
+        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.n}  | samtools view -@ {resources.n} -o {output.bam}) 2> {log.dragmap_log} "
 # --enable-sampling true used for (unmapped) bam input. It prevents bugs when in output bam information about whicj read is 1st or 2nd in pair.
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 

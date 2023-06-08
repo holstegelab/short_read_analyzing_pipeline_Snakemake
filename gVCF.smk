@@ -89,25 +89,25 @@ rule ComposeSTRTableFile:
 
 
 
-
-
-def get_strref_by_sex(wildcards):
-    sex = get_validated_sex(wildcards['sample'])
+ 
+def get_strref_by_validated_sex(wildcards, input):
+    sex = get_validated_sex_file(input)
     if sex == 'female':
         ref=os.path.join(config['RES'],config['ref_female_str'])
     else:
         ref=os.path.join(config['RES'],config['ref_male_str'])
 
     return ref
-   
-def get_ref_by_sex(wildcards):
-    sex = get_validated_sex(wildcards['sample'])
+
+def get_ref_by_validated_sex(wildcards, input):
+    sex = get_validated_sex_file(input)
     if sex == 'female':
         ref=os.path.join(config['RES'],config['ref_female'])
     else:
         ref=os.path.join(config['RES'],config['ref_male'])
 
     return ref
+
  
 def get_mem_mb_CalibrateDragstrModel(wildcards, attempt):
     return attempt * int(2500)
@@ -118,11 +118,14 @@ rule CalibrateDragstrModel:
     """
     input:
         bam = rules.markdup.output.mdbams,
-        bai= rules.markdup.output.mdbams_bai        
+        bai= rules.markdup.output.mdbams_bai,
+        validated_sex = rules.get_validated_sex.output.yaml       
     output:
         dragstr_model = config['BAM'] + "/{sample}-dragstr.txt"
     priority: 26
     params:
+        ref=get_ref_by_validated_sex,
+        str_ref = get_strref_by_validated_sex,
         java_options=config['DEFAULT_JAVA_OPTIONS']
     resources: 
         n = 1,
@@ -130,12 +133,10 @@ rule CalibrateDragstrModel:
     log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
     benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
     conda: 'envs/gatk.yaml'
-    run:
-        ref = get_ref_by_sex(wildcards)
-        str_ref = get_strref_by_sex(wildcards)
-        shell("""{gatk} CalibrateDragstrModel --java-options \
-                    "-Xmx{resources.mem_mb}m {params.java_options}"  -R {ref} -I {input.bam} \
-                    -O {output} -str {str_ref} 2>{log}""")
+    shell:
+        """{gatk} CalibrateDragstrModel --java-options \
+                    "-Xmx{resources.mem_mb}m {params.java_options}"  -R {params.ref} -I {input.bam} \
+                    -O {output} -str {params.str_ref} 2>{log}"""
 
 # verifybamid
 # verifybamid has some bugs and require samtools lower version
