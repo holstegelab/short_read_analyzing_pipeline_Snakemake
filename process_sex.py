@@ -3,7 +3,6 @@ import pandas as pd
 import scipy
 import os
 import sys
-from ibidas import *
 import yaml
 
 result = {}
@@ -11,7 +10,6 @@ autofit = None
 
 files = sys.argv[1:4]
 result_file = sys.argv[5]
-result_file2 = sys.argv[6]
 
 for fname, colname in zip(files, ['auto', 'chry','chrx','chrm']):
     #read data
@@ -58,6 +56,5 @@ result['dist_chry_ratio'] = [float(e) for e in (numpy.array(result['dist_chry'])
 
 
 result['sex'] = 'F' if result['yyratio'] < 0.05 else 'M'
-Save(result,result_file)
-with open(result_file2, 'w') as f:
+with open(result_file, 'w') as f:
     yaml.dump(result, f, default_flow_style=False)

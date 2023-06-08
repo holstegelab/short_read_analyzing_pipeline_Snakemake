@@ -606,7 +606,6 @@ rule get_validated_sex:
        out2=os.path.join(config['KMER'],"{sample}.kmc_suf")
     output:
        yaml=os.path.join(config['KMER'],"{sample}.result.yaml"),
-       res=os.path.join(config['KMER'],"{sample}.result.dat"), #ibidas format
        chry=os.path.join(config['KMER'],"{sample}.chry.tsv"),
        chrx=os.path.join(config['KMER'],"{sample}.chrx.tsv"),
        chrm=os.path.join(config['KMER'],"{sample}.chrm.tsv"),
@@ -646,7 +645,7 @@ rule get_validated_sex:
            rm {output.auto}.*
 
            #calculate summary statistics
-           python {params.process_sex} {output.auto} {output.chry} {output.chrx} {output.chrm} {output.res} {output.yaml}
+           python {params.process_sex} {output.auto} {output.chry} {output.chrx} {output.chrm} {output.yaml}
         """
 # rule to align reads from cutted fq on hg38 ref
 # use dragmap aligner
