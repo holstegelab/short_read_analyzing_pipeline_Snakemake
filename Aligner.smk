@@ -215,8 +215,7 @@ def calculate_active_use(wildcards):
     else:
         res += 2.0 * active_filesize
     return res
-
-
+    
 rule start_sample:
     """Start processing a sample. 
     

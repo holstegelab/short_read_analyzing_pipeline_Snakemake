@@ -47,7 +47,7 @@ module Tools:
 use rule BedToIntervalList from Tools
 
 mode = config.get("computing_mode", "WES")
-cur_dir = os.getcwd()
+
 
 
 
@@ -61,14 +61,14 @@ def get_gvcf_files(wildcards):
     sample = wildcards['sample']
     res = []
     for chrom in main_chrs_ploidy_male:
-        res.append(os.path.join(cur_dir, config['gVCF'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
+        res.append(os.path.join(config['gVCF'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
     return res
 
 rule gvcf_sample_done:
     input:
         get_gvcf_files
     output:
-        cram = touch(os.path.join(config['gVCF'], "{sample}.done"))
+        touch(os.path.join(config['gVCF'], "{sample}.done"))
 
 
 
@@ -199,8 +199,8 @@ rule HaplotypeCaller:
         contam= rules.verifybamid.output.VBID_stat,
         bai = rules.markdup.output.mdbams_bai
     output:
-        gvcf= ensure(os.path.join(cur_dir, config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
-        tbi = ensure(os.path.join(cur_dir, config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True),
+        gvcf= ensure(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
+        tbi = ensure(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True),
     log:
         HaplotypeCaller=config['LOG'] + "/{sample}_{chrom}_haplotypecaller.log"
     benchmark:
@@ -236,8 +236,8 @@ rule reblock_gvcf:
     input:
         gvcf = rules.HaplotypeCaller.output.gvcf,
         idx = rules.HaplotypeCaller.output.tbi
-    output: gvcf_reblock = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
-            tbi = ensure(os.path.join(cur_dir, config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True)
+    output: gvcf_reblock = ensure(os.path.join(config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
+            tbi = ensure(os.path.join(config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True)
     log: Reblock=config['LOG'] + "/{sample}_{chrom}_reblock.log"
     benchmark:
         config['BENCH'] + "/{sample}_{chrom}_reblock.txt"
