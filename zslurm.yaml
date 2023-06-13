@@ -1,3 +1,4 @@
+#adapt conda prefix to own home folder
 #copy to ~/.config/snakemake/zslurm/config.yaml
 use-conda: True
 use-singularity: True

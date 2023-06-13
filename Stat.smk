@@ -57,6 +57,7 @@ rule Stat_all:
     input:
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
+        expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
         expand(os.path.join(config['STAT'], "{sample}.done"), sample = sample_names)
     default_target: True        
     
@@ -387,3 +388,27 @@ rule gatherosostats:
         header, data = read_stats.combine_oxo_stats(samples,pre_adapter,bait_bias)
         read_stats.write_tsv(str(output),header,data)
 
+
+def get_sex_stats(wildcards):
+    sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
+    return [os.path.join(config['KMER'], f'{sample}.result.yaml') for sample in sampleinfo.keys()]
+
+rule gathersexstats:
+    input:
+        get_sex_stats
+    benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherSexstat.txt")
+    output:
+        '{samplefile}.sex_chrom.tab'
+    resources:
+        n=1,
+        mem_mb=10000        
+    run:
+        sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
+        samples = list(sampleinfo.keys())
+        samples.sort()
+
+        kmer_stats = [os.path.join(config['KMER'], f"{sample}.result.yaml") for sample in samples]
+        sex_reported = [sampleinfo[sample]['sex'] for sample in samples]
+
+        header, data = read_stats.combine_sex_stats(samples,kmer_stats, sex_reported)
+        read_stats.write_tsv(str(output),header,data)

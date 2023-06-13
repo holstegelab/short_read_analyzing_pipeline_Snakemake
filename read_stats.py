@@ -1,6 +1,7 @@
 import csv
 import os
 import numpy
+import yaml
 from scipy.stats import linregress
 
 CHROMS = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -211,6 +212,20 @@ def read_contam(filename):
         freemix = data[6]
     return freemix
 
+def combine_sex_stats(samples, result_files, sex_reported):
+    result = []
+    header = ['sample', 'reported', 'sex', 'yyratio', 'auto', 'chrx', 'chry', 'intercept', 'slope', 'rvalue', 'xratio', 'yratio', 'dist_auto', 'dist_chrx', 'dist_chrx_ratio', 'dist_chry', 'dist_chry_ratio']
+    for sample, result_file, reported in zip(samples,result_files, sex_reported):
+            with open(result_file,'r') as f:
+                x = yaml.load(f, Loader=yaml.FullLoader)
+                for k in x.keys():
+                    if k.startswith('dist'):
+                        x[k] = ';'.join(['%.2f' % e for e in x[k]])
+                v = tuple([sample, reported] + [x[h] for h in header[2:]])                
+                result.append(v)
+    return (header,result)
+                
+
 def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias):
     header = ['sample', 'total_sequences', 'avg_quality', 'average_length', 'max_length', 'error_rate',\
               'insert_size_avg', 'insert_size_std',\
@@ -262,26 +277,6 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
     return (tuple(header), data)
 
 
-def combine_quality_stats_lille(samples, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias):
-    header = ['sample', 'unmapped_ratio_all','mqual20_ratio_all','secondary_ratio_all','supplementary_ratio_all','sup_diffchrom_ratio_all','duplicate_ratio_all','duplicate_supplement_ratio_all','soft_clipped_bp_ratio_all','aligned_bp_ratio_all','inserted_bp_ratio_all','deleted_bp_ratio_all','total_bp_all','soft_clipped_bp_ratio_filter_50_all','soft_clipped_bp_ratio_filter_60_all','soft_clipped_bp_ratio_filter_70_all','aligned_bp_ratio_filter_50_all','aligned_bp_ratio_filter_60_all','aligned_bp_ratio_filter_70_all','poly_a_all','illumina_adapter_all','pcr_adapter_1_all','pcr_adapter_2_all','nextera_all',\
-              'unmapped_ratio_exome','mqual20_ratio_exome','secondary_ratio_exome','supplementary_ratio_exome','sup_diffchrom_ratio_exome','duplicate_ratio_exome','duplicate_supplement_ratio_exome','soft_clipped_bp_ratio_exome','aligned_bp_ratio_exome','inserted_bp_ratio_exome','deleted_bp_ratio_exome','total_bp_exome','soft_clipped_bp_ratio_filter_50_exome','soft_clipped_bp_ratio_filter_60_exome','soft_clipped_bp_ratio_filter_70_exome','aligned_bp_ratio_filter_50_exome','aligned_bp_ratio_filter_60_exome','aligned_bp_ratio_filter_70_exome','poly_a_exome','illumina_adapter_exome','pcr_adapter_1_exome','pcr_adapter_2_exome','nextera_exome', \
-              'pre_ac', 'pre_ag','pre_at', 'pre_ca', 'pre_cg', 'pre_ct', 'pre_ga', 'pre_gc', 'pre_gt', 'pre_ta', 'pre_tc', 'pre_tg',\
-              'bait_ac', 'bait_ag','bait_at', 'bait_ca', 'bait_cg', 'bait_ct', 'bait_ga', 'bait_gc', 'bait_gt', 'bait_ta', 'bait_tc', 'bait_tg',\
-              ]
-    data = []
-
-    for sample, ba,be, pre_ad, bait_b in zip(samples, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias):
-        print('Reading statistics for sample: ' + sample)
-
-        nrow = [sample]
-        nrow =nrow + read_bamstat(ba)
-        nrow = nrow + read_bamstat(be)
-        nrow = nrow + read_artifacts(pre_ad)
-        nrow = nrow + read_artifacts(bait_b)
-
-        data.append(tuple(nrow))
-    return (tuple(header), data)
-
 def read_coverage(filename):
     with open(filename,'r') as f:
         header = f.readline()
@@ -309,59 +304,6 @@ def read_coverage_ext(filename):
     return dict([(key,numpy.array(value)) for key,value in zip(['chrom','start','stop', 'readcount', 'meancoverage', 'gcbias', 'ncount', 'mapability', 'macs', 'exome', 'exome_500padding', 'segdup'], zip(*res))])
 
 
-
-autosomes =[str(e) for e in  range(1,23)]
-non_autosomes = set(['X', 'Y', 'MT'])
-def summarize_sexchrom(data):
-    res = {'autosome_total': 0, 'autosome_length':0, 'x_total':0, 'x_length':0, 'y_total': 0, 'y_length': 0, 'mt_total':0, 'mt_length':0}
-
-    for chrom, start, stop, meancoverage in zip(data['chrom'], data['start'], data['stop'], data['meancoverage']):
-        l = stop - start
-        if chrom in autosomes:
-            chrom = 'autosome'
-        elif chrom in non_autosomes:
-            chrom = chrom.lower()
-        else:
-            continue
-        res[chrom + '_total'] += l * meancoverage
-        res[chrom + '_length'] += l
-
-
-    nres = {}
-    for chrom in ['autosome', 'x', 'y', 'mt']:
-        nres[chrom + '_length'] = res[chrom + '_length']
-        if res[chrom + '_length'] == 0:
-            nres[chrom + '_meancov'] = numpy.nan
-        else:
-            nres[chrom + '_meancov'] = res[chrom + '_total'] / float(res[chrom + '_length'])
-    return nres        
-        
-def summarize_chrom(data):
-    res = {'autosome_total': 0, 'autosome_length':0, 'x_total':0, 'x_length':0, 'y_total': 0, 'y_length': 0, 'mt_total':0, 'mt_length':0}
-    for chrom in CHROMS:
-        chrom = chrom.lower()
-        res[chrom + '_total'] = 0
-        res[chrom + '_length'] = 0
-
-
-
-    for chrom, start, stop, meancoverage in zip(data['chrom'], data['start'], data['stop'], data['meancoverage']):
-        l = stop - start
-        chrom = chrom.lower()
-        res[chrom + '_total'] += l * meancoverage
-        res[chrom + '_length'] += l
-
-
-    nres = {}
-    for chrom in CHROMS:
-        chrom = chrom.lower()
-        nres[chrom + '_length'] = res[chrom + '_length']
-        if res[chrom + '_length'] == 0:
-            nres[chrom + '_meancov'] = numpy.nan
-        else:
-            nres[chrom + '_meancov'] = res[chrom + '_total'] / float(res[chrom + '_length'])
-    return nres        
- 
 
 def correct_coverage_within(data):
     data = dict(data)
@@ -431,29 +373,6 @@ def combine_chrom_stats(samples, exomecov_filenames, windowcov_filenames):
         data.append(tuple(nrow))
     return (tuple(header), data)
 
-
-
-def combine_sex_stats(samples, exomecov_filenames, windowcov_filenames):
-    header = ['sample', 'exome_autosome_mean', 'exome_x_mean', 'exome_y_mean', 'exome_mt_mean',
-              'window_autosome_mean', 'window_x_mean', 'window_y_mean', 'window_mt_mean']
-    data = []
-
-    for sample, exomecov_filename, windowcov_filename in zip(samples, exomecov_filenames, windowcov_filenames):
-        print('Reading statistics for sample: ' + sample)
-        c1 = read_coverage(exomecov_filename)
-        c2 = read_coverage_ext(windowcov_filename)
-
-        exome_cov, exome_model_stats = correct_coverage_within(c1)
-        window_cov, window_model_stats = correct_coverage_within(c2)
-
-        exome_scov = summarize_sexchrom(exome_cov)
-        window_scov = summarize_sexchrom(window_cov)
-
-        nrow = [sample, exome_scov['autosome_meancov'], exome_scov['x_meancov'], exome_scov['y_meancov'], exome_scov['mt_meancov'],\
-                        window_scov['autosome_meancov'], window_scov['x_meancov'], window_scov['y_meancov'], window_scov['mt_meancov']]
-
-        data.append(tuple(nrow))
-    return (tuple(header), data)
 
 
 

@@ -19,7 +19,7 @@ wildcard_constraints:
 from read_samples import *
 from common import *
 SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
-
+sample_names = SAMPLEINFO.keys()
    
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
@@ -83,7 +83,7 @@ module GLnexus:
 gVCF_combine_method = config.get("Combine_gVCF_method", "GLnexus")
 
 
-gvcf_caller = config.get("caller", "HaplotypeCaller")
+gvcf_caller = config.get("caller", "both")
 glnexus_filtration = config.get("glnexus_filtration", "default")
 
 
@@ -93,18 +93,85 @@ VQSR = config.get("VQSR","NO")
 end_point = config.get("END_POINT", "gVCF")
 
 if end_point == "gVCF":
-    if gvcf_caller == "HaplotypeCaller":
+    if gvcf_caller == "both":
+        use rule * from gVCF
+        use rule * from Deepvariant
+        use rule * from Aligner
+
+
+        rule finished_sample:
+            """Finish processing a sample. 
+            
+            This rule will drop the reservation of space on active storage.
+            """
+            input:
+                os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied"),
+                os.path.join(config['gVCF'], "{sample}.done"),
+                os.path.join(config['DEEPVARIANT'], "{sample}.done"),
+                os.path.join(config['STAT'], "{sample}.done")
+            output:
+                os.path.join(config['SOURCEDIR'], "{sample}.finished")
+            resources:
+                active_use_remove=Aligner.calculate_active_use,
+                mem_mb=50,
+                n=1
+            shell: """
+                touch {output}
+                """
+        print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller and Deepvariant (both=default). "
+              "To change gVCF caller selection pass '--config caller=Deepvariant' or '--config caller=HaplotypeCaller'")
+    elif gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
         use rule * from Aligner
-        END_RULE = [rules.gVCF_all.input, rules.Stat_all.input, rules.Encrypt_all.input]
+        
+        rule finished_sample:
+            """Finish processing a sample. 
+            
+            This rule will drop the reservation of space on active storage.
+            """
+            input:
+                os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied"),
+                os.path.join(config['gVCF'], "{sample}.done"),
+                os.path.join(config['STAT'], "{sample}.done")
+            output:
+                os.path.join(config['SOURCEDIR'], "{sample}.finished")
+            resources:
+                active_use_remove=Aligner.calculate_active_use,
+                mem_mb=50,
+                n=1
+            shell: """
+                touch {output}
+                """
+
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
         use rule * from Deepvariant
         use rule * from Aligner
-        END_RULE = [rules.DeepVariant_all.input, rules.Stat_all.input, rules.Encrypt_all.input]
+        
+        rule finished_sample:
+            """Finish processing a sample. 
+            
+            This rule will drop the reservation of space on active storage.
+            """
+            input:
+                os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied"),                
+                os.path.join(config['DEEPVARIANT'], "{sample}.done"),
+                os.path.join(config['STAT'], "{sample}.done")
+            output:
+                os.path.join(config['SOURCEDIR'], "{sample}.finished")
+            resources:
+                active_use_remove=Aligner.calculate_active_use,
+                mem_mb=50,
+                n=1
+            shell: """
+                touch {output}
+                """
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. "
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
+    END_RULE = [expand("{source}/{sample}.finished",sample=sample_names, source = config['SOURCEDIR']), rules.Stat_all.input]
+
+
 elif end_point == "Align" or end_point == "Aligner":
     use rule * from Aligner
     END_RULE = rules.Aligner_all.input
