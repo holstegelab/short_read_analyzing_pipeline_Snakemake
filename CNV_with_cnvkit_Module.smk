@@ -29,6 +29,8 @@ module Aligner:
     config: config
 use rule * from Aligner
 
+# find a variant to determine samples with close coverage profile
+# cov2bed
 
 
 rule CNV_with_cnvkit_Module_all:
@@ -256,3 +258,9 @@ rule export_as_vcf:
     conda: 'envs/preprocess.yaml'
     shell:
         """cnvkit.py export vcf {input.cns} -i "{wildcards.sample}" -o {output}"""
+
+
+
+#         PON creation:
+#     cov2bed create few files with different coverage, lets say 1, 10, 15, 20, 30, 50
+#     intersect bed files across 

@@ -140,5 +140,117 @@ rule filter_mutect_calls:
     params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
     shell: "gatk FilterMutectCalls -V {input} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
 
+######################################
+#####   Process NUMTs regions   ######
+######################################
+    
+rule extract_NUMTs_reads:
+    input: rules.markdup.output.mdbams
+    output: bam = ensure(os.path.join(config['chrM'], '{sample}_NUMTs.reads.bam'), non_empty = True),
+            bai = os.path.join(config['chrM'], '{sample}_NUMTs.reads.bai')
+    benchmark: os.path.join(config['BENCH'], '{sample}.printreads_NUMTs.txt')
+    log: os.path.join(config['LOG'],"{sample}.printreads_NUMTs.log")
+    conda: "envs/preprocess.yaml"
+    params: NUMTs_bed = os.path.join(config['RES'], config ['NUMTs'])
+    shell:
+        "gatk PrintReads -I {input} -L {params.NUMTs_bed} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter 2> {log}"
+
+rule sort_by_name_NUMT:
+    input: rules.extract_NUMTs_reads.output.bam
+    output: ensure(temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs_namesorted.reads.bam')), non_empty = True)
+    benchmark: os.path.join(config['BENCH'], '{sample}.namesort_NUMTs.txt')
+    log: os.path.join(config['LOG'],"{sample}.namesort_NUMTs.log")
+    conda: "envs/preprocess.yaml"
+    shell: "samtools sort -n {input} > {output} 2> {log}"
+
+
+rule align_NUMT_to_chrM:
+    input: rules.sort_by_name_NUMT.output
+    output: bam = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMT_shifted.reads.bam')),
+            bai = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTS_shifted.reads.bai'))
+    conda: "envs/preprocess.yaml"
+    params:
+        ref_dir=os.path.join(config['RES'], config['ORIG_MT']),
+        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
+    log: os.path.join(config['LOG'],"{sample}.origchrM_NUMT_align.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.origchrM_NUMT_align.txt')
+    resources: n = 12,
+                mem_mb = 22000
+    shell: "{params.dragmap} -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
+
+rule realign_to_shifted_ref_NUMT:
+    input: rules.sort_by_name_NUMT.output
+    output: bam_shifted = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMT_shifted.reads.bam')),
+            bai_shifted= temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTS_shifted.reads.bai'))
+    conda: "envs/preprocess.yaml"
+    params:
+        ref_dir=os.path.join(config['RES'], config['SHIFTED_MT']),
+        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
+    log: os.path.join(config['LOG'],"{sample}.shiftedchrM_NUMT_align.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_NUMT_align.txt')
+    resources: n = 12,
+                mem_mb = 22000
+    shell: "{params.dragmap} -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
+
+rule mutect_orig_NUMT:
+    input: rules.align_NUMT_to_chrM.output.bam
+    output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz')), non_empty = True),
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.idx')), non_empty = True)
+    conda: "envs/preprocess.yaml"
+    log: os.path.join(config['LOG'],"{sample}.mutect_orig_NUMT.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig_NUMT.txt')
+    params: mt_ref = os.path.join(config['RES'], config['ORIG_MT_fa'])
+    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input} -O {output.vcf}"
+
+rule mutect_shifted_NUMT:
+    input: rules.realign_to_shifted_ref_NUMT.output.bam_shifted
+    output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz')), non_empty = True),
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.idx')), non_empty = True),
+    conda: "envs/preprocess.yaml"
+    log: os.path.join(config['LOG'],"{sample}.mutect_shift_NUMT.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_NUMT.txt')
+    params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
+    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input} -O {output.vcf}"
+
+
+rule shift_back_NUMT:
+    input: rules.mutect_shifted_NUMT.output.vcf
+    output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')), non_empty = True),
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.idx')), non_empty = True),
+    params: chain = config['MT_CHAIN'],
+            mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
+    conda: "envs/preprocess.yaml"
+    log: os.path.join(config['LOG'],"{sample}.mutect_shift_back_NUMT.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_back_NUMT.txt')
+    shell: "gatk LiftoverVcf -I {input} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null "
+
+rule merge_vcfs_NUMT:
+    input: o_vcf = rules.mutect_orig_NUMT.output.vcf,
+            sb_vcf = rules.shift_back_NUMT.output.vcf
+    output: merged_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz'), non_empty = True),
+            merged_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.idx'), non_empty = True),
+    conda: "envs/preprocess.yaml"
+    log: os.path.join(config['LOG'],"{sample}.vcf_merge_NUMT.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge_NUMT.txt')
+    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output}"
+
+rule filter_mutect_calls_NUMT:
+    input: rules.merge_vcfs_NUMT.output.merged_vcf
+    output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMTs_filtred.vcf.gz'), non_empty = True),
+            filtred_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.idx'), non_empty = True),
+    conda: "envs/preprocess.yaml"
+    log: os.path.join(config['LOG'],"{sample}.filtr_NUMT.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.filtr_NUMT.txt')
+    params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
+    shell: "gatk FilterMutectCalls -V {input} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
+
+
+
+#
+# CN estimation is basically done by calculation coverage across chrM and autosomal chr.
+#     MT_CN(wgs) = 2*(mean mtDNA cov/haploid autosomal coverage)
+#     mtDNA cov could be calculated by bedtools
+#     autosomal cov calculated by GATK (collectwgsmetrics?)
+
 
 
