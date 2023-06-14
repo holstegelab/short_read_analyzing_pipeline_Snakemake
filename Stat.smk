@@ -172,7 +172,6 @@ rule hs_stats:
         """gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
             -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.interval} \
             -Q {params.Q} -MQ {params.MQ} \
-            --PER_TARGET_COVERAGE stats/{wildcards.sample}_per_targ_cov \
             -O stats/{wildcards.sample}.hs_metrics"""
 
 def get_mem_mb_Artifact_stats(wildcrads, attempt):
