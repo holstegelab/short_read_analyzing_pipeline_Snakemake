@@ -74,7 +74,7 @@ rule stat_sample_done:
         os.path.join(config['STAT'], '{sample}.pre_adapter_summary_metrics'),
         os.path.join(config['STAT'], '{sample}.bait_bias_summary_metrics'),
         os.path.join(config['STAT'], '{sample}.pre_adapter_detail_metrics'),
-        os.path.join(config['STAT'],'{sample}.bait_bias_detail_metrics')
+        os.path.join(config['STAT'],'{sample}.bait_bias_detail_metrics'),
         os.path.join(config['STAT'],'cov', '{sample}.regions.bed.gz')
     output:
         cram = touch(os.path.join(config['STAT'], "{sample}.done"))    

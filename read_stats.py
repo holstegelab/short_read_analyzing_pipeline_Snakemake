@@ -306,7 +306,7 @@ def read_merge_stats(filename):
         result['merge_' + key] = float(value)
     result['merge_readded_fragments_ratio'] = result['merge_readded_fragments'] / result['merge_fragments']
     result['merge_supplementary_alignments_ratio'] = result['merge_supplementary_alignments'] / result['merge_alignments']
-    result['merge_restored_read_ratio'] = (result['merge_restored_read1s'] + result['merge_restored_read2s']) / (2.0 * result['merge_fragments']
+    result['merge_restored_read_ratio'] = (result['merge_restored_read1s'] + result['merge_restored_read2s']) / (2.0 * result['merge_fragments'])
     result['merge_restored_bp_ratio'] = (result['merge_restored_bp_read1'] + result['merge_restored_bp_read2']) / result['merge_total_bp']
     return result
 

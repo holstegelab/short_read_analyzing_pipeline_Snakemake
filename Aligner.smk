@@ -671,7 +671,7 @@ rule align_reads:
         rg_params=get_readgroup_params
     conda: "envs/preprocess.yaml"
     log:
-        dragmap_log=os.path.join(config['STATS'],"{sample}.{readgroup}.dragmap.log"),
+        dragmap_log=os.path.join(config['STAT'],"{sample}.{readgroup}.dragmap.log"),
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.dragmap.txt")
     priority: 15
