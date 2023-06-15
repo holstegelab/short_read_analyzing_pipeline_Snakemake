@@ -75,8 +75,36 @@ rule stat_sample_done:
         os.path.join(config['STAT'], '{sample}.bait_bias_summary_metrics'),
         os.path.join(config['STAT'], '{sample}.pre_adapter_detail_metrics'),
         os.path.join(config['STAT'],'{sample}.bait_bias_detail_metrics')
+        os.path.join(config['STAT'],'cov', '{sample}.regions.bed.gz')
     output:
         cram = touch(os.path.join(config['STAT'], "{sample}.done"))    
+
+
+
+rule coverage:
+    """Estimates contamination in a sample using the verifybamid2 tool"""
+    input:
+        bam = rules.markdup.output.mdbams,
+        bai= rules.markdup.output.mdbams_bai        
+    output:
+        os.path.join(config['STAT'], 'cov', '{sample}.regions.bed.gz'),
+        os.path.join(config['STAT'], 'cov', '{sample}.regions.bed.gz.csi'),
+        temp(os.path.join(config['STAT'], 'cov', '{sample}.mosdepth.global.dist.txt')),
+        temp(os.path.join(config['STAT'], 'cov', '{sample}.mosdepth.summary.txt'))    
+    benchmark: config['BENCH'] + "/{sample}.mosdepth.txt"
+    priority: 27
+    params:
+        bed = os.path.join(config['RES'], config['windows']),
+        prefix = os.path.join(config['STAT'], 'cov', '{sample}')
+    resources:
+        mem_mb=2200,
+        n=1
+    conda: 'envs/mosdepth.yaml'
+    shell:
+        """
+            mkdir -p `dirname {output[0]}`
+            mosdepth  --threads 2 -b {params.bed} --no-per-base {params.prefix} {input.bam}
+        """
 
 
 
