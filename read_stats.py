@@ -268,7 +268,7 @@ def read_adapter_removal_stats(filename):
                 if a.startswith('Number of'):
                     a = a[10:]
                 elif a == 'Total number of read pairs':
-                    a = 'read_pairs'
+                    a = 'ar_read_pairs'
                 elif a == 'Average length of retained reads':
                     a = 'ar_average_read_length_retained'
                 a = a.replace(' ', '_')
@@ -277,9 +277,9 @@ def read_adapter_removal_stats(filename):
             else:
                 break 
     
-    result['ar_aligned_fraction'] = result['well_aligned_read_pairs'] / result['read_pairs']
-    result['ar_adapter_fraction'] = result['reads_with_adapters[1]']  / (2.0 * result['read_pairs'])
-    result['ar_retained_fraction'] = result['retained_reads'] / (2.0 * result['read_pairs'])
+    result['ar_aligned_fraction'] = result['well_aligned_read_pairs'] / result['ar_read_pairs']
+    result['ar_adapter_fraction'] = result['reads_with_adapters[1]']  / (2.0 * result['ar_read_pairs'])
+    result['ar_retained_fraction'] = result['retained_reads'] / (2.0 * result['ar_read_pairs'])
     return result 
     
 
@@ -288,7 +288,7 @@ def read_adapter_identify_stats(filename):
         rows = f.readlines()
         overlapping = int(rows[1][9:].strip().split(' ')[0])
         contained = int(rows[2][12:].strip().split(' ')[0])
-        cons = [e[15:] for e in rows if 'Consensus' in e]
+        cons = [e[15:].strip() for e in rows if 'Consensus' in e]
     
 
     return {'ai_reads_aligned': overlapping, 'ai_n_adapter': contained, 'ai_adapter1':cons[0], 'ai_adapter2':cons[1]}
@@ -299,7 +299,7 @@ def read_merge_stats(filename):
     with open(filename,'r') as f:
         rows = f.readlines()
     while rows:
-        row = rows.pop(0)
+        row = rows.pop(0).strip()
         if not row:
             break 
         key,value = row.split('\t')
@@ -310,7 +310,24 @@ def read_merge_stats(filename):
     result['merge_restored_bp_ratio'] = (result['merge_restored_bp_read1'] + result['merge_restored_bp_read2']) / result['merge_total_bp']
     return result
 
-def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merge_stats, dechimers):
+
+def read_dragmap_stats(filename):
+    result_value = {}
+    result_ratio = {}
+    with open(filename, 'r') as f:
+        rows = f.readlines()
+    
+    mappingrows = [e.split(',')[2:] for e in rows if 'MAPPING' in e]
+    for row in mappingsrows:
+        key = row[0].strip().replace(' ','_').lower()
+        value = float(row[1].strip())
+        ratio = float(row[2].strip())
+        result_ratio[key] = ratio
+        result_value[key] = value
+    return (result_value, result_ratio)
+        
+
+def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merge_stats, dragmaps, dechimers):
     
     header = ['sample','readgroup']
     header_adapterr = ['ar_read_pairs', 'ar_aligned_fraction', 'ar_adapter_fraction', 'ar_retained_fraction', 'ar_average_read_length_retained']
@@ -320,7 +337,7 @@ def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merg
     header = header + header_adapterr + header_adapteri + header_merge
     data = []
 
-    for sample_rg, adapter_r, adapter_i, merge_stats, dechimer_stats in zip(sample_readgroups, adapter_removals, adapters, merge_stats, dechimers):
+    for sample_rg, adapter_r, adapter_i, merge_stats, dragmap_stats, dechimer_stats in zip(sample_readgroups, adapter_removals, adapters, merge_stats, dragmaps, dechimers):
         sample, rg = sample_rg
         
         a = read_adapter_removal_stats(adapter_r)

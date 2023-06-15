@@ -57,6 +57,7 @@ rule Stat_all:
     input:
         expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
+        expand("{samplefile}.bam_rg_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
         expand(os.path.join(config['STAT'], "{sample}.done"), sample = sample_names)
     default_target: True        
@@ -389,9 +390,10 @@ rule gather_rg_stats:
         aremoval = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.adapter_removal.log") for s_rg in sample_readgroups]
         aidentify= [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.fastq.adapters") for s_rg in sample_readgroups]
         mergestats = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.merge_stats.tsv") for s_rg in sample_readgroups]
+        dragmap_stats = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.dragmap.log") for s_rg in sample_readgroups]
         dechimer_stats = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.dechimer_stats.tsv") for s_rg in sample_readgroups]
 
-        header, data = read_stats.combine_rg_quality_stats(sample_readgroups, aremoval, aidentify, mergestats, dechimer_stats)
+        header, data = read_stats.combine_rg_quality_stats(sample_readgroups, aremoval, aidentify, mergestats, dragmap_stats, dechimer_stats)
         read_stats.write_tsv(str(output),header,data)
 
 
