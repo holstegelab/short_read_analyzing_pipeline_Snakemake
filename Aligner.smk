@@ -671,7 +671,7 @@ rule align_reads:
         rg_params=get_readgroup_params
     conda: "envs/preprocess.yaml"
     log:
-        dragmap_log=os.path.join(config['LOG'],"{sample}.{readgroup}.dragmap.log"),
+        dragmap_log=os.path.join(config['STATS'],"{sample}.{readgroup}.dragmap.log"),
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.dragmap.txt")
     priority: 15
@@ -690,9 +690,9 @@ def get_mem_mb_merge_bam_alignment(wildcards, attempt):
 rule merge_bam_alignment:
     """Merge bam alignment with original fastq files."""
     input:
-        get_fastqpaired,
-        rules.align_reads.output.bam,
-        rules.adapter_removal_identify.output.stats
+        fastq=get_fastqpaired,
+        bam=rules.align_reads.output.bam,
+        stats=rules.adapter_removal_identify.output.stats
     output:
         bam=os.path.join(config['BAM'],"{sample}.{readgroup}.merged.bam"),
         stats=os.path.join(config['STAT'],"{sample}.{readgroup}.merge_stats.tsv")
@@ -708,8 +708,8 @@ rule merge_bam_alignment:
     priority: 15
     shell:
         """
-         (samtools view -h --threads {resources.n} {input[2]} | \
-         pypy {params.bam_merge} -a  {input[0]} -b {input[1]} -s {output.stats}  |\
+         (samtools view -h --threads {resources.n} {input.bam} | \
+         pypy {params.bam_merge} -a  {input.fastq[0]} -b {input.fastq[1]} -s {output.stats}  |\
          samtools fixmate -@ {resources.n} -u -O BAM -m - {output.bam}) 2> {log}
         """
 

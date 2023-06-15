@@ -224,9 +224,120 @@ def combine_sex_stats(samples, result_files, sex_reported):
                 v = tuple([sample, reported] + [x[h] for h in header[2:]])                
                 result.append(v)
     return (header,result)
-                
 
-def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias):
+
+def read_hsstats(filename):
+    header = []
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    while lines:
+        row = lines.pop(0).strip()
+        if 'BAIT_SET' in row:
+            header = tuple([e.lower() for e in row.split('\t')])[:-2]
+        elif header:
+            data = tuple(row.split("\t"))
+            break
+
+    data= dict(zip(header,data))
+    header2 = []
+    data2 = []
+    while lines:
+       row = lines.pop(0).strip()
+       if 'coverage' in row:
+           header2 = row.split('\t')
+       elif header2:
+           if row:
+               data2.append(tuple(row.split('\t')))
+
+    
+    return (data, data2)
+
+def read_adapter_removal_stats(filename):
+    result = {}
+    with open(filename,'r') as f:
+        rows = f.readlines()
+        while rows:
+            row = rows.pop(0)
+            if 'Trimming statistics' in row:
+                break   
+        while rows:
+            row = rows.pop(0)
+            if ':' in row:   
+                a,b = row.split(':')
+                a = a.strip()
+                if a.startswith('Number of'):
+                    a = a[10:]
+                elif a == 'Total number of read pairs':
+                    a = 'read_pairs'
+                elif a == 'Average length of retained reads':
+                    a = 'ar_average_read_length_retained'
+                a = a.replace(' ', '_')
+                b = float(b.strip())
+                result[a] = b
+            else:
+                break 
+    
+    result['ar_aligned_fraction'] = result['well_aligned_read_pairs'] / result['read_pairs']
+    result['ar_adapter_fraction'] = result['reads_with_adapters[1]']  / (2.0 * result['read_pairs'])
+    result['ar_retained_fraction'] = result['retained_reads'] / (2.0 * result['read_pairs'])
+    return result 
+    
+
+def read_adapter_identify_stats(filename):
+    with open(filename,'r') as f:
+        rows = f.readlines()
+        overlapping = int(rows[1][9:].strip().split(' ')[0])
+        contained = int(rows[2][12:].strip().split(' ')[0])
+        cons = [e[15:] for e in rows if 'Consensus' in e]
+    
+
+    return {'ai_reads_aligned': overlapping, 'ai_n_adapter': contained, 'ai_adapter1':cons[0], 'ai_adapter2':cons[1]}
+
+
+def read_merge_stats(filename):
+    result = {}
+    with open(filename,'r') as f:
+        rows = f.readlines()
+    while rows:
+        row = rows.pop(0)
+        if not row:
+            break 
+        key,value = row.split('\t')
+        result['merge_' + key] = float(value)
+    result['merge_readded_fragments_ratio'] = result['merge_readded_fragments'] / result['merge_fragments']
+    result['merge_supplementary_alignments_ratio'] = result['merge_supplementary_alignments'] / result['merge_alignments']
+    result['merge_restored_read_ratio'] = (result['merge_restored_read1s'] + result['merge_restored_read2s']) / (2.0 * result['merge_fragments']
+    result['merge_restored_bp_ratio'] = (result['merge_restored_bp_read1'] + result['merge_restored_bp_read2']) / result['merge_total_bp']
+    return result
+
+def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merge_stats, dechimers):
+    
+    header = ['sample','readgroup']
+    header_adapterr = ['ar_read_pairs', 'ar_aligned_fraction', 'ar_adapter_fraction', 'ar_retained_fraction', 'ar_average_read_length_retained']
+    header_adapteri = ['ai_reads_aligned','ai_n_adapter','ai_adapter1','ai_adapter2']
+    header_merge = ['merge_fragments', 'merge_alignments', 'merge_supplementary_alignments_ratio', 'merge_total_bp', 'merge_primary_soft_clipped_bp_ratio', 'merge_supplementary_bp_ratio',\
+                    'merge_readded_fragments_ratio', 'merge_restored_read_ratio', 'merge_restored_bp_ratio']
+    header = header + header_adapterr + header_adapteri + header_merge
+    data = []
+
+    for sample_rg, adapter_r, adapter_i, merge_stats, dechimer_stats in zip(sample_readgroups, adapter_removals, adapters, merge_stats, dechimers):
+        sample, rg = sample_rg
+        
+        a = read_adapter_removal_stats(adapter_r)
+        nrow = [sample,rg] + [a[h] for h in header_adapterr]
+        
+        a = read_adapter_identify_stats(adapter_i)
+        nrow = nrow + [a[h] for h in header_adapteri]
+        
+        a = read_merge_stats(merge_stats)
+        nrow = nrow + [a[h] for h in header_merge]
+            
+        data.append(nrow)
+ 
+    return (tuple(header), data)
+
+
+def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias, hsstats):
     header = ['sample', 'total_sequences', 'avg_quality', 'average_length', 'max_length', 'error_rate',\
               'insert_size_avg', 'insert_size_std',\
               'reads_unmapped', 'reads_properly_paired', 'reads_mq0', 'reads_duplicated',\
@@ -237,14 +348,33 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
               'exome_total_sequences', 'exome_reads_mq0', 'exome_insert_size_avg', 'exome_insert_size_std','exome_pairs_inward', 'exome_pairs_outward', 'exome_pairs_other', 'exome_pairs_diff_chromosomes',\
               'exome_insertions_frac','exome_deletions_frac','exome_insertions_length_avg','exome_deletions_length_avg','exome_coverage1_frac','exome_coverage1000plus_frac','exome_gc35_depth','exome_gc50_depth',\
               'pca2_freemix',\
-              'unmapped_ratio_all','mqual20_ratio_all','secondary_ratio_all','supplementary_ratio_all','sup_diffchrom_ratio_all','duplicate_ratio_all','duplicate_supplement_ratio_all','soft_clipped_bp_ratio_all','aligned_bp_ratio_all','inserted_bp_ratio_all','deleted_bp_ratio_all','total_bp_all','soft_clipped_bp_ratio_filter_50_all','soft_clipped_bp_ratio_filter_60_all','soft_clipped_bp_ratio_filter_70_all','aligned_bp_ratio_filter_50_all','aligned_bp_ratio_filter_60_all','aligned_bp_ratio_filter_70_all','poly_a_all','illumina_adapter_all','pcr_adapter_1_all','pcr_adapter_2_all','nextera_all',\
-              'unmapped_ratio_exome','mqual20_ratio_exome','secondary_ratio_exome','supplementary_ratio_exome','sup_diffchrom_ratio_exome','duplicate_ratio_exome','duplicate_supplement_ratio_exome','soft_clipped_bp_ratio_exome','aligned_bp_ratio_exome','inserted_bp_ratio_exome','deleted_bp_ratio_exome','total_bp_exome','soft_clipped_bp_ratio_filter_50_exome','soft_clipped_bp_ratio_filter_60_exome','soft_clipped_bp_ratio_filter_70_exome','aligned_bp_ratio_filter_50_exome','aligned_bp_ratio_filter_60_exome','aligned_bp_ratio_filter_70_exome','poly_a_exome','illumina_adapter_exome','pcr_adapter_1_exome','pcr_adapter_2_exome','nextera_exome', \
-              'pre_ac', 'pre_ag','pre_at', 'pre_ca', 'pre_cg', 'pre_ct', 'pre_ga', 'pre_gc', 'pre_gt', 'pre_ta', 'pre_tc', 'pre_tg',\
-              'bait_ac', 'bait_ag','bait_at', 'bait_ca', 'bait_cg', 'bait_ct', 'bait_ga', 'bait_gc', 'bait_gt', 'bait_ta', 'bait_tc', 'bait_tg',\
+              'unmapped_ratio_all','mqual20_ratio_all','secondary_ratio_all','supplementary_ratio_all','sup_diffchrom_ratio_all','duplicate_ratio_all','duplicate_supplement_ratio_all','soft_clipped_bp_ratio_all',\
+              'aligned_bp_ratio_all','inserted_bp_ratio_all','deleted_bp_ratio_all','total_bp_all','soft_clipped_bp_ratio_filter_50_all','soft_clipped_bp_ratio_filter_60_all','soft_clipped_bp_ratio_filter_70_all',\
+              'aligned_bp_ratio_filter_50_all','aligned_bp_ratio_filter_60_all','aligned_bp_ratio_filter_70_all','poly_a_all','illumina_adapter_all','pcr_adapter_1_all','pcr_adapter_2_all','nextera_all',\
+              'unmapped_ratio_exome','mqual20_ratio_exome','secondary_ratio_exome','supplementary_ratio_exome','sup_diffchrom_ratio_exome','duplicate_ratio_exome','duplicate_supplement_ratio_exome',\
+              'soft_clipped_bp_ratio_exome','aligned_bp_ratio_exome','inserted_bp_ratio_exome','deleted_bp_ratio_exome','total_bp_exome','soft_clipped_bp_ratio_filter_50_exome','soft_clipped_bp_ratio_filter_60_exome',\
+              'soft_clipped_bp_ratio_filter_70_exome','aligned_bp_ratio_filter_50_exome','aligned_bp_ratio_filter_60_exome','aligned_bp_ratio_filter_70_exome','poly_a_exome','illumina_adapter_exome','pcr_adapter_1_exome',\
+              'pcr_adapter_2_exome','nextera_exome', \
+              'pre_adapter_ac', 'pre_adapter_ag','pre_adapter_at', 'pre_adapter_ca', 'pre_adapter_cg', 'pre_adapter_ct', 'pre_adapter_ga', 'pre_adapter_gc', 'pre_adapter_gt', 'pre_adapter_ta', 'pre_adapter_tc', 'pre_adapter_tg',\
+              'bait_bias_ac', 'bait_bias_ag','bait_bias_at', 'bait_bias_ca', 'bait_bias_cg', 'bait_bias_ct', 'bait_bias_ga', 'bait_bias_gc', 'bait_bias_gt', 'bait_bias_ta', 'bait_bias_tc', 'bait_bias_tg',\
               ]
+
+    hsstat_header = ['bait_design_efficiency',
+	'on_bait_bases','near_bait_bases','off_bait_bases',
+	'pct_off_bait',	'mean_bait_coverage','pct_usable_bases_on_bait','pct_usable_bases_on_target',
+	'fold_enrichment',
+	'on_target_bases','mean_target_coverage',	'median_target_coverage','zero_cvg_targets_pct',
+	'pct_exc_dupe',	'pct_exc_mapq',	'pct_exc_baseq','pct_exc_overlap','pct_exc_off_target',
+	'pct_target_bases_1x',	'pct_target_bases_2x',	'pct_target_bases_10x',	'pct_target_bases_20x',
+	'pct_target_bases_30x',	'pct_target_bases_50x',	'pct_target_bases_100x','pct_target_bases_250x',
+	'pct_target_bases_500x',
+	'at_dropout','gc_dropout',
+	'het_snp_sensitivity']
+    header = header +  hsstat_header
+
     data = []
 
-    for sample, genome_filename, exome_filename, v2,ba,be, pre_ad, bait_b in zip(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias):
+    for sample, genome_filename, exome_filename, v2,ba,be, pre_ad, bait_b, hsstat in zip(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias, hsstats):
         print('Reading statistics for sample: ' + sample)
         stats = read_stats_full(genome_filename)
         
@@ -272,6 +402,9 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
         nrow = nrow + read_bamstat(be)
         nrow = nrow + read_artifacts(pre_ad)
         nrow = nrow + read_artifacts(bait_b)
+
+        hsstat = read_hsstats(hsstat)
+        nrow = nrow + [e[h] for h in hsstat_header]
 
         data.append(tuple(nrow))
     return (tuple(header), data)

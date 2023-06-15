@@ -63,38 +63,18 @@ rule Stat_all:
     
 
 
-def get_stat_files(wildcards):
-    sample = wildcards['sample']
-    
-    res = []
-
-    res.append(os.path.join(config['STAT'], f"{sample}.hs_metrics"))
-    res.append(os.path.join(config['STAT'], f"{sample}.OXOG"))
-    res.append(os.path.join(config['STAT'], f"{sample}.samtools.stat"))
-    res.append(os.path.join(config['STAT'],  f'{sample}.samtools.exome.stat'))
-    res.append(os.path.join(config['STAT'], 'contam',  f'{sample}.verifybamid.pca2.selfSM'))
-    res.append(os.path.join(config['STAT'], f'{sample}.bam_all.tsv'))
-    res.append(os.path.join(config['STAT'], f'{sample}.bam_exome.tsv'))
-    res.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_summary_metrics'))
-    res.append(os.path.join(config['STAT'], f'{sample}.bait_bias.bait_bias_summary_metrics'))       
-    res.append(os.path.join(config['STAT'], f'{sample}.bait_bias.pre_adapter_detail_metrics'))
-    res.append(os.path.join(config['STAT'],f'{sample}.bait_bias.bait_bias_detail_metrics'))
-
-    return res
-
 rule stat_sample_done:
     input:
         os.path.join(config['STAT'], "{sample}.hs_metrics"),
-        os.path.join(config['STAT'], "{sample}.OXOG"),
         os.path.join(config['STAT'], "{sample}.samtools.stat"),
         os.path.join(config['STAT'], '{sample}.samtools.exome.stat'),
         os.path.join(config['STAT'], 'contam',  '{sample}.verifybamid.pca2.selfSM'),
         os.path.join(config['STAT'], '{sample}.bam_all.tsv'),
         os.path.join(config['STAT'], '{sample}.bam_exome.tsv'),
-        os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
-        os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
-        os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_detail_metrics'),
-        os.path.join(config['STAT'],'{sample}.bait_bias.bait_bias_detail_metrics')
+        os.path.join(config['STAT'], '{sample}.pre_adapter_summary_metrics'),
+        os.path.join(config['STAT'], '{sample}.bait_bias_summary_metrics'),
+        os.path.join(config['STAT'], '{sample}.pre_adapter_detail_metrics'),
+        os.path.join(config['STAT'],'{sample}.bait_bias_detail_metrics')
     output:
         cram = touch(os.path.join(config['STAT'], "{sample}.done"))    
 
@@ -184,11 +164,10 @@ rule Artifact_stats:
         interval = get_capture_kit_interval_list,
         validated_sex = rules.get_validated_sex.output.yaml
     output:
-        Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias.bait_bias_summary_metrics'),
-        Pre_adapter = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_summary_metrics'),
-        Bait_bias_det = os.path.join(config['STAT'],'{sample}.bait_bias.bait_bias_detail_metrics'),
-        Pre_adapter_det = os.path.join(config['STAT'], '{sample}.bait_bias.pre_adapter_detail_metrics'),
-        # Artifact_matrics = config['STAT'] + "/{sample}.bait_bias.bait_bias_detail_metrics"
+        Bait_bias = os.path.join(config['STAT'], '{sample}.bait_bias_summary_metrics'),
+        Pre_adapter = os.path.join(config['STAT'], '{sample}.pre_adapter_summary_metrics'),
+        Bait_bias_det = os.path.join(config['STAT'],'{sample}.bait_bias_detail_metrics'),
+        Pre_adapter_det = os.path.join(config['STAT'], '{sample}.pre_adapter_detail_metrics'),
     priority: 99
     log: os.path.join(config['LOG'], "Artifact_stats_{sample}.log")
     benchmark: os.path.join(config['BENCH'], "Artifact_stats_{sample}.txt")
@@ -197,7 +176,7 @@ rule Artifact_stats:
         #minimum Base Quality for a base to contribute cov (default=20)
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
-        out = os.path.join(config['STAT'], "{sample}.bait_bias"),
+        out = os.path.join(config['STAT'], "{sample}"),
         dbsnp = os.path.join(config['RES'], config['dbsnp']),
         java_options=config['DEFAULT_JAVA_OPTIONS']
     resources: mem_mb = get_mem_mb_Artifact_stats,
@@ -353,19 +332,47 @@ rule gatherstats:
         vpca2 = [os.path.join(config['STAT'], 'contam', f"{sample}.verifybamid.pca2.selfSM") for sample in samples]
         bam_extra_all = [os.path.join(config['STAT'], f"{sample}.bam_all.tsv") for sample in samples]
         bam_extra_exome = [os.path.join(config['STAT'], f"{sample}.bam_exome.tsv") for sample in samples]
-        pre_adapter = [os.path.join(config['STAT'], f"{sample}.bait_bias.pre_adapter_summary_metrics") for sample in samples]
-        bait_bias = [os.path.join(config['STAT'], f"{sample}.bait_bias.bait_bias_summary_metrics") for sample in samples]
+        pre_adapter = [os.path.join(config['STAT'], f"{sample}.pre_adapter_summary_metrics") for sample in samples]
+        bait_bias = [os.path.join(config['STAT'], f"{sample}.bait_bias_summary_metrics") for sample in samples]
+        hs_stats = [os.path.join(config['STAT'], f"{sample}.hs_metrics") for sample in samples]
 
 
-        header, data = read_stats.combine_quality_stats(samples,stats,exome_stats,vpca2,bam_extra_all,bam_extra_exome,pre_adapter,bait_bias)
+        header, data = read_stats.combine_quality_stats(samples,stats,exome_stats,vpca2,bam_extra_all,bam_extra_exome,pre_adapter,bait_bias, hs_stats)
         read_stats.write_tsv(str(output),header,data)
+
+rule gather_rg_stats:
+    input:
+        get_quality_stats
+    benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherrgstat.txt")
+    output:
+        '{samplefile}.bam_rg_quality.tab'
+    resources:
+        n=1,
+        mem_mb=10000        
+    run:
+        sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
+        sample_readgroups = []
+        for sample, sinfo in sampleinfo.items():
+            for readgroup in sinfo['readgroups']:
+                sample_readgroups.append((sample, readgroup['info']['ID']))
+
+        sample_readgroups.sort()
+
+        aremoval = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.adapter_removal.log") for s_rg in sample_readgroups]
+        aidentify= [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.fastq.adapters") for s_rg in sample_readgroups]
+        mergestats = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.merge_stats.tsv") for s_rg in sample_readgroups]
+        dechimer_stats = [os.path.join(config['STAT'], f"{s_rg[0]}.{s_rg[1]}.dechimer_stats.tsv") for s_rg in sample_readgroups]
+
+        header, data = read_stats.combine_rg_quality_stats(sample_readgroups, aremoval, aidentify, mergestats, dechimer_stats)
+        read_stats.write_tsv(str(output),header,data)
+
 
 def get_oxo_stats(wildcards):
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     return [os.path.join(config['STAT'], f'{sample}.done') for sample in sampleinfo.keys()]
 
 
-rule gatherosostats:
+rule gatheroxostats:
     input:
         get_oxo_stats
     output:
@@ -380,8 +387,8 @@ rule gatherosostats:
         samples.sort()
         
 
-        pre_adapter = [os.path.join(config["STAT"],f'{sample}.bait_bias.pre_adapter_detail_metrics') for sample in samples]
-        bait_bias = [os.path.join(config["STAT"],f'{sample}.bait_bias.bait_bias_detail_metrics') for sample in samples]
+        pre_adapter = [os.path.join(config["STAT"],f'{sample}.pre_adapter_detail_metrics') for sample in samples]
+        bait_bias = [os.path.join(config["STAT"],f'{sample}.bait_bias_detail_metrics') for sample in samples]
 
 
         header, data = read_stats.combine_oxo_stats(samples,pre_adapter,bait_bias)
