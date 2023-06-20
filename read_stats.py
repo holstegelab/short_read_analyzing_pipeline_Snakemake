@@ -2,7 +2,7 @@ import csv
 import os
 import numpy
 import yaml
-from scipy.stats import linregress
+
 
 CHROMS = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
@@ -228,6 +228,7 @@ def combine_sex_stats(samples, result_files, sex_reported):
 
 def read_hsstats(filename):
     header = []
+    data = []
     with open(filename, 'r') as f:
         lines = f.readlines()
     while lines:
@@ -310,21 +311,65 @@ def read_merge_stats(filename):
     result['merge_restored_bp_ratio'] = (result['merge_restored_bp_read1'] + result['merge_restored_bp_read2']) / result['merge_total_bp']
     return result
 
+def read_dechimer_stats(filename):
+    result = {}
+    with open(filename,'r') as f:
+        for row in f.readlines():
+            key,value = row.split('\t')
+            result['dechimer_' + key] = float(value)
+    result['dechimer_fragment_modified_ratio'] = result.get('dechimer_fragment_modified',0) / result.get('dechimer_fragment_counter',1.0)
+    result['dechimer_clip_ratio'] = (result.get('dechimer_read1_dechimer_clip',0) + result.get('dechimer_read2_dechimer_clip',0)) / (2.0 * result.get('dechimer_fragment_counter',1.0))
+    result['dechimer_loose_end_clip_ratio'] = (result.get('dechimer_read1_loose_end_clip',0) + result.get('dechimer_read2_loose_end_clip',0)) / (2.0 * result.get('dechimer_fragment_counter',1.0))
+    result['dechimer_all_sup_discarded_ratio'] = (result.get('dechimer_read1_all_sup_discarded',0) + result.get('dechimer_read2_all_sup_discarded',0)) / \
+                                                float(result.get('dechimer_read1_has_supplementary_alignments',1.0) + result.get('dechimer_read2_has_supplementary_alignments',1.0))
+    result['dechimer_min_alignment_length_unmap_ratio'] = (result.get('dechimer_read1_min_align_length_unmap',0) + result.get('dechimer_read2_min_align_length_unmap',0)) / \
+                                        (2.0 * result.get('dechimer_fragment_counter',1.0))
+        
+    return result
+def valid_name(name):
+    name = name.lower()
+    newname = []
+    for char in name:
+        if(char.isalnum() or char == "_"):
+            newname.append(char)
+        else:
+            newname.append("_")
+    newname = "".join(newname)
+    newname = newname.strip("_")
+    if(not newname):
+        return "funknown"
+    if(newname[0].isdigit()):
+        newname = "_" + newname
+    while '__' in newname:
+        newname = newname.replace('__', '_')
+        
+    return str(newname)
 
 def read_dragmap_stats(filename):
-    result_value = {}
+    result_values = {}
     result_ratio = {}
     with open(filename, 'r') as f:
         rows = f.readlines()
     
     mappingrows = [e.split(',')[2:] for e in rows if 'MAPPING' in e]
-    for row in mappingsrows:
-        key = row[0].strip().replace(' ','_').lower()
+    for row in mappingrows:
+        key = 'dm_' + valid_name(row[0].strip())
         value = float(row[1].strip())
-        ratio = float(row[2].strip())
-        result_ratio[key] = ratio
-        result_value[key] = value
-    return (result_value, result_ratio)
+        if len(row) > 2:
+            ratio = float(row[2].strip())
+            result_ratio[key] = ratio
+        result_values[key] = value
+
+    result_ratio['dm_reads_with_indel'] = (result_ratio['dm_reads_with_indel_r1'] + result_ratio['dm_reads_with_indel_r2']) / 2.0        
+    result_ratio['dm_soft_clipped_bases'] = (result_ratio['dm_soft_clipped_bases_r1'] + result_ratio['dm_soft_clipped_bases_r2']) / 2.0
+    result_ratio['dm_mismatched_bases'] = (result_ratio['dm_mismatched_bases_r1'] + result_ratio['dm_mismatched_bases_r2']) / 2.0
+    result_ratio['dm_mismatched_bases_excl_indels'] = (result_ratio['dm_mismatched_bases_r1_excl_indels'] + result_ratio['dm_mismatched_bases_r2_excl_indels']) / 2.0
+    result_ratio['dm_q30_bases_diff'] = (result_ratio['dm_q30_bases_r1'] - result_ratio['dm_q30_bases_r2'])
+    result_ratio['dm_soft_clipped_bases_diff'] = (result_ratio['dm_soft_clipped_bases_r1'] - result_ratio['dm_soft_clipped_bases_r2'])
+    result_ratio['dm_reads_with_indel_diff'] = (result_ratio['dm_reads_with_indel_r1'] - result_ratio['dm_reads_with_indel_r2'])
+    result_ratio['dm_mismatched_bases_diff'] = (result_ratio['dm_mismatched_bases_r1'] - result_ratio['dm_mismatched_bases_r2'])
+    result_values['dm_mapped_bases'] = result_values['dm_mapped_bases_r1'] + result_values['dm_mapped_bases_r2']
+    return (result_values, result_ratio)
         
 
 def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merge_stats, dragmaps, dechimers):
@@ -334,7 +379,19 @@ def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merg
     header_adapteri = ['ai_reads_aligned','ai_n_adapter','ai_adapter1','ai_adapter2']
     header_merge = ['merge_fragments', 'merge_alignments', 'merge_supplementary_alignments_ratio', 'merge_total_bp', 'merge_primary_soft_clipped_bp_ratio', 'merge_supplementary_bp_ratio',\
                     'merge_readded_fragments_ratio', 'merge_restored_read_ratio', 'merge_restored_bp_ratio']
-    header = header + header_adapterr + header_adapteri + header_merge
+
+    header_dm_value = ['dm_total_input_reads', 'dm_mapped_reads','dm_properly_paired_reads','dm_total_bases', 'dm_mapped_bases']
+    header_dm_ratio = ['dm_mapped_reads', 'dm_unmapped_reads', 'dm_singleton_reads_itself_mapped_mate_unmapped',
+        'dm_paired_reads_itself_mate_mapped', 'dm_not_properly_paired_reads_discordant', 'dm_paired_reads_mapped_to_different_chromosomes_mapq_10',
+        'dm_reads_with_mapq_40_inf','dm_reads_with_mapq_30_40', 'dm_reads_with_mapq_20_30', 'dm_reads_with_mapq_10_20', 'dm_reads_with_mapq_0_10',
+        'dm_reads_with_mapq_na_unmapped_reads', 'dm_reads_with_indel', 'dm_soft_clipped_bases', 'dm_mismatched_bases_excl_indels', 'dm_q30_bases', 'dm_soft_clipped_bases_diff', 
+        'dm_reads_with_indel_diff', 'dm_mismatched_bases_diff', 'dm_q30_bases_diff']
+    
+    header_dechimer = ['dechimer_fragment_modified_ratio', 'dechimer_clip_ratio', 'dechimer_loose_end_clip_ratio', 'dechimer_all_sup_discarded_ratio', 'dechimer_min_alignment_length_unmap_ratio']
+
+    
+    header = header + header_adapterr + header_adapteri + header_merge + header_dm_value + header_dm_ratio + header_dechimer
+    
     data = []
 
     for sample_rg, adapter_r, adapter_i, merge_stats, dragmap_stats, dechimer_stats in zip(sample_readgroups, adapter_removals, adapters, merge_stats, dragmaps, dechimers):
@@ -348,7 +405,13 @@ def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merg
         
         a = read_merge_stats(merge_stats)
         nrow = nrow + [a[h] for h in header_merge]
-            
+        
+        a = read_dragmap_stats(dragmap_stats)
+        nrow = nrow + [a[0][h] for h in header_dm_value] + [a[1][h] for h in header_dm_ratio]
+                    
+        a = read_dechimer_stats(dechimer_stats)
+        nrow = nrow + [a[h] for h in header_dechimer]
+                            
         data.append(nrow)
  
     return (tuple(header), data)
@@ -377,16 +440,16 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
               ]
 
     hsstat_header = ['bait_design_efficiency',
-	'on_bait_bases','near_bait_bases','off_bait_bases',
-	'pct_off_bait',	'mean_bait_coverage','pct_usable_bases_on_bait','pct_usable_bases_on_target',
-	'fold_enrichment',
-	'on_target_bases','mean_target_coverage',	'median_target_coverage','zero_cvg_targets_pct',
-	'pct_exc_dupe',	'pct_exc_mapq',	'pct_exc_baseq','pct_exc_overlap','pct_exc_off_target',
-	'pct_target_bases_1x',	'pct_target_bases_2x',	'pct_target_bases_10x',	'pct_target_bases_20x',
-	'pct_target_bases_30x',	'pct_target_bases_50x',	'pct_target_bases_100x','pct_target_bases_250x',
-	'pct_target_bases_500x',
-	'at_dropout','gc_dropout',
-	'het_snp_sensitivity']
+                    'on_bait_bases','near_bait_bases','off_bait_bases',
+                    'pct_off_bait',	'mean_bait_coverage','pct_usable_bases_on_bait','pct_usable_bases_on_target',
+                    'fold_enrichment',
+                    'on_target_bases','mean_target_coverage',	'median_target_coverage','zero_cvg_targets_pct',
+                    'pct_exc_dupe',	'pct_exc_mapq',	'pct_exc_baseq','pct_exc_overlap','pct_exc_off_target',
+                    'pct_target_bases_1x',	'pct_target_bases_2x',	'pct_target_bases_10x',	'pct_target_bases_20x',
+                    'pct_target_bases_30x',	'pct_target_bases_50x',	'pct_target_bases_100x','pct_target_bases_250x',
+                    'pct_target_bases_500x',
+                    'at_dropout','gc_dropout',
+                    'het_snp_sensitivity']
     header = header +  hsstat_header
 
     data = []
@@ -420,20 +483,11 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
         nrow = nrow + read_artifacts(pre_ad)
         nrow = nrow + read_artifacts(bait_b)
 
-        hsstat = read_hsstats(hsstat)
-        nrow = nrow + [e[h] for h in hsstat_header]
+        hsstat = read_hsstats(hsstat)[0]
+        nrow = nrow + [hsstat[h] for h in hsstat_header]
 
         data.append(tuple(nrow))
     return (tuple(header), data)
-
-
-def read_coverage(filename):
-    with open(filename,'r') as f:
-        header = f.readline()
-        res = [(row[0], int(row[1]), int(row[2]), int(row[6]), float(row[7]), float(row[3]), int(row[4]), float(row[5]) if row[5] != '.' else 0.0) for row in csv.reader(f, delimiter='\t')]
-
-    
-    return dict([(key,numpy.array(value)) for key,value in zip(['chrom','start','stop', 'readcount', 'meancoverage', 'gcbias', 'ncount', 'mapability'], zip(*res))])
 
 def read_bamstat(filename):
     print('BAMSTAT', filename)
@@ -445,109 +499,11 @@ def read_bamstat(filename):
         res = [row for row in csv.reader(f, delimiter='\t')][0]
     return res
 
-def read_coverage_ext(filename):
-    with open(filename,'r') as f:
-        header = f.readline()
-        res = [(row[0], int(row[1]), int(row[2]), int(row[10]), float(row[11]), float(row[3]), int(row[4]), float(row[5]) if row[5] != '.' else 0.0, int(row[6]), int(row[7]), int(row[8]), int(row[9])) for row in csv.reader(f, delimiter='\t')]
-
-    
-    return dict([(key,numpy.array(value)) for key,value in zip(['chrom','start','stop', 'readcount', 'meancoverage', 'gcbias', 'ncount', 'mapability', 'macs', 'exome', 'exome_500padding', 'segdup'], zip(*res))])
-
-
-
-def correct_coverage_within(data):
-    data = dict(data)
-
-    #remove decoy/nonchrom
-    fil = numpy.array([chrom in autosomes or chrom in non_autosomes for chrom in data['chrom']],dtype=bool)
-    
-    if 'macs' in data:
-        fil = fil & numpy.array([m == 0 for m in data['macs']],dtype=bool)
-        fil = fil & numpy.array([m == 0 for m in data['segdup']],dtype=bool)
-        fil = fil & numpy.array([m == 0 for m in data['exome']],dtype=bool)
-        fil = fil & numpy.array([m == 0 for m in data['exome_500padding']],dtype=bool)
-    
-    #drop records where ncount >= 100 (Number of N's)
-    if 'ncount' in data:
-       fil = fil & (data['ncount'] < 100)
-
-    #drop records where coverage >= 10 * mean coverage (except for MT)
-    tfil = fil & ((data['meancoverage'] < (10 * numpy.median(data['meancoverage'][fil]))) | (data['chrom'] == 'MT'))
-
-    #correct mean coverage
-    xfil = tfil & numpy.array([chrom in autosomes for chrom in data['chrom']],dtype=bool)
- 
-    stats = {}        
-
-    if numpy.any(xfil):
-        gcbiasmean = numpy.mean(data['gcbias'])
-        slope, intercept, r_value, p_value, std_err = linregress(data['gcbias'][xfil] - gcbiasmean,numpy.log(data['meancoverage'][xfil] + 10e-6))
-        corvalue = slope * (data['gcbias'] - gcbiasmean)
-        data['meancoverage'] = numpy.exp(numpy.log(data['meancoverage'] + 10e-6) - corvalue)
-        stats['coverage_dist'] = numpy.percentile(data['meancoverage'][tfil], [2.5, 25.0, 50.0, 75.0, 97.5])
-
-        stats = {'gc_slope': slope, 'gc_intercept': intercept, 'gc_p_value': p_value, 'gc_std_err': std_err, 'gc_rvalue': r_value}
-        fil = tfil
-    else:
-        stats['coverage_dist'] = numpy.percentile(data['meancoverage'][fil], [2.5, 25.0, 50.0, 75.0, 97.5])
-
-
-    data = dict([(key,value[fil]) for key,value in data.items()])
-
-    return (data, stats)
 
     
 def correct_between(*datas):
     pass
     return (datas, None)
-
-
-
-def combine_chrom_stats(samples, exomecov_filenames, windowcov_filenames):
-    header = ['sample'] + ['exome_%s_mean' % c for c in CHROMS] +  ['window_%s_mean' % c for c in CHROMS]
-    data = []
-
-    for sample, exomecov_filename, windowcov_filename in zip(samples, exomecov_filenames, windowcov_filenames):
-        print('Reading statistics for sample: ' + sample)
-        c1 = read_coverage(exomecov_filename)
-        c2 = read_coverage_ext(windowcov_filename)
-
-        exome_cov, exome_model_stats = correct_coverage_within(c1)
-        window_cov, window_model_stats = correct_coverage_within(c2)
-
-        exome_scov = summarize_chrom(exome_cov)
-        window_scov = summarize_chrom(window_cov)
-
-        nrow = [sample] + [ exome_scov['%s_meancov' % chrom.lower()] for chrom in CHROMS] + [window_scov['%s_meancov' % chrom.lower()] for chrom in CHROMS]
-
-        data.append(tuple(nrow))
-    return (tuple(header), data)
-
-
-
-
-
-def combine_coverage_stats(samples, coverage_files):
-    header = ['sample']
-    c = read_coverage_ext(coverage_files[0])
-    header = header + [c + '_' + str(s) for c,s in zip(chrom, start)]
-
-
-    data_cov = []
-    data_exome = []
-    data_exome500 = []
-    data_macs = []
-    data_segdup = []
-    for sample, coverage_file in zip(samples, coverage_files):
-        c = read_coverage_ext(coverage_file)
-        data_cov.append(tuple(c['meancoverage']))
-        data_exome.append(tuple(c['exome']))
-        data_exome500.append(tuple(c['exome_500padding']))
-        data_macs.append(tuple(c['macs']))
-        data_segdup.append(tuple(c['segdup']))
-
-    return header, (data_cov, data_exome, data_exome500, data_macs, data_segdup)
-
 
 
 

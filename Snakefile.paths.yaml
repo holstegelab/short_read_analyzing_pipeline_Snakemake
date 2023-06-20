@@ -7,7 +7,10 @@ RES: '/gpfs/work3/0/qtholstg/hg38_res/'
 SOFTWARE: 'software'
 DEFAULT_JAVA_OPTIONS: ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 #path to intervals file with targets
-kit_folder: 'intervals'
+kit_folder: 'intervals_v2'
+MERGED_CAPTURE_KIT: 'merged_capture_kits_cds'
+TARGETS: 'gencode_43_cds'
+
 
 #resource folder with cram reference fasta files
 CRAMREFS: 'cram_refs'
@@ -50,7 +53,7 @@ verifybamid2: 'verifybamid2'
 BAMMERGE: 'bam_merge.py'
 BAMSTATS: 'bam_stats.py'
 DECHIMER: 'bam_dechimer.py'
-DECHIMER_THRESHOLD: 0.005
+DECHIMER_THRESHOLD: 0.00
 
 #path to kmer files
 
@@ -99,7 +102,7 @@ main_chr_bed: 'standard_chrs.bed'
 verifybamid_exome: 'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat'
 verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.phase3.100k.b38.vcf.gz.dat'
 refflat: 'refFlat.txt'
-MERGED_CAPTURE_KIT: 'merged_capturekits_and_CCDS'
+
 NUMTs: 'databases/NUMTs_hg38.bed'
 # VQSR DBses
 dbsnp: 'databases/HG38_dbSNP_v155_updatesd.vcf.gz'

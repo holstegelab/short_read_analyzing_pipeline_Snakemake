@@ -149,7 +149,7 @@ def get_capture_kit_interval_list(wildcards):
         capture_kit = MERGED_CAPTURE_KIT
     else:
         capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.interval_list')
+    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], capture_kit + '.interval_list')
     return capture_kit_path
 
 def get_mem_mb_hs_stats(wildcards, attempt):
@@ -168,6 +168,7 @@ rule hs_stats:
     priority: 99
     params:
         ref=get_ref_by_validated_sex,
+        targets=os.path.join(config['kit_folder'], config['TARGETS']),
         #minimum Base Quality for a base to contribute cov (default=20)
         Q=10,
         #minimum Mapping Quality for a read to contribute cov(default=20)
@@ -179,7 +180,7 @@ rule hs_stats:
     conda: 'envs/gatk.yaml'               
     shell:
         """gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
-            -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.interval} \
+            -I {input.bam} -R {params.ref} -BI {input.interval} -TI {params.targets} \
             -Q {params.Q} -MQ {params.MQ} \
             -O stats/{wildcards.sample}.hs_metrics"""
 
@@ -275,7 +276,7 @@ def get_capture_kit_bed(wildcards):
     #
     # if capture_kit.strip() == '':
     #     capture_kit = os.path.basename(MERGED_CAPTURE_KIT)[:-4]
-    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}_hg38.bed')
+    capture_kit_path = os.path.join(config['RES'], config['kit_folder'], f'{capture_kit}.bed')
     return capture_kit_path
 
 rule samtools_stat_exome:

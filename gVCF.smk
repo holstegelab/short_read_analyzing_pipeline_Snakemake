@@ -44,7 +44,7 @@ use rule verifybamid from Stat
 module Tools:
     snakefile: 'Tools.smk'
     config: config
-use rule BedToIntervalList from Tools
+use rule * from Tools
 
 mode = config.get("computing_mode", "WES")
 
@@ -151,7 +151,7 @@ def get_chrom_capture_kit(wildcards):
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         capture_kit_chr_path = chrom
     else:        
-        capture_kit_chr_path = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38',  capture_kit + '_hg38_' + chrom + '.interval_list')
+        capture_kit_chr_path = os.path.join(config['RES'], config['kit_folder'], capture_kit,  capture_kit + '_chrom_' + chrom + '.interval_list')
 
     return capture_kit_chr_path
 
@@ -179,7 +179,7 @@ def get_chrom_merged_capture_kit(wildcards):
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         capture_kit_chr_path = chrom
     else:
-        capture_kit_chr_path = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'] + '_hg38', config['MERGED_CAPTURE_KIT'] + '_hg38_' + chrom + '.interval_list')
+        capture_kit_chr_path = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.interval_list')
     
     return capture_kit_chr_path
 
@@ -197,7 +197,8 @@ rule HaplotypeCaller:
         bams = rules.markdup.output.mdbams,
         model = rules.CalibrateDragstrModel.output.dragstr_model,
         contam= rules.verifybamid.output.VBID_stat,
-        bai = rules.markdup.output.mdbams_bai
+        bai = rules.markdup.output.mdbams_bai,
+        interval= get_chrom_merged_capture_kit
     output:
         gvcf= ensure(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
         tbi = ensure(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True),
@@ -215,7 +216,6 @@ rule HaplotypeCaller:
         padding=300,  # extend intervals to this bp
         contam_frac = read_contam_w, # get contamination fraction per sample
         # command to get path to capture_kit interval list from SAMPLEFILE
-        interval= get_chrom_merged_capture_kit,
         ploidy = get_chrom_ploidy,
         java_options=config['DEFAULT_JAVA_OPTIONS'],
         dragen_mode = lambda wildcards: '--dragen-mode true' if not 'H' in wildcards['chrom'] else ''
@@ -223,7 +223,7 @@ rule HaplotypeCaller:
     shell:
         """ 
                 {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
-                 -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
+                 -R {ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true\
                   {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""

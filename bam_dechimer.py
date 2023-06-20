@@ -12,7 +12,6 @@ import time
 import subprocess
 
 from Bio.Seq import Seq
-from ibidas.utils import util
 from bam_utils import *
 
 
@@ -312,6 +311,7 @@ def update_sa_tag(readgroup):
             read.tags['SA'] = sa_primary + ''.join(sa_sups_tmp)
 
 def update_mate_flags(reads1,reads2):
+    """Update mate flags for reads1 and reads2"""
     p1 = reads1['primary']
     p2 = reads2['primary']
     
@@ -342,6 +342,7 @@ def update_mate_flags(reads1,reads2):
         r.flag = (r.flag & cancel_flag) | r2_flags
 
 def update_pair_flag(reads1, reads2, stats, args):
+    """Update the pair flag based on the alignment of the primary reads"""
     p1 = reads1['primary']
     p2 = reads2['primary']
 
@@ -364,13 +365,15 @@ def update_pair_flag(reads1, reads2, stats, args):
 
 
 def update_mate_tags(read1, read2):
+    """Update the mate cigar and mate position tags based on the alignment of the primary reads"""
     p1 = read1['primary']
     p2 = read2['primary']
-
+    
     if p2.is_unmapped():
         p1.tags.pop("MC",None)
     else:
         p1.tags['MC'] = p2.cigar
+        
     if p1.is_unmapped():
         p2.tags.pop('MC',None)
     else:
@@ -398,7 +401,6 @@ def update_mate_tags(read1, read2):
         else:
             r.tags['MC'] = p1.cigar
 
-
 def process(querygroup, stats, args):
     
     stats['alignment_counter'] = stats.get('alignment_counter',0) + len(querygroup)
@@ -407,9 +409,8 @@ def process(querygroup, stats, args):
     reads1 = process_readgroup([row for row in querygroup if row.flag & 0x40])
     reads2 = process_readgroup([row for row in querygroup if row.flag & 0x80])
 
-    #if reads1['primary'].qname == "A01641:36:HGJYVDSX2:1:1105:10800:13745":
-    #    util.debug_here()
-
+    
+    
     modified1 = False
     modified2 = False
 
@@ -598,8 +599,8 @@ if __name__ == '__main__':
     parser.add_argument("-s", help='stats file')
     parser.add_argument("-d", action='store_true', default=False, help='disable validation')
     parser.add_argument("--loose_ends", action='store_true', default=False, help='Remove loose soft clipping ends at the outside of correctly paired alignments')
-    parser.add_argument("--min_align_length", default=30, help='Minimum length below which alignments are discarded (default: 30)')
-    parser.add_argument("--max_read_dist", default=100000, help='Maximum read distance to consider reads still regularly paired (default:100000bp)')
+    parser.add_argument("--min_align_length", default=30, type=int, help='Minimum length below which alignments are discarded (default: 30)')
+    parser.add_argument("--max_read_dist", default=100000, type=int, help='Maximum read distance to consider reads still regularly paired (default:100000bp)')
     args = parser.parse_args()
    
 
@@ -618,58 +619,61 @@ if __name__ == '__main__':
         in_process = subprocess.Popen(['samtools','view','-h', args.i],stdout=subprocess.PIPE, universal_newlines=True)
         pipe_in = in_process.stdout
 
-    with pipe_in as f:
-        reader = csv.reader(f,delimiter='\t', quoting=csv.QUOTE_NONE)
+    reader = csv.reader(pipe_in,delimiter='\t', quoting=csv.QUOTE_NONE)
 
-        lastname = ''
-        querygroup = []
-        if args.o == '-':
-            out = sys.stdout
+    lastname = ''
+    querygroup = []
+    if args.o == '-':
+        out_file = sys.stdout
+    else:
+        out_file = open(args.o, 'wt')
+        
+    
+    
+    for row in reader:
+        alignment_counter += 1
+        if (alignment_counter % 100000) == 0:
+            sys.stderr.write(str(stats) + '\n')
+            sys.stderr.write('%d reads done at %d reads/sec\n' % (alignment_counter, int(100000.0 / (time.time() - last_time))))
+
+            sys.stderr.flush()
+            last_time = time.time()
+        if row[0][0] == '@':
+            out_file.write('\t'.join(row) + '\n')
+            continue
+        row = BamRecord(row)
+        if lastname == row.qname:
+            querygroup.append(row)
         else:
-            out = open(out_file, 'wt')
             
-        #with open('test.out', 'w') as out_file:
-        with out as out_file:
-            for row in reader:
-                alignment_counter += 1
-                if (alignment_counter % 100000) == 0:
-                    sys.stderr.write(str(stats) + '\n')
-                    sys.stderr.write('%d reads done at %d reads/sec\n' % (alignment_counter, int(100000.0 / (time.time() - last_time))))
-
-                    sys.stderr.flush()
-                    last_time = time.time()
-                if row[0][0] == '@':
-                    out_file.write('\t'.join(row) + '\n')
-                    continue
-                row = BamRecord(row)
-                if lastname == row.qname:
-                    querygroup.append(row)
-                else:
-                    
-                    if querygroup:
-                        assert len(querygroup) >= 2, f'Reads {[e.qname for e in querygroup]} are not paired'
-                        res_kept = process(querygroup, stats, args)
-                        res_kept = '\n'.join([xrow.toSamRecord() for xrow in res_kept]) + '\n'
-                        out_file.write(res_kept)
-
-                    lastname = row.qname
-                    querygroup = [row]
             if querygroup:
-                assert len(querygroup) >= 2, 'Reads are not paired'
-                #Process
+                assert len(querygroup) >= 2, f'Reads {[e.qname for e in querygroup]} are not paired'
                 res_kept = process(querygroup, stats, args)
-
                 res_kept = '\n'.join([xrow.toSamRecord() for xrow in res_kept]) + '\n'
                 out_file.write(res_kept)
-        
-        sys.stderr.write('Writing statistics\n')
-        sys.stderr.flush()
-        
-        with open(args.s,'wt') as f:            
-            for key, value in stats.items():
-                f.write('%s\t %d\n' % (key,value))
-            f.flush()
 
-        sys.stderr.write('Done\n')
-        sys.stderr.flush()
+            lastname = row.qname
+            querygroup = [row]
+    if querygroup:
+        assert len(querygroup) >= 2, 'Reads are not paired'
+        #Process
+        res_kept = process(querygroup, stats, args)
+
+        res_kept = '\n'.join([xrow.toSamRecord() for xrow in res_kept]) + '\n'
+        out_file.write(res_kept)
+
+    
+    sys.stderr.write('Writing statistics\n')
+    sys.stderr.flush()
+            
+    with open(args.s,'wt') as sf:            
+        for key, value in stats.items():
+            sf.write('%s\t %d\n' % (key,value))
+        sf.flush()
+
+    sys.stderr.write('Done\n')
+    sys.stderr.flush()
+
+    out_file.flush()
+    out_file.close()
 

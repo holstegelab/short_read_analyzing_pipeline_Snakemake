@@ -736,14 +736,13 @@ rule dechimer:
     conda: 'envs/pypy.yaml'        
     run:
         with open(input['stats'],'r') as f:
-            stats = [l for l in f.readlines()]
-        primary_aligned_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_aligned_bp')][0]
-        primary_soft_clipped_bp = [e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp')][0]
-        res = float(primary_soft_clipped_bp) / float(primary_aligned_bp + primary_soft_clipped_bp)
+            stats = [l for l in f.readlines()]    
+        primary_soft_clipped_bp_ratio = float([e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp_ratio')][0])
 
-        if res > float(config['DECHIMER_THRESHOLD']):
-            cmd = """(samtools view -h --threads {resources.n} {input.bam} | pypy {params.dechimer} --min_align_length 40 --loose-ends -i {input.bam} -s {output.stats} |
-             samtools fixmate -@ {resources.n} -u -O BAM -m - {output.bam})"""
+        if primary_soft_clipped_bp_ratio > float(config['DECHIMER_THRESHOLD']):
+            cmd = """    samtools view -h --threads {resources.n} {input.bam} |\
+                         pypy {params.dechimer} --min_align_length 40 --loose_ends -i - -s {output.stats} |\
+                          samtools fixmate -@ {resources.n} -u -O BAM -m - {output.bam}"""
             shell(cmd)
         else:
             cmd = """

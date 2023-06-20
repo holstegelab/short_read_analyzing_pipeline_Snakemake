@@ -288,7 +288,7 @@ if __name__ == '__main__':
         if args.o == '-':
             out = sys.stdout
         else:
-            out = open(out_file, 'wt')
+            out = open(args.o, 'wt')
             
         #with open('test.out', 'w') as out_file:
         with out as out_file:

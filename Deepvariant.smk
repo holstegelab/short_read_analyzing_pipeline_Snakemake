@@ -35,7 +35,10 @@ module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 use rule * from Aligner
-
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+use rule * from Tools
 mode = config.get("computing_mode", "WES")
 
 rule DeepVariant_all:
@@ -65,7 +68,7 @@ def get_chrom_capture_kit_bed(wildcards):
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         capture_kit_chr_path_bed = chrom
     else:
-        capture_kit_chr_path_bed = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'] + '_hg38', config['MERGED_CAPTURE_KIT'] + '_hg38_' + chrom + '.interval_list.bed')                  
+        capture_kit_chr_path_bed = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.bed')                  
     return capture_kit_chr_path_bed
 
 def get_sequencing_mode(wildcards):
@@ -78,12 +81,12 @@ def get_sequencing_mode(wildcards):
 rule deepvariant:
     input:
         bam =  rules.markdup.output.mdbams,
-        bai = rules.markdup.output.mdbams_bai
+        bai = rules.markdup.output.mdbams_bai,
+        bed=get_chrom_capture_kit_bed
     output:
         vcf = os.path.join(config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.vcf.gz"),
         gvcf = os.path.join(config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.g.vcf.gz")
     params: inter_dir = os.path.join(config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}"),
-            bed=get_chrom_capture_kit_bed,
             cd = current_dir + '/',
             mode=get_sequencing_mode
     container: 'docker://google/deepvariant:1.5.0'
@@ -95,7 +98,7 @@ rule deepvariant:
     log: os.path.join(config['LOG'],"{sample}.{chrom}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={params.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
+        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={input.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
         """
 
 
@@ -129,7 +132,7 @@ rule deepvariant:
 #     shell:
 #         # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
 #         """
-#         /opt/deepvariant/bin/make_examples --ref={ref} --reads={input.bam} --gvcf={output.pregvcf} --mode calling --regions {params.bed} --examples={output.examples} --channels="insert_size" --gvcf_gq_binsize 1 2> {log}
+#         /opt/deepvariant/bin/make_examples --ref={ref} --reads={input.bam} --gvcf={output.pregvcf} --mode calling --regions {input.bed} --examples={output.examples} --channels="insert_size" --gvcf_gq_binsize 1 2> {log}
 #          """
 #
 # def get_model(wildcards):
