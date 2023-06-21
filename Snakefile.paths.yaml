@@ -115,7 +115,7 @@ dbsnp_indel: 'databases/Homo_sapiens_assembly38.known_indels.vcf.gz'
 
 
 #windows
-windows: 'windows/all.selected.bed'
+windows: 'all.selected.sorted.3.bed'
 
 TMPDIR: 'tmp' #do not use scratch, amount of storage is limited
 tmpdir: '/scratch-local'

@@ -95,7 +95,7 @@ rule coverage:
     benchmark: config['BENCH'] + "/{sample}.mosdepth.txt"
     priority: 27
     params:
-        bed = os.path.join(config['RES'], config['windows']),
+        bed = os.path.join(config['RES'], config['kit_folder'], 'windows', config['windows']),
         prefix = os.path.join(config['STAT'], 'cov', '{sample}')
     resources:
         mem_mb=2200,
@@ -160,15 +160,15 @@ rule hs_stats:
     input:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai,
-        interval = get_capture_kit_interval_list,
-        validated_sex = rules.get_validated_sex.output.yaml
+        interval = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'] + '.interval_list'),
+        validated_sex = rules.get_validated_sex.output.yaml,
+        targets=os.path.join(config['RES'], config['kit_folder'], config['TARGETS'] + '.interval_list'),
     output:
         HS_metrics=os.path.join(config['STAT'], "{sample}.hs_metrics")
     benchmark: os.path.join(config['BENCH'],  "HS_stats_{sample}.txt")
     priority: 99
     params:
         ref=get_ref_by_validated_sex,
-        targets=os.path.join(config['kit_folder'], config['TARGETS']),
         #minimum Base Quality for a base to contribute cov (default=20)
         Q=10,
         #minimum Mapping Quality for a read to contribute cov(default=20)
@@ -180,7 +180,7 @@ rule hs_stats:
     conda: 'envs/gatk.yaml'               
     shell:
         """gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
-            -I {input.bam} -R {params.ref} -BI {input.interval} -TI {params.targets} \
+            -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.targets} \
             -Q {params.Q} -MQ {params.MQ} \
             -O stats/{wildcards.sample}.hs_metrics"""
 

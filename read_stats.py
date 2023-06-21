@@ -320,7 +320,7 @@ def read_dechimer_stats(filename):
     result['dechimer_fragment_modified_ratio'] = result.get('dechimer_fragment_modified',0) / result.get('dechimer_fragment_counter',1.0)
     result['dechimer_clip_ratio'] = (result.get('dechimer_read1_dechimer_clip',0) + result.get('dechimer_read2_dechimer_clip',0)) / (2.0 * result.get('dechimer_fragment_counter',1.0))
     result['dechimer_loose_end_clip_ratio'] = (result.get('dechimer_read1_loose_end_clip',0) + result.get('dechimer_read2_loose_end_clip',0)) / (2.0 * result.get('dechimer_fragment_counter',1.0))
-    result['dechimer_all_sup_discarded_ratio'] = (result.get('dechimer_read1_all_sup_discarded',0) + result.get('dechimer_read2_all_sup_discarded',0)) / \
+    result['dechimer_all_sup_discarded_ratio'] = (result.get('dechimer_read1_all_sup_discarded_in_pruning',0) + result.get('dechimer_read2_all_sup_discarded_in_pruning',0)) / \
                                                 float(result.get('dechimer_read1_has_supplementary_alignments',1.0) + result.get('dechimer_read2_has_supplementary_alignments',1.0))
     result['dechimer_min_alignment_length_unmap_ratio'] = (result.get('dechimer_read1_min_align_length_unmap',0) + result.get('dechimer_read2_min_align_length_unmap',0)) / \
                                         (2.0 * result.get('dechimer_fragment_counter',1.0))
@@ -430,15 +430,18 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
               'pca2_freemix',\
               'unmapped_ratio_all','mqual20_ratio_all','secondary_ratio_all','supplementary_ratio_all','sup_diffchrom_ratio_all','duplicate_ratio_all','duplicate_supplement_ratio_all','soft_clipped_bp_ratio_all',\
               'aligned_bp_ratio_all','inserted_bp_ratio_all','deleted_bp_ratio_all','total_bp_all','soft_clipped_bp_ratio_filter_50_all','soft_clipped_bp_ratio_filter_60_all','soft_clipped_bp_ratio_filter_70_all',\
-              'aligned_bp_ratio_filter_50_all','aligned_bp_ratio_filter_60_all','aligned_bp_ratio_filter_70_all','poly_a_all','illumina_adapter_all','pcr_adapter_1_all','pcr_adapter_2_all','nextera_all',\
+              'aligned_bp_ratio_filter_50_all','aligned_bp_ratio_filter_60_all','aligned_bp_ratio_filter_70_all','poly_a_all','poly_g_all', 'illumina_adapter_all','pcr_adapter_1_all','pcr_adapter_2_all','nextera_all',\
               'unmapped_ratio_exome','mqual20_ratio_exome','secondary_ratio_exome','supplementary_ratio_exome','sup_diffchrom_ratio_exome','duplicate_ratio_exome','duplicate_supplement_ratio_exome',\
               'soft_clipped_bp_ratio_exome','aligned_bp_ratio_exome','inserted_bp_ratio_exome','deleted_bp_ratio_exome','total_bp_exome','soft_clipped_bp_ratio_filter_50_exome','soft_clipped_bp_ratio_filter_60_exome',\
-              'soft_clipped_bp_ratio_filter_70_exome','aligned_bp_ratio_filter_50_exome','aligned_bp_ratio_filter_60_exome','aligned_bp_ratio_filter_70_exome','poly_a_exome','illumina_adapter_exome','pcr_adapter_1_exome',\
+              'soft_clipped_bp_ratio_filter_70_exome','aligned_bp_ratio_filter_50_exome','aligned_bp_ratio_filter_60_exome','aligned_bp_ratio_filter_70_exome','poly_a_exome','poly_g_exome', 'illumina_adapter_exome','pcr_adapter_1_exome',\
               'pcr_adapter_2_exome','nextera_exome', \
               'pre_adapter_ac', 'pre_adapter_ag','pre_adapter_at', 'pre_adapter_ca', 'pre_adapter_cg', 'pre_adapter_ct', 'pre_adapter_ga', 'pre_adapter_gc', 'pre_adapter_gt', 'pre_adapter_ta', 'pre_adapter_tc', 'pre_adapter_tg',\
-              'bait_bias_ac', 'bait_bias_ag','bait_bias_at', 'bait_bias_ca', 'bait_bias_cg', 'bait_bias_ct', 'bait_bias_ga', 'bait_bias_gc', 'bait_bias_gt', 'bait_bias_ta', 'bait_bias_tc', 'bait_bias_tg',\
-              ]
-
+              'bait_bias_ac', 'bait_bias_ag','bait_bias_at', 'bait_bias_ca', 'bait_bias_cg', 'bait_bias_ct', 'bait_bias_ga', 'bait_bias_gc', 'bait_bias_gt', 'bait_bias_ta', 'bait_bias_tc', 'bait_bias_tg']
+              
+    bamstats_header = ['unmapped_ratio','mqual20_ratio','secondary_ratio','supplementary_ratio','sup_diffchrom_ratio','duplicate_ratio','duplicate_supplement_ratio','soft_clipped_bp_ratio',\
+                        'aligned_bp_ratio','inserted_bp_ratio','deleted_bp_ratio','total_bp','soft_clipped_bp_ratio_filter_50','soft_clipped_bp_ratio_filter_60','soft_clipped_bp_ratio_filter_70',\
+                        'aligned_bp_ratio_filter_50','aligned_bp_ratio_filter_60','aligned_bp_ratio_filter_70','poly_a','poly_g', 'illumina_adapter','pcr_adapter_1','pcr_adapter_2','nextera']    
+    
     hsstat_header = ['bait_design_efficiency',
                     'on_bait_bases','near_bait_bases','off_bait_bases',
                     'pct_off_bait',	'mean_bait_coverage','pct_usable_bases_on_bait','pct_usable_bases_on_target',
@@ -478,8 +481,11 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
         # where v2 is going from?
         nrow = nrow + [read_contam(v2)]
         #nrow = nrow + [read_contam(v4)]
-        nrow = nrow + read_bamstat(ba)
-        nrow = nrow + read_bamstat(be)
+        sdata = read_bamstat(ba)
+        nrow = nrow + [sdata[h] for h in bamstats_header]
+        sdata = read_bamstat(be)
+        nrow = nrow + [sdata[h] for h in bamstats_header]
+        
         nrow = nrow + read_artifacts(pre_ad)
         nrow = nrow + read_artifacts(bait_b)
 
@@ -491,12 +497,14 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
 
 def read_bamstat(filename):
     print('BAMSTAT', filename)
-    with open(filename,'r') as f:
-        print('X',f.read())
-
+    
     with open(filename, 'r') as f:
         header = f.readline()
-        res = [row for row in csv.reader(f, delimiter='\t')][0]
+        data = f.readline()
+        fields = header.strip().lstrip('#').split('\t')
+        data = data.strip().split('\t')
+        res = dict(zip(fields, data))
+    print(res)        
     return res
 
 
