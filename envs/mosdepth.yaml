@@ -6,3 +6,5 @@ channels:
   - defaults
 dependencies:
   - mosdepth=0.3.3
+  - h5py
+  - numpy

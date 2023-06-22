@@ -17,4 +17,6 @@ dependencies:
 - python-crypt4gh=1.6
 - htslib
 - python=3.10
+- h5py
+- numpy
 name: preprocess
