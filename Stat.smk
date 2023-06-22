@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy
 import read_stats
+import read_stats
 import os
 import getpass
 import yaml
@@ -99,6 +100,7 @@ rule coverage:
         prefix = os.path.join(config['STAT'], 'cov', '{sample}')
     resources:
         mem_mb=2200,
+        n=2
         n="1.8"
     conda: 'envs/mosdepth.yaml'
     shell:
@@ -128,7 +130,7 @@ rule gather_coverage:
         samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
         samples.sort()
         annotation = os.path.join(config['RES'], config['kit_folder'], 'windows', config['windows_annotated'])
-        
+
         read_stats.write_coverage_to_hdf5(annotation, samples, list(input.mapped), list(input.cov), output.hdf5)
 
 
@@ -373,7 +375,7 @@ rule gatherstats:
         '{samplefile}.bam_quality.tab'
     resources:
         n=1,
-        mem_mb=1000       
+        mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
@@ -400,7 +402,7 @@ rule gather_rg_stats:
         '{samplefile}.bam_rg_quality.tab'
     resources:
         n=1,
-        mem_mb=1000        
+        mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         sample_readgroups = []
@@ -460,7 +462,7 @@ rule gathersexstats:
         '{samplefile}.sex_chrom.tab'
     resources:
         n=1,
-        mem_mb=1000     
+        mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
@@ -471,5 +473,3 @@ rule gathersexstats:
 
         header, data = read_stats.combine_sex_stats(samples,kmer_stats, sex_reported)
         read_stats.write_tsv(str(output),header,data)
-
-

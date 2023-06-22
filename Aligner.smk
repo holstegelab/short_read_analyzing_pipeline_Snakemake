@@ -687,6 +687,7 @@ def get_mem_mb_align_reads(wildcards, attempt):
 
 rule align_reads:
     """Align reads to reference genome."""
+    """Align reads to reference genome."""
     input:
         fastq=get_prepared_fastq,
         rg=ensure_readgroup_info,
