@@ -58,6 +58,7 @@ rule Stat_all:
         expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.bam_rg_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
+        expand("{samplefile}.coverage.hdf5", samplefile = SAMPLE_FILES),
         expand(os.path.join(config['STAT'], "{sample}.done"), sample = sample_names)
     default_target: True        
     
@@ -98,7 +99,7 @@ rule coverage:
         prefix = os.path.join(config['STAT'], 'cov', '{sample}')
     resources:
         mem_mb=2200,
-        n=1
+        n="1.8"
     conda: 'envs/mosdepth.yaml'
     shell:
         """
@@ -159,10 +160,10 @@ rule verifybamid:
         SVD = get_svd
     resources:
         mem_mb=400,
-        n=2
+        n="1.5"
     conda: 'envs/verifybamid.yaml'
     shell:
-        """verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {params.ref} --DisableSanityCheck --NumThread {resources.n} --Output {params.VBID_prefix}"""
+        """verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {params.ref} --DisableSanityCheck --NumThread 2 --Output {params.VBID_prefix}"""
 
 def get_capture_kit_interval_list(wildcards):
     """Returns the capture kit interval list file for the sample type of the sample"""

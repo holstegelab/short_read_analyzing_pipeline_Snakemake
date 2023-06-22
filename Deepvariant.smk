@@ -103,12 +103,13 @@ rule deepvariant:
     benchmark:
         os.path.join(config['BENCH'],"{sample}.{chrom}.wholedeepvariant.txt")
     resources:
-        n=2, #set in profile using singularity-args. Waiting for rule-specific args. 
+        n="1.5", #set in profile using singularity-args. Waiting for rule-specific args. 
+        nshards=2,
         mem_mb=get_mem_mb_deepvariant 
     log: os.path.join(config['LOG'],"{sample}.{chrom}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={params.interval} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
+        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={params.interval} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
         """
 
 

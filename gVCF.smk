@@ -165,7 +165,7 @@ def read_contam_w(wildcards):
         c = iter(c)
         headers = c.__next__()
         data = c.__next__()
-        freemix = data[6]
+        freemix = float(data[6])
     if freemix < 0.01: #only remove contamination if it is more than 1%
         freemix = 0.0        
     return freemix

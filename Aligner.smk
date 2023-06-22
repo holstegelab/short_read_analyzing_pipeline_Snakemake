@@ -480,7 +480,7 @@ rule adapter_removal:
     priority: 10
     conda: "envs/preprocess.yaml"
     resources: 
-        n=3, #practical average use for 4 threads is 2.7 cores
+        n="3.5",
         mem_mb=200
     ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
     shell:
@@ -498,7 +498,7 @@ rule adapter_removal_identify:
     priority: 5
     conda: "envs/preprocess.yaml"
     resources: 
-        n=2, #practical average use for 4 threads is 1.7 cores
+        n="2.8", 
         mem_mb=200
     benchmark: os.path.join(config['BENCH'],"{sample}.{readgroup}.adapter_removal_identify.txt")
     shell:
@@ -554,7 +554,7 @@ rule kmer_reads:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.kmer.txt")
     priority: 15
     resources:
-        n=3, #practical average usage is about 2.85 cores
+        n="4.5",
         mem_mb=get_mem_mb_kmer_reads
     shell:
         """
@@ -704,10 +704,11 @@ rule align_reads:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.dragmap.txt")
     priority: 15
     resources:
-        n=24, #reducing thread count, as first part of dragmap is single threaded
+        n=23, #reducing thread count, as first part of dragmap is single threaded
+        use_threads=24,
         mem_mb=get_mem_mb_align_reads,
     shell:
-        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.n}  | samtools view -@ {resources.n} -o {output.bam}) 2> {log.dragmap_log} "
+        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ {resources.use_threads} -o {output.bam}) 2> {log.dragmap_log} "
 # --enable-sampling true used for (unmapped) bam input. It prevents bugs when in output bam information about whicj read is 1st or 2nd in pair.
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
@@ -731,14 +732,14 @@ rule merge_bam_alignment:
     params:
         bam_merge=srcdir(config['BAMMERGE'])
     resources: 
-        n = 2,
+        n = "1.5",
         mem_mb = get_mem_mb_merge_bam_alignment
     priority: 15
     shell:
         """
-         (samtools view -h --threads {resources.n} {input.bam} | \
+         (samtools view -h --threads 2 {input.bam} | \
          pypy {params.bam_merge} -a  {input.fastq[0]} -b {input.fastq[1]} -s {output.stats}  |\
-         samtools fixmate -@ {resources.n} -u -O BAM -m - {output.bam}) 2> {log}
+         samtools fixmate -@ 2 -u -O BAM -m - {output.bam}) 2> {log}
         """
 
 rule dechimer:
@@ -759,7 +760,7 @@ rule dechimer:
     params:
         dechimer=srcdir(config['DECHIMER'])
     resources:
-        n=1, #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~2 cores.
+        n="1.4", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
         mem_mb=275
     conda: 'envs/pypy.yaml'        
     run:
@@ -768,9 +769,9 @@ rule dechimer:
         primary_soft_clipped_bp_ratio = float([e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp_ratio')][0])
 
         if primary_soft_clipped_bp_ratio > float(config['DECHIMER_THRESHOLD']):
-            cmd = """    samtools view -h --threads {resources.n} {input.bam} |\
+            cmd = """    samtools view -h --threads 2 {input.bam} |\
                          pypy {params.dechimer} --min_align_length 40 --loose_ends -i - -s {output.stats} |\
-                          samtools fixmate -@ {resources.n} -u -O BAM -m - {output.bam}"""
+                          samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
             shell(cmd)
         else:
             cmd = """
@@ -795,14 +796,14 @@ rule sort_bam_alignment:
     priority: 17
     resources:
         tmpdir=tmpdir,
-        n = 2,
+        n = "1.5",
         mem_mb = 13000
     params:
         temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}"),
         memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
     shell:
         """
-            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {resources.n} -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
+            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
         """
 
 rule index_sort:
