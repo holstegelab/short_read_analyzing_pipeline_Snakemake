@@ -66,9 +66,9 @@ rule deepvariant_sample_done:
 def get_chrom_capture_kit_bed(wildcards):
     chrom = wildcards.chrom
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
-        capture_kit_chr_path_bed = chrom
+        capture_kit_chr_path_bed = []
     else:
-        capture_kit_chr_path_bed = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.bed')                  
+        capture_kit_chr_path_bed = [os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.bed')]
     return capture_kit_chr_path_bed
 
 def get_sequencing_mode(wildcards):
@@ -78,15 +78,25 @@ def get_sequencing_mode(wildcards):
         mode = 'WES'
     return mode        
 
+def get_mem_mb_deepvariant(wildcards, attempt):
+    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+        res = 3500
+    else:
+        res = 2750
+
+    return (attempt - 1) * 0.5 * res + res
+
 rule deepvariant:
     input:
         bam =  rules.markdup.output.mdbams,
         bai = rules.markdup.output.mdbams_bai,
-        bed=get_chrom_capture_kit_bed
+        bed = get_chrom_capture_kit_bed
     output:
         vcf = os.path.join(config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.vcf.gz"),
         gvcf = os.path.join(config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.g.vcf.gz")
-    params: inter_dir = os.path.join(config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}"),
+    params: 
+            interval = lambda wildcards, input: wildcards['chrom'].replace('YH', 'Y').replace('XH','X') if len(input.bed) == 0 else input.bed[0],
+            inter_dir = os.path.join(config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}"),
             cd = current_dir + '/',
             mode=get_sequencing_mode
     container: 'docker://google/deepvariant:1.5.0'
@@ -94,11 +104,11 @@ rule deepvariant:
         os.path.join(config['BENCH'],"{sample}.{chrom}.wholedeepvariant.txt")
     resources:
         n=2, #set in profile using singularity-args. Waiting for rule-specific args. 
-        mem_mb=3000       
+        mem_mb=get_mem_mb_deepvariant 
     log: os.path.join(config['LOG'],"{sample}.{chrom}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={input.bed} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
+        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.n} --model_type={params.mode} --regions={params.interval} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
         """
 
 

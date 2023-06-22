@@ -390,6 +390,11 @@ def get_extension(wildcards):
     return res
 
 
+def get_mem_mb_ea_fastq(wildcards, attempt):
+    return attempt * 3000
+
+
+
 
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
@@ -402,7 +407,7 @@ rule external_alignments_to_fastq:
         singletons = temp(config['FQ'] + "/{sample}.{readgroup}.extracted_singletons.fq.gz"),
     resources:
         n= 2,
-        mem_mb = 1500,
+        mem_mb = get_mem_mb_ea_fastq,
         tmpdir=tmpdir
     log:
         fastq=os.path.join(config['LOG'],"{sample}.{readgroup}.align2fq.log"),
@@ -410,13 +415,17 @@ rule external_alignments_to_fastq:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.align2fq.txt")
     params:
         cramref=get_cram_ref,
-        extension=get_extension
+        extension=get_extension,
+        temp_sort=os.path.join("external_sort_temporary_{sample}_{readgroup}"),
+        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
     priority: 10
-    conda: config['CONDA_MAIN']
+    conda: config['CONDA_MAIN']    
+    #replaced samtools collate with samtools sort due to weird memory usage behaviour of collate. 
+    #samtools collate -u -@ {resources.n} {params.cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} {resources.tmpdir}/{wildcards.sample}.{wildcards.readgroup}.collate |
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)
     shell:
         """
-            samtools collate -u -@ {resources.n} {params.cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} {resources.tmpdir}/{wildcards.sample}.{wildcards.readgroup}.collate |
+            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {resources.n} -n  -m {params.memory_per_core}M -u {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\            
             samtools fastq -O -N -@ {resources.n} -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq} 
         """
 
@@ -569,6 +578,14 @@ def get_kmer_combine_by_readgroup(wildcards):
     return files
 
 
+def get_mem_mb_kmer_combine(wildcards, attempt):
+    info = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    if len(readgroups_b) <= 1:
+        return 100
+    else:
+        res = 7500
+        return (attempt-1) * 0.5 * res + res
 
 rule kmer_combine:
     input:
@@ -595,9 +612,20 @@ rule kmer_combine:
             fname = input['in_files'][i][:-8]
             shell("""mv {final}.kmc_pre {final}.tmp.kmc_pre
                 mv {final}.kmc_suf {final}.tmp.kmc_suf
-                kmc_tools simple {final}.tmp {fname} kmers_subtract {final}
+                kmc_tools simple {final}.tmp {fname} union {final} -ocsum
                 rm {final}.tmp.kmc_suf
                 rm {final}.tmp.kmc_pre""")
+
+def get_mem_mb_validated_sex(wildcards, attempt):
+    """Utility function to get the memory for the align_reads rule.
+
+    """
+    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+        res = 9000
+    else:
+        res = 4500
+
+    return (attempt - 1) * 0.5 * res + res
 
 rule get_validated_sex:
     input:
@@ -611,7 +639,7 @@ rule get_validated_sex:
        auto=os.path.join(config['KMER'],"{sample}.auto.tsv") 
     resources:
         n=1,
-        mem_mb=4500      
+        mem_mb=get_mem_mb_validated_sex   
     params:
         #paths to kmer files of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
         kmerchry=os.path.join(config['RES'], config['kmerchry']),
@@ -684,8 +712,8 @@ rule align_reads:
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
 def get_mem_mb_merge_bam_alignment(wildcards, attempt):
-    MEM_DEFAULT_USAGE=6000
-    return attempt*(MEM_DEFAULT_USAGE)
+    res=5000
+    return attempt * res
 
 rule merge_bam_alignment:
     """Merge bam alignment with original fastq files."""
@@ -732,7 +760,7 @@ rule dechimer:
         dechimer=srcdir(config['DECHIMER'])
     resources:
         n=1, #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~2 cores.
-        mem_mb=1000
+        mem_mb=275
     conda: 'envs/pypy.yaml'        
     run:
         with open(input['stats'],'r') as f:

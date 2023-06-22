@@ -110,7 +110,7 @@ def get_ref_by_validated_sex(wildcards, input):
 
  
 def get_mem_mb_CalibrateDragstrModel(wildcards, attempt):
-    return attempt * int(2500)
+    return attempt * int(1750)
 
 rule CalibrateDragstrModel:
     """CalibrateDragstrModel. Estimates the parameters of the dragstr model from a set of aligned reads.
@@ -166,20 +166,22 @@ def read_contam_w(wildcards):
         headers = c.__next__()
         data = c.__next__()
         freemix = data[6]
+    if freemix < 0.01: #only remove contamination if it is more than 1%
+        freemix = 0.0        
     return freemix
 
 def get_mem_mb_HaplotypeCaller(wildcrads, attempt):
     """Get memory for HaplotypeCaller."""
-    return attempt * int(2500)
+    return attempt * int(1750)
 
 
 def get_chrom_merged_capture_kit(wildcards):
     chrom = wildcards.chrom
     chrom = chrom.replace('XH', 'X').replace('YH', 'Y')
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
-        capture_kit_chr_path = chrom
+        capture_kit_chr_path = []
     else:
-        capture_kit_chr_path = os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.interval_list')
+        capture_kit_chr_path = [os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.interval_list')]
     
     return capture_kit_chr_path
 
@@ -212,6 +214,7 @@ rule HaplotypeCaller:
                mem_mb = get_mem_mb_HaplotypeCaller,
                tmpdir = tmpdir_alternative
     params:
+        interval = lambda wildcards, input: wildcards['chrom'].replace('YH', 'Y').replace('XH','X') if len(input.interval) == 0 else input.interval[0],
         dbsnp = config['RES'] + config['dbsnp'],
         padding=300,  # extend intervals to this bp
         contam_frac = read_contam_w, # get contamination fraction per sample
@@ -223,7 +226,7 @@ rule HaplotypeCaller:
     shell:
         """ 
                 {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
-                 -R {ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
+                 -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true\
                   {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""

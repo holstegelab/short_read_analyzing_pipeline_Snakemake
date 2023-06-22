@@ -2,8 +2,8 @@ import csv
 import os
 import numpy
 import yaml
-
-
+import h5py
+import gzip
 CHROMS = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
 def write_tsv(filename, header,data):
@@ -101,7 +101,7 @@ def read_stats_full(filename):
     print(filename)
     with open(filename,'r') as f:
         for row in f:
-            print(row)
+            
             if row.startswith('#') or row.startswith('CHK'):
                 continue
             elif row.startswith('SN'):
@@ -158,6 +158,7 @@ def read_stats_full(filename):
                 line = row[3:].strip()
                 gcd.append(tuple([float(e) for e in line.split('\t')]))
             else:
+                print(row)
                 continue
 
 
@@ -166,7 +167,7 @@ def read_stats_full(filename):
         results['gc_read2'] = sum([a * b for a,b in gcl]) / max(float(sum([b for a,b in gcl])),1e-6)
         results['base_fractions'] = '|'.join(['%.2f,%.2f,%.2f,%.2f' % (a,c,g,t) for cycle,a,c,g,t,n,o in gcc])
         total_pairs = max(float(sum([b for a,b,c,d,e in insertsize])),1e-6)
-        print("IS", insertsize)
+        
         frow = insertsize[0]
         lrow = insertsize[-1]
         results['insert_maxsize'] = lrow[0]
@@ -496,15 +497,12 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
     return (tuple(header), data)
 
 def read_bamstat(filename):
-    print('BAMSTAT', filename)
-    
     with open(filename, 'r') as f:
         header = f.readline()
         data = f.readline()
         fields = header.strip().lstrip('#').split('\t')
         data = data.strip().split('\t')
         res = dict(zip(fields, data))
-    print(res)        
     return res
 
 
@@ -577,4 +575,50 @@ def combine_oxo_stats(samples, pre_adapter, bait_bias):
                         nrow.append('%.3f;%.3f;%.3f' % (pe1,pe2,pe3))
         data.append(tuple(nrow))
     return (tuple(header), data)
+
+
+def write_coverage_to_hdf5(annotation, samples, genome_filenames, coverage_beds, hdf5file):
+    with open(annotation,'r') as f:
+        bed_regions = [line.strip().split('\t') for line in f.readlines()]
+
+    fields = ['chrom', 'start', 'end', 'at_content', 'gc_content', 'n_a', 'n_c', 'n_g', 'n_t', 'n_n', 'n_other', 'n_length']
+    dtypes = ['S', 'i4', 'i4', 'f4', 'f4', 'i4', 'i4', 'i4', 'i4', 'i4', 'i4', 'i4']
+    
+    with h5py.File(hdf5file, 'w') as f:
+        grp = f.create_group('coverage')
+        covds = grp.create_dataset('coverage', shape=(len(coverage_beds), len(bed_regions)), dtype='e', compression='gzip') #half precision float
+        
+        
+        samples = [e.encode('utf-8') for e in samples]
+        maxlen_samples = max([len(e) for e in samples])
+        sampleds = grp.create_dataset('samples', shape=(len(coverage_beds),), dtype=f'S{maxlen_samples}',  compression="gzip")
+        sampleds[:] = samples
+        
+        total_bases_mapped = []
+
+        for genome_filename in genome_filenames:
+            stats = read_stats_full(genome_filename)
+
+            total_bases_mapped.append(stats['bases mapped (cigar)'])
+        basesds = grp.create_dataset('bases_mapped', shape=(len(coverage_beds),), dtype='i8', compression="gzip")
+        basesds[:] = total_bases_mapped
+        
+        for pos, (field, dt) in enumerate(zip(fields, dtypes)):
+            print(pos, field, dt)
+            if dt == 'S':
+                
+                d = [e[pos].encode('utf-8') for e in bed_regions]
+                maxlen = max([len(e) for e in d])
+                ds = grp.create_dataset(field, shape=(len(bed_regions), ), dtype=dt+ str(maxlen),  compression="gzip")
+                ds[:] = d
+            else:
+                ds = grp.create_dataset(field, shape=(len(bed_regions), ), dtype=dt,  compression="gzip")
+                ds[:] = [e[pos] for e in bed_regions]
+
+        for pos, coverage_bed in enumerate(coverage_beds):
+            print(pos, coverage_bed)
+            with gzip.open(coverage_bed, 'rt') as f_in:
+                data = [float(line.split('\t')[-1]) for line in f_in]
+                
+                covds[pos, :] = data
 

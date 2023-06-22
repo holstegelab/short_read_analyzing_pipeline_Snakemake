@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy
 import read_stats
-import read_stats
 import os
 import getpass
 import yaml
@@ -107,7 +106,29 @@ rule coverage:
             mosdepth  --threads 2 -b {params.bed} --no-per-base {params.prefix} {input.bam}
         """
 
+def get_regions(wildcards):
+    samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
+    samples.sort()
+    return [os.path.join(config['STAT'], 'cov', '{sample}.regions.bed.gz'.format(sample=sample)) for sample in samples]
 
+def get_stats_samtools(wildcards):
+    samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
+    samples.sort()
+    return [os.path.join(config['STAT'], '{sample}.samtools.stat'.format(sample=sample)) for sample in samples]
+
+rule gather_coverage:
+    input:
+        cov=get_regions,
+        mapped=get_stats_samtools
+    output:
+        hdf5=os.path.join('{samplefile}.coverage.hdf5')
+
+    run:
+        samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
+        samples.sort()
+        annotation = os.path.join(config['RES'], config['kit_folder'], 'windows', config['windows_annotated'])
+        
+        read_stats.write_coverage_to_hdf5(annotation, samples, list(input.mapped), list(input.cov), output.hdf5)
 
 
 def get_svd(wildcards):
@@ -153,7 +174,7 @@ def get_capture_kit_interval_list(wildcards):
     return capture_kit_path
 
 def get_mem_mb_hs_stats(wildcards, attempt):
-    return (attempt * int(6500))
+    return (attempt * int(3100))
 
 rule hs_stats:
     """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
@@ -185,7 +206,7 @@ rule hs_stats:
             -O stats/{wildcards.sample}.hs_metrics"""
 
 def get_mem_mb_Artifact_stats(wildcrads, attempt):
-    return (attempt * int(3000))
+    return (attempt * int(2750))
 
 rule Artifact_stats:
     input:
@@ -351,7 +372,7 @@ rule gatherstats:
         '{samplefile}.bam_quality.tab'
     resources:
         n=1,
-        mem_mb=10000        
+        mem_mb=1000       
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
@@ -378,7 +399,7 @@ rule gather_rg_stats:
         '{samplefile}.bam_rg_quality.tab'
     resources:
         n=1,
-        mem_mb=10000        
+        mem_mb=1000        
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         sample_readgroups = []
@@ -411,7 +432,7 @@ rule gatheroxostats:
     benchmark: os.path.join(config['BENCH'],"{samplefile}_gatherOXOstat.txt")
     resources:
         n=1,
-        mem_mb=10000
+        mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
@@ -438,7 +459,7 @@ rule gathersexstats:
         '{samplefile}.sex_chrom.tab'
     resources:
         n=1,
-        mem_mb=10000        
+        mem_mb=1000     
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         samples = list(sampleinfo.keys())
@@ -449,3 +470,5 @@ rule gathersexstats:
 
         header, data = read_stats.combine_sex_stats(samples,kmer_stats, sex_reported)
         read_stats.write_tsv(str(output),header,data)
+
+
