@@ -888,7 +888,7 @@ rule markdup:
     resources:
         n=2, #average core usage is 1.4 with 4 threads. 2 core reservation is therefore enough
         mem_mb=150
-    conda: "envs/preprocess.yaml"
+    conda:  "envs/preprocess.yaml"
     shell:
         """
             samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} {output.mdbams} 2> {log.samtools_markdup}
