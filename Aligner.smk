@@ -391,7 +391,7 @@ def get_extension(wildcards):
 
 
 def get_mem_mb_ea_fastq(wildcards, attempt):
-    return attempt * 3000
+    return (attempt-1) * 13000 * 0.5 + 13000
 
 
 
@@ -406,7 +406,7 @@ rule external_alignments_to_fastq:
         fq2 = temp(config['FQ'] + "/{sample}.{readgroup}_R2.fastq.gz"),
         singletons = temp(config['FQ'] + "/{sample}.{readgroup}.extracted_singletons.fq.gz"),
     resources:
-        n= 2,
+        n= "1.5",
         mem_mb = get_mem_mb_ea_fastq,
         tmpdir=tmpdir
     log:
@@ -416,8 +416,8 @@ rule external_alignments_to_fastq:
     params:
         cramref=get_cram_ref,
         extension=get_extension,
-        temp_sort=os.path.join("external_sort_temporary_{sample}_{readgroup}"),
-        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
+        temp_sort=os.path.join("external_sort_temporary_{sample}_{readgroup}_"),
+        memory_per_core= 6000
     priority: 10
     conda: config['CONDA_MAIN']    
     #replaced samtools collate with samtools sort due to weird memory usage behaviour of collate. 
@@ -425,8 +425,7 @@ rule external_alignments_to_fastq:
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)
     shell:
         """
-            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ {resources.n} -n  -m {params.memory_per_core}M -u {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\            
-            samtools fastq -O -N -@ {resources.n} -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq} 
+            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -n  -m {params.memory_per_core}M -u {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} | samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq} 
         """
 
 
@@ -554,7 +553,7 @@ rule kmer_reads:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.kmer.txt")
     priority: 15
     resources:
-        n="4.5",
+        n="4.3",
         mem_mb=get_mem_mb_kmer_reads
     shell:
         """
@@ -683,7 +682,7 @@ def get_mem_mb_align_reads(wildcards, attempt):
 
     """
     MEM_DEFAULT_USAGE = 38000
-    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
+    return (attempt - 1) * 0.25 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
 rule align_reads:
     """Align reads to reference genome."""
@@ -705,7 +704,7 @@ rule align_reads:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.dragmap.txt")
     priority: 15
     resources:
-        n=23, #reducing thread count, as first part of dragmap is single threaded
+        n=22.75, #reducing thread count, as first part of dragmap is single threaded
         use_threads=24,
         mem_mb=get_mem_mb_align_reads,
     shell:
@@ -714,7 +713,7 @@ rule align_reads:
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
 def get_mem_mb_merge_bam_alignment(wildcards, attempt):
-    res=5000
+    res=4500
     return attempt * res
 
 rule merge_bam_alignment:
@@ -867,6 +866,13 @@ rule merge_rgs:
             cmd = "cp {input.bam} {output}"
             shell(cmd)
 
+def get_mem_mb_markdup(wildcards, attempt):
+    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+        res=150
+    else:   
+        res = 1500        
+    #large range of memory usage for markdup        
+    return (attempt -1) * res * 3 + res
 rule markdup:
     """Mark duplicates using samtools markdup."""
     input:
@@ -886,9 +892,9 @@ rule markdup:
         samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log"),
         samtools_index_md=os.path.join(config['LOG'],"{sample}.markdup_index.log")
     resources:
-        n=2, #average core usage is 1.4 with 4 threads. 2 core reservation is therefore enough
-        mem_mb=150
-    conda:  "envs/preprocess.yaml"
+        n="1.6", 
+        mem_mb=get_mem_mb_markdup
+    conda: "envs/preprocess.yaml"
     shell:
         """
             samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} {output.mdbams} 2> {log.samtools_markdup}
@@ -905,7 +911,7 @@ rule mCRAM:
         CRAM=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram")
     resources:
         n=2,
-        mem_mb=1500
+        mem_mb=1250
     benchmark: os.path.join(config['BENCH'],'{sample}.mCRAM.txt')
     priority: 30
     conda: "envs/preprocess.yaml"

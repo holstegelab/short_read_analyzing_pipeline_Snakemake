@@ -172,7 +172,11 @@ def read_contam_w(wildcards):
 
 def get_mem_mb_HaplotypeCaller(wildcrads, attempt):
     """Get memory for HaplotypeCaller."""
-    return attempt * int(1750)
+    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+        res = 1750
+    else:
+        res = 1400
+    return attempt * res
 
 
 def get_chrom_merged_capture_kit(wildcards):

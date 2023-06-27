@@ -82,7 +82,7 @@ def get_mem_mb_deepvariant(wildcards, attempt):
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         res = 3500
     else:
-        res = 2750
+        res = 3000
 
     return (attempt - 1) * 0.5 * res + res
 
