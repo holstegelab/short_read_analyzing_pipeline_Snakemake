@@ -53,7 +53,7 @@ verifybamid2: 'verifybamid2'
 BAMMERGE: 'bam_merge.py'
 BAMSTATS: 'bam_stats.py'
 DECHIMER: 'bam_dechimer.py'
-DECHIMER_THRESHOLD: 0.00
+DECHIMER_THRESHOLD: 0.005
 
 #path to kmer files
 

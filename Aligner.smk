@@ -704,7 +704,7 @@ rule align_reads:
         os.path.join(config['BENCH'],"{sample}.{readgroup}.dragmap.txt")
     priority: 15
     resources:
-        n=22.75, #reducing thread count, as first part of dragmap is single threaded
+        n="22.75", #reducing thread count, as first part of dragmap is single threaded
         use_threads=24,
         mem_mb=get_mem_mb_align_reads,
     shell:
@@ -860,7 +860,7 @@ rule merge_rgs:
     run:
         if len(input.bam) > 1:
             cmd = "samtools merge -@ {resources.n} {output} {input.bam} 2> {log}"
-            shell(cmd)
+            shell(cmd, conda_env = "envs/preprocess.yaml")
         else:
             #switching to copy as hard link updates also time of input.bam
             cmd = "cp {input.bam} {output}"
@@ -868,10 +868,10 @@ rule merge_rgs:
 
 def get_mem_mb_markdup(wildcards, attempt):
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
-        res=150
-    else:   
-        res = 1500        
-    #large range of memory usage for markdup        
+        res=1500
+    else:
+        res = 150
+    #large range of memory usage for markdup
     return (attempt -1) * res * 3 + res
 rule markdup:
     """Mark duplicates using samtools markdup."""
@@ -892,7 +892,7 @@ rule markdup:
         samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log"),
         samtools_index_md=os.path.join(config['LOG'],"{sample}.markdup_index.log")
     resources:
-        n="1.6", 
+        n="1.6",
         mem_mb=get_mem_mb_markdup
     conda: "envs/preprocess.yaml"
     shell:
