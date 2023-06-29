@@ -36,8 +36,8 @@ rule Reference_preparation_all:
         expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_female_str']),
         os.path.join(config['RES'],config['SHIFTED_MT_fai']),
         os.path.join(config['RES'],config['ORIG_MT_fai']),
-        os.path.join(config['RES'],config['SHIFTED_MT_dcit']),
-        os.path.join(config['RES'],config['ORIG_MT_dcit'])
+        os.path.join(config['RES'],config['SHIFTED_MT_dict']),
+        os.path.join(config['RES'],config['ORIG_MT_dict'])
     default_target: True
 
 
