@@ -43,41 +43,39 @@ rule Reference_preparation_all:
 
 rule create_fai:
     input: fasta=os.path.join(config['RES'], config['ref_male'])
-    output: fai =os.path.join(config['RES'], config['ref_male_fai'])
+    output: fai = ancient(os.path.join(config['RES'], config['ref_male_fai']))
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
 rule create_fai_1:
     input: fasta=os.path.join(config['RES'], config['ref_female'])
-    output: fai =os.path.join(config['RES'], config['ref_female_fai'])
+    output: fai = ancient(os.path.join(config['RES'], config['ref_female_fai']))
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
 use rule create_fai as create_fai_chrM_shifted with:
     input: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    output: fai = os.path.join(config['RES'], config['SHIFTED_MT_fai'])
+    output: fai = ancient(os.path.join(config['RES'], config['SHIFTED_MT_fai']))
 
 use rule create_fai as create_dict_for_chrM_orig_reference with:
     input: mt_ref_shift = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    output: fai = os.path.join(config['RES'], config['ORIG_MT_fai'])
+    output: fai = ancient(os.path.join(config['RES'], config['ORIG_MT_fai']))
 
 rule create_dict:
     input: fasta=os.path.join(config['RES'], config['ref_male']),
-            fai = os.path.join(config['RES'], config['ref_male_fai'])
-    output: dict =os.path.join(config['RES'], config['ref_male_dict'])
+    output: dict = ancient(os.path.join(config['RES'], config['ref_male_dict']))
     conda: "envs/preprocess.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_1:
     input: fasta=os.path.join(config['RES'], config['ref_female']),
-            fai = os.path.join(config['RES'], config['ref_female_fai'])
-    output: dict =os.path.join(config['RES'], config['ref_female_dict'])
+    output: dict = ancient(os.path.join(config['RES'], config['ref_female_dict']))
     conda: "envs/preprocess.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_for_chrM_shifted_reference:
     input: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    output: dict = os.path.join(config['RES'], config['SHIFTED_MT_dict'])
+    output: dict = ancient(os.path.join(config['RES'], config['SHIFTED_MT_dict']))
     conda: "envs/preprocess.yaml"
     shell:
             """
@@ -86,7 +84,7 @@ rule create_dict_for_chrM_shifted_reference:
 
 use rule create_dict_for_chrM_shifted_reference as create_dict_for_chrM_reference with:
     input: mt_ref_shift = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    output: dict = os.path.join(config['RES'], config['ORIG_MT_dict'])
+    output: dict = ancient(os.path.join(config['RES'], config['ORIG_MT_dict']))
 
 rule create_hash:
     input:
@@ -95,8 +93,7 @@ rule create_hash:
         bed=os.path.join(config['RES'], config['ref_male_bed']),
         dict = os.path.join(config['RES'], config['ref_male_dict'] )
     conda: "envs/preprocess.yaml"
-    output:
-        os.path.join(config['RES'], config[sex_ref_hash[0]])
+    output: hash = ancient(os.path.join(config['RES'], config[sex_ref_hash[0]]))
     params:
         dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
     resources:
@@ -112,7 +109,7 @@ rule ComposeSTRTableFile:
         fasta=os.path.join(config['RES'], config['ref_male']),
         dict= os.path.join(config['RES'],config['ref_male_dict'])
     output:
-        str_file=os.path.join(config['RES'], config['ref_male_str'])
+        str_file=ancient(os.path.join(config['RES'], config['ref_male_str']))
     conda: "envs/preprocess.yaml"
     resources:
         mem_mb=12000,
@@ -129,8 +126,7 @@ rule create_hash_1:
         bed=os.path.join(config['RES'], config['ref_female_bed']),
         dict= os.path.join(config['RES'],config['ref_female_dict'])
     conda: "envs/preprocess.yaml"
-    output:
-        os.path.join(config['RES'], config['ref_female_hash'])
+    output: hash = ancient(os.path.join(config['RES'], config['ref_female_hash']))
     params:
         dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
     resources:
@@ -146,7 +142,7 @@ rule ComposeSTRTableFile_1:
         fasta=os.path.join(config['RES'], config['ref_female']),
         dict= os.path.join(config['RES'],config['ref_female_dict'])
     output:
-        str_file=os.path.join(config['RES'], config['ref_female_str'])
+        str_file = ancient(os.path.join(config['RES'], config['ref_female_str']))
     conda: "envs/preprocess.yaml"
     resources:
         mem_mb=12000,

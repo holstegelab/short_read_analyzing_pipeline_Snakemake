@@ -36,7 +36,7 @@ use rule * from Aligner
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
-use rule * from Reference_preparation
+# use rule * from Reference_preparation
 
 mode = config.get("computing_mode", "WES")
 cur_dir = os.getcwd()
