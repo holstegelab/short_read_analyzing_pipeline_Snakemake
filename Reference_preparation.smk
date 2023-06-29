@@ -77,7 +77,7 @@ rule create_dict_1:
 
 rule create_dict_for_chrM_shifted_reference:
     input: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    output: dict = os.path.join(config['RES'], config['SHIFTED_MT_dcit'])
+    output: dict = os.path.join(config['RES'], config['SHIFTED_MT_dict'])
     conda: "envs/preprocess.yaml"
     shell:
             """
@@ -86,7 +86,7 @@ rule create_dict_for_chrM_shifted_reference:
 
 use rule create_dict_for_chrM_shifted_reference as create_dict_for_chrM_reference with:
     input: mt_ref_shift = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    output: dict = os.path.join(config['RES'], config['ORIG_MT_dcit'])
+    output: dict = os.path.join(config['RES'], config['ORIG_MT_dict'])
 
 rule create_hash:
     input:
