@@ -90,7 +90,8 @@ def ensure_readgroup_info(wildcards):
 
 rule Aligner_all:
     input:
-        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names, cram = config['CRAM'])
+        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names, cram = config['CRAM']),
+        rules.Reference_preparation_all.input
     default_target: True
 
 def get_source_files(wildcards):
@@ -419,7 +420,7 @@ rule external_alignments_to_fastq:
         temp_sort=os.path.join("external_sort_temporary_{sample}_{readgroup}_"),
         memory_per_core= 6000
     priority: 10
-    conda: config['CONDA_MAIN']    
+    conda: config['CONDA_MAIN']
     #replaced samtools collate with samtools sort due to weird memory usage behaviour of collate. 
     #samtools collate -u -@ {resources.n} {params.cramref} -O {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} {resources.tmpdir}/{wildcards.sample}.{wildcards.readgroup}.collate |
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)

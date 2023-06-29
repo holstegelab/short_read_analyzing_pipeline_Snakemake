@@ -34,6 +34,10 @@ rule Reference_preparation_all:
         expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_male_str']),
         expand('{RES}{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_female_hash']),
         expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_female_str']),
+        os.path.join(config['RES'],config['SHIFTED_MT_fai']),
+        os.path.join(config['RES'],config['ORIG_MT_fai']),
+        os.path.join(config['RES'],config['SHIFTED_MT_dcit']),
+        os.path.join(config['RES'],config['ORIG_MT_dcit'])
     default_target: True
 
 
@@ -49,6 +53,14 @@ rule create_fai_1:
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
+use rule create_fai as create_fai_chrM_shifted with:
+    input: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
+    output: fai = os.path.join(config['RES'], config['SHIFTED_MT_fai'])
+
+use rule create_fai as create_dict_for_chrM_orig_reference with:
+    input: mt_ref_shift = os.path.join(config['RES'], config['ORIG_MT_fa'])
+    output: fai = os.path.join(config['RES'], config['ORIG_MT_fai'])
+
 rule create_dict:
     input: fasta=os.path.join(config['RES'], config['ref_male']),
             fai = os.path.join(config['RES'], config['ref_male_fai'])
@@ -63,7 +75,18 @@ rule create_dict_1:
     conda: "envs/preprocess.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
 
+rule create_dict_for_chrM_shifted_reference:
+    input: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
+    output: dict = os.path.join(config['RES'], config['SHIFTED_MT_dcit'])
+    conda: "envs/preprocess.yaml"
+    shell:
+            """
+            gatk CreateSequenceDictionary -R {input}
+            """
 
+use rule create_dict_for_chrM_shifted_reference as create_dict_for_chrM_reference with:
+    input: mt_ref_shift = os.path.join(config['RES'], config['ORIG_MT_fa'])
+    output: dict = os.path.join(config['RES'], config['ORIG_MT_dcit'])
 
 rule create_hash:
     input:

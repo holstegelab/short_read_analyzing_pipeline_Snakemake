@@ -67,8 +67,12 @@ ref: 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'
 ref_dir: 'Ref/'
 SHIFTED_MT: 'MT_ref_shifted'
 SHIFTED_MT_fa: 'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.fasta'
+SHIFTED_MT_dict: 'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.dict'
+SHIFTED_MT_fai: 'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.fasta.fai'
 MT_CHAIN: 'MT_ref_shifted/ShiftBack.chain'
 ORIG_MT_fa: 'MT_ref/chrM_hg38.fasta'
+ORIG_MT_dict: 'MT_ref/chrM_hg38.dict'
+ORIG_MT_fai: 'MT_ref/chrM_hg38.fasta.fai'
 ORIG_MT: 'MT_ref'
 
 
