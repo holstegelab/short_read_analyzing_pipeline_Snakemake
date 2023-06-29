@@ -21,6 +21,7 @@ wildcard_constraints:
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
+use rule * from Reference_preparation
 from read_samples import *
 import utils
 from common import *
