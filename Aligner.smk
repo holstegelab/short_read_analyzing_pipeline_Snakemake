@@ -319,6 +319,14 @@ def get_source_aligned_file(wildcards):
 
     return readgroup['file']
 
+def get_mem_mb_split_alignments(wildcards, attempt):
+    info = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    if len(readgroups_b) <= 1:
+        return 150
+    else:
+        res = 3000
+    return attempt * res
 
 rule split_alignments_by_readgroup:
     """Split a sample bam/cram file into multiple readgroups.
@@ -334,7 +342,7 @@ rule split_alignments_by_readgroup:
         readgroups=temp(directory(os.path.join(config['READGROUPS'], "{sample}.sourcefile.{filename}")))
     resources:
         n=1,
-        mem_mb=1000
+        mem_mb=get_mem_mb_split_alignments
     params:
         cramref=get_cram_ref
     conda: config['CONDA_MAIN']        
@@ -802,7 +810,7 @@ rule sort_bam_alignment:
         mem_mb = 13000
     params:
         temp_sort=os.path.join("sort_temporary_{sample}_{readgroup}"),
-        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 2000) / float(resources['n'])))        
+        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 3000) / float(resources['n'])))        
     shell:
         """
             (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
@@ -856,7 +864,7 @@ rule merge_rgs:
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     resources:
         n=1,
-        mem_mb=2000
+        mem_mb=150
     priority: 19
     conda: "envs/preprocess.yaml"
     run:
