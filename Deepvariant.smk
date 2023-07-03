@@ -52,7 +52,7 @@ def get_deepvariant_files(wildcards):
     sample = wildcards['sample']
     res = []
     for chrom in main_chrs:
-        res.append(os.path.join(config['DEEPVARIANT'], 'gVCF', chrom, sample + '.' + chrom + '.g.vcf.gz'))
+        res.append(os.path.join(config['DEEPVARIANT'], 'gVCF', chrom, sample + '.' + chrom + '.wg.vcf.gz'))
     return res
 
 rule deepvariant_sample_done:
@@ -92,11 +92,13 @@ rule deepvariant:
         bai = rules.markdup.output.mdbams_bai,
         bed = get_chrom_capture_kit_bed
     output:
-        vcf = os.path.join(config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.vcf.gz"),
-        gvcf = os.path.join(config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.g.vcf.gz")
+        vcf = temp(os.path.join(config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.vcf.gz")),
+        vcf_tbi = temp(os.path.join(config['DEEPVARIANT'],'VCF', "{chrom}","{sample}.{chrom}.vcf.gz.tbi")),
+        gvcf = temp(os.path.join(config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.g.vcf.gz")),
+        gvcf_tbi = temp(os.path.join(config['DEEPVARIANT'],'gVCF', "{chrom}","{sample}.{chrom}.g.vcf.gz.tbi")),
+        inter_dir = temp(directory(os.path.join(config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}")))
     params: 
             interval = lambda wildcards, input: wildcards['chrom'].replace('YH', 'Y').replace('XH','X') if len(input.bed) == 0 else input.bed[0],
-            inter_dir = os.path.join(config['DEEPVARIANT'],'DV_intermediate', "{sample}.{chrom}"),
             cd = current_dir + '/',
             mode=get_sequencing_mode
     container: 'docker://google/deepvariant:1.5.0'
@@ -109,8 +111,42 @@ rule deepvariant:
     log: os.path.join(config['LOG'],"{sample}.{chrom}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={params.interval} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{params.inter_dir}"  2> {log}
+        /opt/deepvariant/bin/run_deepvariant --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={params.interval} --ref={ref} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{output.inter_dir}"  2> {log}
         """
+
+
+
+rule DVWhatshapPhasingMerge:
+    """Phase VCF with Whatshap and merge into the gVCF"""
+    input:
+        vcf = rules.deepvariant.output.vcf,
+        vcf_tbi = rules.deepvariant.output.vcf_tbi,
+        gvcf = rules.deepvariant.output.gvcf,
+        gvcf_tbi = rules.deepvariant.output.gvcf_tbi,
+        bams = rules.markdup.output.mdbams,
+        bai = rules.markdup.output.mdbams_bai,
+        validated_sex = rules.get_validated_sex.output.yaml
+    output:
+        vcf = os.path.join(config['DEEPVARIANT'], "VCF/{chrom}/{sample}.{chrom}.w.vcf.gz"),
+        wstats = os.path.join(config['STAT'], "whatshap_dvphasing/{sample}.{chrom}.stats"),
+        mwstats = os.path.join(config['STAT'], "whatshap_dvphasing/{sample}.{chrom}.merge_stats"),
+        tmp_gvcf= temp(os.path.join(config['DEEPVARIANT'], "gVCF/{chrom}/{sample}.{chrom}.wg.vcf")), 
+        gvcf= os.path.join(config['DEEPVARIANT'], "gVCF/{chrom}/{sample}.{chrom}.wg.vcf.gz"), 
+        gvcf_tbi = os.path.join(config['DEEPVARIANT'], "gVCF/{chrom}/{sample}.{chrom}.wg.vcf.gz.tbi"), 
+    params:
+        merge_script=srcdir("merge_phasing.py")
+    resources: 
+        n=1,
+        mem_mb = 2500
+    conda: "envs/whatshap.yaml"
+    shell: """
+        mkdir -p `dirname {output.wstats}`
+        whatshap phase  --ignore-read-groups --reference {ref} {input.vcf} {input.bams} -o {output.vcf}        
+        whatshap stats {output.vcf} > {output.wstats}
+        python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
+        bcftools view {output.tmp_gvcf} -o {output.gvcf}
+        bcftools index --tbi {output.gvcf}
+        """        
 
 
 # for i in {0..1}; do singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" /opt/deepvariant/bin/make_examples --ref=/gpfs/work3/0/qtholstg/hg38_res/Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa --reads=/gpfs/work3/0/qtholstg/Georgii_tests/10_additional_samples_gVCF/bams/NL_VUMC_KG-013832.markdup.bam --gvcf=/gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_call_variant_test.gvcf.tfrecord_chr20@2.gz --mode calling --regions chr20 --examples /gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_call_variant_test_examples_chr20@2.gz --task $i --channels="insert_size"    --gvcf_gq_binsize 3; done

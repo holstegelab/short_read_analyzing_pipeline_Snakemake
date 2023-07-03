@@ -14,4 +14,3 @@ dependencies:
   - python=3.9.12
   - samtools=1.15
   - swalign=0.3.6
-  - h5py

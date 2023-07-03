@@ -61,7 +61,10 @@ def get_gvcf_files(wildcards):
     sample = wildcards['sample']
     res = []
     for chrom in main_chrs_ploidy_male:
-        res.append(os.path.join(config['gVCF'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
+        if 'Y' in chrom or 'H' in chrom:
+            res.append(os.path.join(config['gVCF'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
+        else:        
+            res.append(os.path.join(config['gVCF'], chrom, sample + '.' + chrom + '.wg.vcf.gz'))
     return res
 
 rule gvcf_sample_done:
@@ -170,7 +173,7 @@ def read_contam_w(wildcards):
         freemix = 0.0        
     return freemix
 
-def get_mem_mb_HaplotypeCaller(wildcrads, attempt):
+def get_mem_mb_HaplotypeCaller(wildcards, attempt):
     """Get memory for HaplotypeCaller."""
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         res = 1750
@@ -201,10 +204,11 @@ rule HaplotypeCaller:
     input:
         # check what bam file we need to use (with or without additional cleanup)
         bams = rules.markdup.output.mdbams,
+        bai = rules.markdup.output.mdbams_bai,
         model = rules.CalibrateDragstrModel.output.dragstr_model,
         contam= rules.verifybamid.output.VBID_stat,
-        bai = rules.markdup.output.mdbams_bai,
-        interval= get_chrom_merged_capture_kit
+        interval= get_chrom_merged_capture_kit,
+        validated_sex = rules.get_validated_sex.output.yaml
     output:
         gvcf= ensure(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
         tbi = ensure(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True),
@@ -225,15 +229,95 @@ rule HaplotypeCaller:
         # command to get path to capture_kit interval list from SAMPLEFILE
         ploidy = get_chrom_ploidy,
         java_options=config['DEFAULT_JAVA_OPTIONS'],
+        ref=get_ref_by_validated_sex,
         dragen_mode = lambda wildcards: '--dragen-mode true' if not 'H' in wildcards['chrom'] else ''
     priority: 28
+    #Overview of available annotations (version 4.4)
+    #AS_StandardAnnotation: AS_BaseQualityRankSumTest, AS_FisherStrand, AS_InbreedingCoeff, AS_MappingQualityRankSumTest, AS_QualByDepth, AS_RMSMappingQuality, AS_ReadPosRankSumTest, AS_StrandOddsRatio (all allele specific annotations)
+    #StandardHCAnnotation: DepthPerSampleHC
+    #StandardANnotation: Coverage, ChromosomeCounts, BaseQualityRankSumTest, MappingQualityRankSumTest, FisherStrand, QualByDepth, InbreedingCoeff, DepthPerAlleleBySample, ReadPosRankSumTest, ExcessHet
+    #                      StrandOddsRatio, RMSMappingQuality, 
+    #not included in standard annotation: FragmentDepthPerAlleleBySample,StrandBiasBySample, AssemblyComplexity,  FragmentLength, OrientationBiasReadCounts, TandemRepeat, UniqueAltReadCount
+    
+    #findings:
+    #FragmentDepthPerAlleleBySample, OrientationBiasReadCounts, TandemRepeat --> do not output anything in haplotypecaller, omitted
+
+    #regarding linked-de-bruijn-graph, see comments in https://gatk.broadinstitute.org/hc/en-us/community/posts/360077647812-Why-do-a-clear-expected-variant-not-show-up-in-the-Mutect2-vcf-file
+    #also: https://gatk.broadinstitute.org/hc/en-us/articles/360043491652-When-HaplotypeCaller-and-Mutect2-do-not-call-an-expected-variant
+    #still, seems quite experimental, so not using it for now
+    
+    #related: --recover-all-dangling-branches
+    #to consider: --population-callset in combination with gnomad,  --use-posteriors-to-calculate-qual
+
+    #max-mnp-distance: not compatible with multiple sample gVCF calling, omitted.
     shell:
         """ 
-                {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
-                 -R {ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
+                {gatk} --java-options "-Xmx6000M  {params.java_options}" HaplotypeCaller     \
+                 -R {params.ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
+                 --annotate-with-num-discovered-alleles --adaptive-pruning \
+                 -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
                  -I {input.bams} -O {output.gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true\
                   {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}"""
+
+
+rule PrepareWhatshap:
+    """Prepare input for whatshap phasing."""
+    input:
+        gvcf = rules.HaplotypeCaller.output.gvcf,
+        tbi = rules.HaplotypeCaller.output.tbi,
+        validated_sex = rules.get_validated_sex.output.yaml
+    output:
+        vcf = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.vcf.gz")),
+        vcf_tbi = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.vcf.gz.tbi"))
+    params:
+        java_options=config['DEFAULT_JAVA_OPTIONS'],
+        ref=get_ref_by_validated_sex,
+    resources: 
+        n=1,
+        mem_mb = 2500
+    conda: "envs/gatk.yaml"        
+    shell: """
+        {gatk} --java-options "-Xmx4000M  {params.java_options}" GenotypeGVCFs \
+            -R {ref} -V {input.gvcf} -O {output.vcf} 
+        
+        """        
+
+rule WhatshapPhasingMerge:
+    """Phase VCF with Whatshap and merge into the gVCF"""
+    input:
+        vcf = rules.PrepareWhatshap.output.vcf,
+        vcf_tbi = rules.PrepareWhatshap.output.vcf_tbi,
+        gvcf = rules.HaplotypeCaller.output.gvcf,
+        gvcf_tbi = rules.HaplotypeCaller.output.tbi,
+        bams = rules.markdup.output.mdbams,
+        bai = rules.markdup.output.mdbams_bai,
+        validated_sex = rules.get_validated_sex.output.yaml
+    output:
+        tmp_vcf = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.tmp.vcf.gz")),
+        vcf = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.w.vcf.gz")),
+        wstats = os.path.join(config['STAT'], "whatshap_phasing/{sample}.{chrom}.stats"),
+        mwstats = os.path.join(config['STAT'], "whatshap_phasing/{sample}.{chrom}.merge_stats"),
+        tmp_gvcf= temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf")), 
+        gvcf= os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf.gz"), 
+        gvcf_tbi = os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf.gz.tbi"), 
+    params:
+        merge_script=srcdir("merge_phasing.py"),
+        ref=get_ref_by_validated_sex
+    resources: 
+        n=1,
+        mem_mb = 2500
+    conda: "envs/whatshap.yaml"
+    shell: """
+        mkdir -p `dirname {output.wstats}`
+        whatshap unphase  {input.vcf} >  {output.tmp_vcf}
+        whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf}
+        whatshap stats {input.vcf} > {output.wstats}
+        whatshap stats {output.vcf} >> {output.wstats}
+        python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
+        bcftools annotate -x 'FORMAT/PGT,FORMAT/PS,FORMAT/PID' {output.tmp_gvcf} -o {output.gvcf}
+        bcftools index --tbi {output.gvcf}
+        """        
 
 
 def get_mem_mb_reblock_gvcf(wildcrads, attempt):

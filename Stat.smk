@@ -50,7 +50,6 @@ def get_ref_by_validated_sex(wildcards, input):
         ref=os.path.join(config['RES'],config['ref_female'])
     else:
         ref=os.path.join(config['RES'],config['ref_male'])
-
     return ref
 
 rule Stat_all:
@@ -100,7 +99,6 @@ rule coverage:
         prefix = os.path.join(config['STAT'], 'cov', '{sample}')
     resources:
         mem_mb=2200,
-        n=2
         n="1.8"
     conda: 'envs/mosdepth.yaml'
     shell:

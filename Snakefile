@@ -48,14 +48,17 @@ module SV_delly:
 module CNV_with_cnvkit_Module:
     snakefile: 'CNV_with_cnvkit_Module.smk'
     config: config
+
 module Combine_gVCF:
     snakefile: 'Combine_gVCF.smk'
     config: config
 use rule * from Stat
+
 module Encrypt:
     snakefile: 'Encrypt.smk'
     config: config
 use rule * from Encrypt
+
 module Deepvariant:
     snakefile: 'Deepvariant.smk'
     config: config
