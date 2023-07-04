@@ -78,6 +78,20 @@ rule sort_by_name:
     conda: "envs/gatk.yaml"
     shell: "samtools sort -n {input} > {output} 2> {log}"
 
+rule realign_to_orig_ref:
+    input: rules.sort_by_name.output
+    output: bam = temp(os.path.join(config['chrM'], '{sample}_chrM_orig.reads.bam')),
+            bai = temp(os.path.join(config['chrM'],'{sample}_chrM_orig.reads.bai'))
+    conda: "envs/dragmap.yaml"
+    params:
+        ref_dir=os.path.join(config['RES'], config['ORIG_MT']),
+        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
+    log: os.path.join(config['LOG'],"{sample}.orig_mt_align.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.orig_mt_align.txt')
+    resources: n = 8,
+                mem_mb = 14000
+    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
+
 
 rule realign_to_shifted_ref:
     input: rules.sort_by_name.output
@@ -89,13 +103,13 @@ rule realign_to_shifted_ref:
         dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
     log: os.path.join(config['LOG'],"{sample}.shiftedchrM_align.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_align.txt')
-    resources: n = 12,
-                mem_mb = 22000
+    resources: n = 8,
+                mem_mb = 14000
     shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
 
 rule mutect_orig:
-    input: bam = rules.extract_chrM_reads.output.bam,
-            bai = rules.extract_chrM_reads.output.bai
+    input: bam = rules.realign_to_orig_ref.output.bam,
+            bai = rules.realign_to_orig_ref.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True),
             stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.stats')), non_empty = True)
