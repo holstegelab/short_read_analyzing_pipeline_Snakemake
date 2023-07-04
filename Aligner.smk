@@ -320,7 +320,7 @@ def get_source_aligned_file(wildcards):
     return readgroup['file']
 
 def get_mem_mb_split_alignments(wildcards, attempt):
-    info = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroups_b = sinfo['readgroups']
     if len(readgroups_b) <= 1:
         return 150
