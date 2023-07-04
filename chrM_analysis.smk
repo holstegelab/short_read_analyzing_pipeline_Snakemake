@@ -171,8 +171,8 @@ rule sort_by_name_NUMT:
 
 rule align_NUMT_to_chrM:
     input: rules.sort_by_name_NUMT.output
-    output: bam = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMT_shifted.reads.bam')),
-            bai = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTS_shifted.reads.bai'))
+    output: bam = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs.reads.bam')),
+            bai = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs.reads.bai'))
     conda: "envs/preprocess.yaml"
     params:
         ref_dir=os.path.join(config['RES'], config['ORIG_MT']),
@@ -185,8 +185,8 @@ rule align_NUMT_to_chrM:
 
 rule realign_to_shifted_ref_NUMT:
     input: rules.sort_by_name_NUMT.output
-    output: bam_shifted = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMT_shifted.reads.bam')),
-            bai_shifted= temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTS_shifted.reads.bai'))
+    output: bam_shifted = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs_shifted.reads.bam')),
+            bai_shifted= temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs_shifted.reads.bai'))
     conda: "envs/preprocess.yaml"
     params:
         ref_dir=os.path.join(config['RES'], config['SHIFTED_MT']),
