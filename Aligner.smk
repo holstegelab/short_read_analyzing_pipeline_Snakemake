@@ -18,10 +18,7 @@ wildcard_constraints:
     filetype = 'fq|fastq',
     batchnr='[\d]+'
     # readgroup="[\w\d_\-@]+"
-module Reference_preparation:
-    snakefile: "Reference_preparation.smk"
-    config: config
-use rule * from Reference_preparation
+
 from read_samples import *
 import utils
 from common import *
@@ -40,6 +37,12 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 
 
 sample_names = SAMPLEINFO.keys()
+
+
+rule Aligner_all:
+    input:
+        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names, cram = config['CRAM'])
+    default_target: True
 
 
 def get_refdir_by_validated_sex(wildcards, input):
@@ -89,11 +92,7 @@ def ensure_readgroup_info(wildcards):
 
 
 
-rule Aligner_all:
-    input:
-        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names, cram = config['CRAM']),
-        rules.Reference_preparation_all.input
-    default_target: True
+
 
 def get_source_files(wildcards):
     """Make sure the source files for a sample are available.
