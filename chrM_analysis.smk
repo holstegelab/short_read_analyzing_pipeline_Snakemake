@@ -90,7 +90,7 @@ rule realign_to_orig_ref:
     benchmark: os.path.join(config['BENCH'], '{sample}.orig_mt_align.txt')
     resources: n = 8,
                 mem_mb = 14000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
 
 
 rule realign_to_shifted_ref:
