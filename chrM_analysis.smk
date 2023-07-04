@@ -98,7 +98,7 @@ rule mutect_orig:
             bai = rules.extract_chrM_reads.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True),
-            stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.stat')), non_empty = True)
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.stats')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig.txt')
@@ -110,7 +110,7 @@ rule mutect_shifted:
             bai = rules.realign_to_shifted_ref.output.bai_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.tbi')), non_empty = True),
-            stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.stat')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.stats')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift.txt')
@@ -120,7 +120,7 @@ rule mutect_shifted:
 rule merge_stats:
     input: orig = rules.mutect_orig.output.stat,
             shift = rules.mutect_shifted.output.stat
-    output: merged_stat = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_merged.vcf.gz.stat'), non_empty = True),
+    output: merged_stat = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_merged.vcf.gz.stats'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.merge_stat.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.merge_stat.txt')
@@ -219,7 +219,7 @@ rule mutect_orig_NUMT:
             bai = rules.align_NUMT_to_chrM.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty = True),
-            stat = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.stat')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.stats')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig_NUMT.txt')
@@ -231,7 +231,7 @@ rule mutect_shifted_NUMT:
             bai = rules.realign_to_shifted_ref_NUMT.output.bai_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.tbi')), non_empty = True),
-            stat = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.stat')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.stats')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_NUMT.txt')
@@ -241,7 +241,7 @@ rule mutect_shifted_NUMT:
 rule merge_stats_NUMT:
     input: orig = rules.mutect_orig_NUMT.output.stat,
             shift = rules.mutect_shifted_NUMT.output.stat
-    output: merged_stat = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.stat')),
+    output: merged_stat = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.stats')),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.merge_stat.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.merge_stat.txt')
