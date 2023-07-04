@@ -75,7 +75,7 @@ rule sort_by_name:
     output: ensure(temp(os.path.join(config['chrM'], '{sample}_chrM_namesorted.reads.bam')), non_empty = True)
     benchmark: os.path.join(config['BENCH'], '{sample}.namesort_chrM.txt')
     log: os.path.join(config['LOG'],"{sample}.namesort_chrM.log")
-    conda: "envs/gatk.yaml"
+    conda: "envs/preprocess.yaml"
     shell: "samtools sort -n {input} > {output} 2> {log}"
 
 rule realign_to_orig_ref:
