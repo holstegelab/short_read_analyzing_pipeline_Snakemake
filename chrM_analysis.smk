@@ -160,7 +160,7 @@ rule filter_mutect_calls:
     log: os.path.join(config['LOG'],"{sample}.filtr.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.filtr.txt')
     params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
-    shell: "gatk FilterMutectCalls -V {input.vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2> {log}"
+    shell: "gatk FilterMutectCalls -OVI true -V {input.vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2> {log}"
 
 ######################################
 #####   Process NUMTs regions   ######
@@ -276,12 +276,12 @@ rule filter_mutect_calls_NUMT:
             tbi = rules.merge_vcfs_NUMT.output.merged_tbi,
             stat = rules.merge_stats_NUMT.output.merged_stat
     output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMTs_filtred.vcf.gz'), non_empty = True),
-            filtred_tbi = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
+            filtred_tbi = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMTs_filtred.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.filtr_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.filtr_NUMT.txt')
     params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
-    shell: "gatk FilterMutectCalls -V {input.vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
+    shell: "gatk FilterMutectCalls -OVI true -V {input.vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
 
 
 
