@@ -94,30 +94,33 @@ rule realign_to_shifted_ref:
     shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
 
 rule mutect_orig:
-    input: rules.extract_chrM_reads.output.bam
+    input: bam = rules.extract_chrM_reads.output.bam,
+            bai = rules.extract_chrM_reads.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True)
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig.txt')
     params: mt_ref = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input} -O {output.vcf} 2> {log}"
+    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf} 2> {log}"
 
 rule mutect_shifted:
-    input: rules.realign_to_shifted_ref.output.bam_shifted
+    input: bam = rules.realign_to_shifted_ref.output.bam_shifted,
+            bai = rules.realign_to_shifted_ref.output.bai_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.tbi')), non_empty = True),
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.tbi')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift.txt')
     params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
 
 rule shift_back:
-    input: rules.mutect_shifted.output.vcf
+    input: vcf = rules.mutect_shifted.output.vcf,
+            tbi = rules.mutect_shifted.output.tbi
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted_backshifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted_backshifted.vcf.gz.idx')), non_empty = True),
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted_backshifted.vcf.gz.tbi')), non_empty = True),
     params: chain = config['MT_CHAIN'],
             mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
     conda: "envs/gatk.yaml"
@@ -127,23 +130,26 @@ rule shift_back:
 
 rule merge_vcfs:
     input: o_vcf = rules.mutect_orig.output.vcf,
-            sb_vcf = rules.shift_back.output.vcf
+            o_tbi = rules.mutect_orig.output.tbi,
+            sb_vcf = rules.shift_back.output.vcf,
+            sb_tbi = rules.shift_back.output.tbi
     output: merged_vcf = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_merged.vcf.gz'), non_empty = True),
-            merged_idx = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_merged.vcf.gz.idx'), non_empty = True),
+            merged_tbi = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_merged.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.vcf_merge.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge.txt')
     shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output} 2> {log}"
 
 rule filter_mutect_calls:
-    input: rules.merge_vcfs.output.merged_vcf
+    input: vcf = rules.merge_vcfs.output.merged_vcf,
+            tbi = rules.merge_vcfs.output.merged_tbi
     output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_filtred.vcf.gz'), non_empty = True),
-            filtred_idx = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_filtred.vcf.gz.idx'), non_empty = True),
+            filtred_tbi = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.filtr.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.filtr.txt')
     params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
-    shell: "gatk FilterMutectCalls -V {input} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2> {log}"
+    shell: "gatk FilterMutectCalls -V {input.vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2> {log}"
 
 ######################################
 #####   Process NUMTs regions   ######
@@ -198,56 +204,62 @@ rule realign_to_shifted_ref_NUMT:
     shell: "{params.dragmap} -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
 
 rule mutect_orig_NUMT:
-    input: rules.align_NUMT_to_chrM.output.bam
+    input: bam = rules.align_NUMT_to_chrM.output.bam,
+            bai = rules.align_NUMT_to_chrM.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty = True)
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig_NUMT.txt')
     params: mt_ref = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
 rule mutect_shifted_NUMT:
-    input: rules.realign_to_shifted_ref_NUMT.output.bam_shifted
+    input: bam = rules.realign_to_shifted_ref_NUMT.output.bam_shifted,
+            bai = rules.realign_to_shifted_ref_NUMT.output.bai_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.tbi')), non_empty = True),
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.tbi')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_NUMT.txt')
     params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
 
 rule shift_back_NUMT:
-    input: rules.mutect_shifted_NUMT.output.vcf
+    input: vcf = rules.mutect_shifted_NUMT.output.vcf,
+            tbi = rules.mutect_shifted_NUMT.output.tbi
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')), non_empty = True),
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')), non_empty = True),
     params: chain = config['MT_CHAIN'],
             mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_back_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_back_NUMT.txt')
-    shell: "gatk LiftoverVcf -I {input} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null "
+    shell: "gatk LiftoverVcf -I {input.vcf} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null "
 
 rule merge_vcfs_NUMT:
     input: o_vcf = rules.mutect_orig_NUMT.output.vcf,
-            sb_vcf = rules.shift_back_NUMT.output.vcf
+            o_tbi = rules.mutect_orig_NUMT.output.tbi,
+            sb_vcf = rules.shift_back_NUMT.output.vcf,
+            sb_tbi = rules.shift_back_NUMT.output.tbi
     output: merged_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz'), non_empty = True),
-            merged_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.tbi'), non_empty = True),
+            merged_tbi = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.vcf_merge_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge_NUMT.txt')
     shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output}"
 
 rule filter_mutect_calls_NUMT:
-    input: rules.merge_vcfs_NUMT.output.merged_vcf
+    input: vcf = rules.merge_vcfs_NUMT.output.merged_vcf,
+            tbi = rules.merge_vcfs_NUMT.output.merged_tbi
     output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMTs_filtred.vcf.gz'), non_empty = True),
-            filtred_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
+            filtred_tbi = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.filtr_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.filtr_NUMT.txt')
     params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
-    shell: "gatk FilterMutectCalls -V {input} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
+    shell: "gatk FilterMutectCalls -V {input.vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
 
 
 
