@@ -91,7 +91,7 @@ rule realign_to_shifted_ref:
     benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
 
 rule mutect_orig:
     input: bam = rules.extract_chrM_reads.output.bam,
@@ -187,7 +187,7 @@ rule align_NUMT_to_chrM:
     benchmark: os.path.join(config['BENCH'], '{sample}.origchrM_NUMT_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
 
 rule realign_to_shifted_ref_NUMT:
     input: rules.sort_by_name_NUMT.output
@@ -201,7 +201,7 @@ rule realign_to_shifted_ref_NUMT:
     benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_NUMT_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted}  2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted}  2> {log}"
 
 rule mutect_orig_NUMT:
     input: bam = rules.align_NUMT_to_chrM.output.bam,
