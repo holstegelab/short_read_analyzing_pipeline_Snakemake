@@ -121,7 +121,7 @@ rule shift_back:
             tbi = rules.mutect_shifted.output.tbi
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted_backshifted.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted_backshifted.vcf.gz.tbi')), non_empty = True),
-    params: chain = config['MT_CHAIN'],
+    params: chain = os.path.join(config['RES'], config['MT_CHAIN']),
             mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_back.log")
@@ -231,8 +231,8 @@ rule shift_back_NUMT:
             tbi = rules.mutect_shifted_NUMT.output.tbi
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')), non_empty = True),
-    params: chain = config['MT_CHAIN'],
-            mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
+    params: chain = os.path.join(config['RES'], config['MT_CHAIN']),
+            mt_ref= os.path.join(config['RES'], config['ORIG_MT_fa'])
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_back_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_back_NUMT.txt')
