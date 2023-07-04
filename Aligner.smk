@@ -21,7 +21,7 @@ wildcard_constraints:
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
-#use rule * from Reference_preparation
+use rule * from Reference_preparation
 from read_samples import *
 import utils
 from common import *
@@ -92,7 +92,7 @@ def ensure_readgroup_info(wildcards):
 rule Aligner_all:
     input:
         expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names, cram = config['CRAM']),
-        #rules.Reference_preparation_all.input
+        rules.Reference_preparation_all.input
     default_target: True
 
 def get_source_files(wildcards):
