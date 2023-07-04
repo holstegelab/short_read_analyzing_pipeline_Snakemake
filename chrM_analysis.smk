@@ -97,7 +97,8 @@ rule mutect_orig:
     input: bam = rules.extract_chrM_reads.output.bam,
             bai = rules.extract_chrM_reads.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty = True),
-            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True)
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.stat')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig.txt')
@@ -109,12 +110,21 @@ rule mutect_shifted:
             bai = rules.realign_to_shifted_ref.output.bai_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.tbi')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.stat')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift.txt')
     params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
     shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
+rule merge_stats:
+    input: orig = rules.mutect_orig.output.stat,
+            shift = rules.mutect_shifted.output.stat
+    output: merged_stat = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_merged.vcf.gz.stat'), non_empty = True),
+    conda: "envs/gatk.yaml"
+    log: os.path.join(config['LOG'],"{sample}.merge_stat.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.merge_stat.txt')
+    shell: "gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat}"
 
 rule shift_back:
     input: vcf = rules.mutect_shifted.output.vcf,
@@ -138,11 +148,12 @@ rule merge_vcfs:
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.vcf_merge.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge.txt')
-    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output} 2> {log}"
+    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output.merged_vcf} 2> {log}"
 
 rule filter_mutect_calls:
     input: vcf = rules.merge_vcfs.output.merged_vcf,
-            tbi = rules.merge_vcfs.output.merged_tbi
+            tbi = rules.merge_vcfs.output.merged_tbi,
+            stat = rules.merge_stats.output.merged_stat
     output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_filtred.vcf.gz'), non_empty = True),
             filtred_tbi = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
@@ -207,7 +218,8 @@ rule mutect_orig_NUMT:
     input: bam = rules.align_NUMT_to_chrM.output.bam,
             bai = rules.align_NUMT_to_chrM.output.bai
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz')), non_empty = True),
-            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty = True)
+            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.stat')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig_NUMT.txt')
@@ -219,12 +231,21 @@ rule mutect_shifted_NUMT:
             bai = rules.realign_to_shifted_ref_NUMT.output.bai_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz')), non_empty = True),
             tbi = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.tbi')), non_empty = True),
+            stat = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.stat')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_NUMT.txt')
     params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
     shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
+rule merge_stats_NUMT:
+    input: orig = rules.mutect_orig_NUMT.output.stat,
+            shift = rules.mutect_shifted_NUMT.output.stat
+    output: merged_stat = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.stat')),
+    conda: "envs/gatk.yaml"
+    log: os.path.join(config['LOG'],"{sample}.merge_stat.log")
+    benchmark: os.path.join(config['BENCH'], '{sample}.merge_stat.txt')
+    shell: "gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat}"
 
 rule shift_back_NUMT:
     input: vcf = rules.mutect_shifted_NUMT.output.vcf,
@@ -252,7 +273,8 @@ rule merge_vcfs_NUMT:
 
 rule filter_mutect_calls_NUMT:
     input: vcf = rules.merge_vcfs_NUMT.output.merged_vcf,
-            tbi = rules.merge_vcfs_NUMT.output.merged_tbi
+            tbi = rules.merge_vcfs_NUMT.output.merged_tbi,
+            stat = rules.merge_stats_NUMT.output.merged_stat
     output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMTs_filtred.vcf.gz'), non_empty = True),
             filtred_tbi = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
