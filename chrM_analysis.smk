@@ -126,7 +126,7 @@ rule shift_back:
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_back.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_back.txt')
-    shell: "gatk LiftoverVcf -I {input} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2> {log}"
+    shell: "gatk LiftoverVcf -I {input.vcf} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2> {log}"
 
 rule merge_vcfs:
     input: o_vcf = rules.mutect_orig.output.vcf,
@@ -248,7 +248,7 @@ rule merge_vcfs_NUMT:
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.vcf_merge_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge_NUMT.txt')
-    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output}"
+    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output.merged_vcf}"
 
 rule filter_mutect_calls_NUMT:
     input: vcf = rules.merge_vcfs_NUMT.output.merged_vcf,
