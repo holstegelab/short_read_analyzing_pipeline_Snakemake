@@ -893,11 +893,12 @@ rule markdup:
         samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log")
     resources:
         n="1.6",
-        mem_mb=get_mem_mb_markdup
+        mem_mb=get_mem_mb_markdup,
+        temp_loc=os.path.join("markdup_temporary_{sample}")
     conda: "envs/preprocess.yaml"
     shell:
         """
-            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
+            samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
         """
     
 
@@ -907,7 +908,7 @@ rule mCRAM:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        cram=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram")
+        cram=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram"),
         crai=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.crai")
     resources:
         n=2,

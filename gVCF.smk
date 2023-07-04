@@ -179,7 +179,7 @@ def get_mem_mb_HaplotypeCaller(wildcards, attempt):
         res = 1750
     else:
         res = 1400
-    return attempt * res
+    return (attempt - 1) * res * 3 + res #aggressively reserve more memory
 
 
 def get_chrom_merged_capture_kit(wildcards):
@@ -252,7 +252,7 @@ rule HaplotypeCaller:
     #max-mnp-distance: not compatible with multiple sample gVCF calling, omitted.
     shell:
         """ 
-                {gatk} --java-options "-Xmx6000M  {params.java_options}" HaplotypeCaller     \
+                {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
                  -R {params.ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
                  --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
                  --annotate-with-num-discovered-alleles --adaptive-pruning \
@@ -274,8 +274,8 @@ rule PrepareWhatshap:
         java_options=config['DEFAULT_JAVA_OPTIONS'],
         ref=get_ref_by_validated_sex,
     resources: 
-        n=1,
-        mem_mb = 2500
+        n="0.25",
+        mem_mb = 1500
     conda: "envs/gatk.yaml"        
     shell: """
         {gatk} --java-options "-Xmx4000M  {params.java_options}" GenotypeGVCFs \
@@ -305,8 +305,8 @@ rule WhatshapPhasingMerge:
         merge_script=srcdir("scripts/merge_phasing.py"),
         ref=get_ref_by_validated_sex
     resources: 
-        n=1,
-        mem_mb = 2500
+        n="0.6",
+        mem_mb = 600
     conda: "envs/whatshap.yaml"
     shell: """
         mkdir -p `dirname {output.wstats}`

@@ -193,16 +193,27 @@ for file in [gvcf,out]:
     file.add_format_to_header({'ID': 'GTW', 'Number': '1', 'Type': 'String', 'Description': 'Alleles phased by a combination of Whatshap (separator |) and GATK physical phasing (separator !). Last 3 digits of position in GVCF, followed by + and the length of the reference allele if it is longer than 1 base, followed by the alleles separated by |.'})
     file.add_format_to_header({'ID': 'PSW', 'Number': '1', 'Type': 'Integer', 'Description': 'Phase block ID for phase info in GTW.'})
 
+stats = {}
+
 # Get the next record from each file
-gvcf_record = next(gvcf)
-vcf_record = next(vcf)
-while 'PS' not in vcf_record.FORMAT:
+try:
+    gvcf_record = next(gvcf)
+except StopIteration:
+    gvcf_record = None
+
+try:
     vcf_record = next(vcf)
+    while 'PS' not in vcf_record.FORMAT:
+        vcf_record = next(vcf)
+    stats['nphased_variants_wh'] = 1
+except StopIteration:
+    vcf_record = None
+    stats['nphased_variants_wh'] = 0
+
 write_stack = []
 gphase_blocks = {}
 wphase_blocks = {}
 
-stats = {'nphased_variants_wh': 1}
 # Loop over the variants in both files
 while gvcf_record is not None and vcf_record is not None:
     # If the gVCF record is before the phased VCF record, get the next gVCF record
@@ -365,8 +376,13 @@ stats['nvariants_phased'] = nvariants
 blocklength = [max(v) - min(v) for v in variants]
 stats['average_phase_block_length'] = numpy.mean(blocklength)
 stats['median_phase_block_length'] = numpy.median(blocklength)
-stats['max_phase_block_length'] = max(blocklength)
-stats['sum_phase_block_length'] = sum(blocklength)
+if blocklength:
+    stats['max_phase_block_length'] = max(blocklength)
+    stats['sum_phase_block_length'] = sum(blocklength)
+else:
+    stats['max_phase_block_length'] = 0    
+    stats['sum_phase_block_length'] = 0
+
 
 
 # Close the output gVCF file
