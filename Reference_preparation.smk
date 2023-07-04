@@ -106,7 +106,7 @@ rule create_hash:
     params:
         dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
     resources:
-        mem_mb=250000,
+        mem_mb=50000,
         n=64
     shell:  """
             {params.dragmap} --build-hash-table true --ht-reference {input.fasta} --output-directory {input.dir} --ht-mask-bed {input.bed} 
@@ -137,7 +137,7 @@ rule create_hash_1:
     params:
         dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
     resources:
-        mem_mb=256000,
+        mem_mb=50000,
         n=64
     shell:  """
             {params.dragmap} --build-hash-table true --ht-reference {input.fasta} --output-directory {input.dir} --ht-mask-bed {input.bed} 

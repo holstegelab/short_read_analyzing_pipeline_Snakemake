@@ -33,7 +33,10 @@ module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 use rule * from Aligner
-
+module Reference_preparation:
+    snakefile: "Reference_preparation.smk"
+    config: config
+# use rule * from Reference_preparation
 
 mode = config.get("computing_mode", "WES")
 cur_dir = os.getcwd()
@@ -79,30 +82,28 @@ rule realign_to_orig_ref:
     input: rules.sort_by_name.output
     output: bam = temp(os.path.join(config['chrM'], '{sample}_chrM_orig.reads.bam')),
             bai = temp(os.path.join(config['chrM'],'{sample}_chrM_orig.reads.bai'))
-    conda: "envs/dragmap.yaml"
+    conda: "envs/dragmap_chrm.yaml"
     params:
         ref_dir=os.path.join(config['RES'], config['ORIG_MT']),
-        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
     log: os.path.join(config['LOG'],"{sample}.orig_mt_align.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.orig_mt_align.txt')
     resources: n = 8,
                 mem_mb = 14000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input} --num-threads {resources.n} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
 
 
 rule realign_to_shifted_ref:
     input: rules.sort_by_name.output
     output: bam_shifted = temp(os.path.join(config['chrM'], '{sample}_chrM_shifted.reads.bam')),
             bai_shifted= temp(os.path.join(config['chrM'],'{sample}_chrM_shifted.reads.bai'))
-    conda: "envs/dragmap.yaml"
+    conda: "envs/dragmap_chrm.yaml"
     params:
         ref_dir=os.path.join(config['RES'], config['SHIFTED_MT']),
-        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
     log: os.path.join(config['LOG'],"{sample}.shiftedchrM_align.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_align.txt')
     resources: n = 8,
                 mem_mb = 14000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input}  --num-threads {resources.n} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted} 2> {log}"
 
 rule mutect_orig:
     input: bam = rules.realign_to_orig_ref.output.bam,
@@ -201,29 +202,27 @@ rule align_NUMT_to_chrM:
     input: rules.sort_by_name_NUMT.output
     output: bam = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs.reads.bam')),
             bai = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs.reads.bai'))
-    conda: "envs/dragmap.yaml"
+    conda: "envs/dragmap_chrm.yaml"
     params:
         ref_dir=os.path.join(config['RES'], config['ORIG_MT']),
-        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
     log: os.path.join(config['LOG'],"{sample}.origchrM_NUMT_align.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.origchrM_NUMT_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input}  --num-threads {resources.n} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log}"
 
 rule realign_to_shifted_ref_NUMT:
     input: rules.sort_by_name_NUMT.output
     output: bam_shifted = temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs_shifted.reads.bam')),
             bai_shifted= temp(os.path.join(config['chrM'], "NUMT", '{sample}_NUMTs_shifted.reads.bai'))
-    conda: "envs/dragmap.yaml"
+    conda: "envs/dragmap_chrm.yaml"
     params:
         ref_dir=os.path.join(config['RES'], config['SHIFTED_MT']),
-        dragmap=os.path.join(config['RES'], config['SOFTWARE'],'dragen-os'),
     log: os.path.join(config['LOG'],"{sample}.shiftedchrM_NUMT_align.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_NUMT_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted}  2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input}  --num-threads {resources.n} --interleaved | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted}  2> {log}"
 
 rule mutect_orig_NUMT:
     input: bam = rules.align_NUMT_to_chrM.output.bam,
