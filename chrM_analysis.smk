@@ -56,7 +56,8 @@ rule chrM_analysis_all:
     input:
         rules.Aligner_all.input,
     # os.path.join(config['chrM'],'variants','{sample}.chrM_filtred.vcf.gz'
-        expand("{chrM}/variants/{sample}.chrM_filtred.vcf.gz", chrM = config['chrM'], sample=sample_names)
+        expand("{chrM}/variants/{sample}.chrM_filtred.vcf.gz", chrM = config['chrM'], sample=sample_names),
+        expand("{chrM}/variants/NUMTs/{sample}.chrM_NUMTs_filtred.vcf.gz", chrM = config['chrM'], sample=sample_names),
     default_target: True
 
 rule extract_chrM_reads:
@@ -90,22 +91,22 @@ rule realign_to_shifted_ref:
     benchmark: os.path.join(config['BENCH'], '{sample}.shiftedchrM_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "{params.dragmap} -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
+    shell: "dragen-os -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
 
 rule mutect_orig:
     input: rules.extract_chrM_reads.output.bam
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.idx')), non_empty = True)
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig.txt')
     params: mt_ref = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input} -O {output.vcf} 2> {log}"
 
 rule mutect_shifted:
     input: rules.realign_to_shifted_ref.output.bam_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.idx')), non_empty = True),
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_shifted.vcf.gz.tbi')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift.txt')
@@ -122,7 +123,7 @@ rule shift_back:
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_back.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_back.txt')
-    shell: "gatk LiftoverVcf -I {input} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null "
+    shell: "gatk LiftoverVcf -I {input} -O {output.vcf} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2> {log}"
 
 rule merge_vcfs:
     input: o_vcf = rules.mutect_orig.output.vcf,
@@ -132,7 +133,7 @@ rule merge_vcfs:
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.vcf_merge.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge.txt')
-    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output}"
+    shell: "gatk MergeVcfs -I {input.o_vcf} -I {input.sb_vcf} -O {output} 2> {log}"
 
 rule filter_mutect_calls:
     input: rules.merge_vcfs.output.merged_vcf
@@ -142,7 +143,7 @@ rule filter_mutect_calls:
     log: os.path.join(config['LOG'],"{sample}.filtr.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.filtr.txt')
     params: mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
-    shell: "gatk FilterMutectCalls -V {input} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf}"
+    shell: "gatk FilterMutectCalls -V {input} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2> {log}"
 
 ######################################
 #####   Process NUMTs regions   ######
@@ -180,7 +181,7 @@ rule align_NUMT_to_chrM:
     benchmark: os.path.join(config['BENCH'], '{sample}.origchrM_NUMT_align.txt')
     resources: n = 12,
                 mem_mb = 22000
-    shell: "{params.dragmap} -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam_shifted} 2> {log}"
+    shell: "{params.dragmap} -r {params.ref_dir} -b {input} --interleaved | samtools view -@ {resources.n} -o {output.bam} 2> {log}"
 
 rule realign_to_shifted_ref_NUMT:
     input: rules.sort_by_name_NUMT.output
@@ -199,7 +200,7 @@ rule realign_to_shifted_ref_NUMT:
 rule mutect_orig_NUMT:
     input: rules.align_NUMT_to_chrM.output.bam
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.idx')), non_empty = True)
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig_NUMT.txt')
@@ -209,7 +210,7 @@ rule mutect_orig_NUMT:
 rule mutect_shifted_NUMT:
     input: rules.realign_to_shifted_ref_NUMT.output.bam_shifted
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.idx')), non_empty = True),
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted.vcf.gz.tbi')), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_NUMT.txt')
@@ -220,7 +221,7 @@ rule mutect_shifted_NUMT:
 rule shift_back_NUMT:
     input: rules.mutect_shifted_NUMT.output.vcf
     output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')), non_empty = True),
-            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.idx')), non_empty = True),
+            idx = ensure(temp(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')), non_empty = True),
     params: chain = config['MT_CHAIN'],
             mt_ref= os.path.join(config['RES'],config['ORIG_MT_fa'])
     conda: "envs/gatk.yaml"
@@ -232,7 +233,7 @@ rule merge_vcfs_NUMT:
     input: o_vcf = rules.mutect_orig_NUMT.output.vcf,
             sb_vcf = rules.shift_back_NUMT.output.vcf
     output: merged_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz'), non_empty = True),
-            merged_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.idx'), non_empty = True),
+            merged_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.vcf_merge_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.vcf_merge_NUMT.txt')
@@ -241,7 +242,7 @@ rule merge_vcfs_NUMT:
 rule filter_mutect_calls_NUMT:
     input: rules.merge_vcfs_NUMT.output.merged_vcf
     output: filtred_vcf = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_NUMTs_filtred.vcf.gz'), non_empty = True),
-            filtred_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.idx'), non_empty = True),
+            filtred_idx = ensure(os.path.join(config['chrM'], 'variants', 'NUMTs', '{sample}.chrM_filtred.vcf.gz.tbi'), non_empty = True),
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.filtr_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.filtr_NUMT.txt')
