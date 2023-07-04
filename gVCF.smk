@@ -302,7 +302,7 @@ rule WhatshapPhasingMerge:
         gvcf= os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf.gz"), 
         gvcf_tbi = os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf.gz.tbi"), 
     params:
-        merge_script=srcdir("merge_phasing.py"),
+        merge_script=srcdir("scripts/merge_phasing.py"),
         ref=get_ref_by_validated_sex
     resources: 
         n=1,

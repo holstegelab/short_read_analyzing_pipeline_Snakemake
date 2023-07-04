@@ -435,7 +435,9 @@ rule external_alignments_to_fastq:
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)
     shell:
         """
-            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -n  -m {params.memory_per_core}M -u {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} | samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq} 
+            samtools reset -@ 2 {params.cramref} {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} | \
+            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -n  -m {params.memory_per_core}M | \
+            samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq}
         """
 
 
@@ -656,7 +658,7 @@ rule get_validated_sex:
         kmerchrm=os.path.join(config['RES'], config['kmerchrm']),
         kmerauto=os.path.join(config['RES'], config['kmerauto']),
         kmerdir=config['KMER'],
-        process_sex = srcdir('process_sex.py')
+        process_sex = srcdir('scripts/process_sex.py')
     conda: 'envs/kmc.yaml'        
     shell:  """
            #intersecting fastq kmers with kmers of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
@@ -718,7 +720,7 @@ rule align_reads:
         use_threads=24,
         mem_mb=get_mem_mb_align_reads,
     shell:
-        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ {resources.use_threads} -o {output.bam}) 2> {log.dragmap_log} "
+        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ 2 -o {output.bam}) 2> {log.dragmap_log} "
 # --enable-sampling true used for (unmapped) bam input. It prevents bugs when in output bam information about whicj read is 1st or 2nd in pair.
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
@@ -797,7 +799,8 @@ rule sort_bam_alignment:
     input:
         in_bam=rules.dechimer.output.bam
     output:
-        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam")
+        bam=os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam"),
+        bai = os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam.bai")
     conda: "envs/preprocess.yaml"
     log:
         samtools_sort=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_sort.log"),
@@ -813,22 +816,8 @@ rule sort_bam_alignment:
         memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 3000) / float(resources['n'])))        
     shell:
         """
-            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M -o {output.bam} {input}) 2> {log.samtools_sort}            
+            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M --write-index -o {output.bam}##idx##{output.bai} {input}) 2> {log.samtools_sort}            
         """
-
-rule index_sort:
-    """Index sorted bam alignment."""
-    input: bam = rules.sort_bam_alignment.output.bam
-    output: bai = os.path.join(config['BAM'],"{sample}.{readgroup}.sorted.bam.bai")
-    conda: "envs/preprocess.yaml"
-    log: samtools_index=os.path.join(config['LOG'],"{sample}.{readgroup}.samtools_index.log"),
-    priority: 18
-    benchmark:
-        os.path.join(config['BENCH'],"{sample}.{readgroup}.index_sorted.txt")
-    resources:
-        n=1,
-        mem_mb=150   
-    shell: "samtools index -@ 2 {input.bam} 2> {log.samtools_index}"
 
 # # function to get information about readgroups
 # # needed if sample contain more than 1 fastq files
@@ -883,6 +872,8 @@ def get_mem_mb_markdup(wildcards, attempt):
         res = 150
     #large range of memory usage for markdup
     return (attempt -1) * res * 3 + res
+
+
 rule markdup:
     """Mark duplicates using samtools markdup."""
     input:
@@ -899,16 +890,14 @@ rule markdup:
     # if fastq header not in known machines?
     # if not Illumina?
     log:
-        samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log"),
-        samtools_index_md=os.path.join(config['LOG'],"{sample}.markdup_index.log")
+        samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log")
     resources:
         n="1.6",
         mem_mb=get_mem_mb_markdup
     conda: "envs/preprocess.yaml"
     shell:
         """
-            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} {output.mdbams} 2> {log.samtools_markdup}
-            samtools index -@ 4 {output.mdbams} 2> {log.samtools_index_md}
+            samtools markdup -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
         """
     
 
@@ -918,7 +907,8 @@ rule mCRAM:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        CRAM=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram")
+        cram=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram")
+        crai=os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.crai")
     resources:
         n=2,
         mem_mb=1250
@@ -928,7 +918,7 @@ rule mCRAM:
     log:
         os.path.join(config['LOG'],"{sample}.mCRAM.log")
     shell:
-        "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {resources.n} -o {output.CRAM} {input.bam} 2> {log}"
+        "samtools view --output-fmt cram,version=3.1,archive --reference {ref} -@ {resources.n} --write-index -o {output.cram}##idx##{output.crai} {input.bam} 2> {log}"
 
 
 

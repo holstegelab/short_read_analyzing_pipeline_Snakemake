@@ -50,7 +50,7 @@ agh_dcache = config.get('agh_processed', os.path.join(config['RES'],".agh/agh_pr
 
 
 rule Encrypt_crams:
-    input: rules.mCRAM.output.CRAM
+    input: rules.mCRAM.output.cram
     output: enCRAM=temp(os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.c4gh"))
     params:
             private_key = sk,
@@ -63,7 +63,8 @@ rule Encrypt_crams:
 
 rule copy_to_dcache:
     input:
-        rules.Encrypt_crams.output.enCRAM
+        cram=rules.Encrypt_crams.output.enCRAM,
+        crai=rules.mCRAM.output.crai
     output:
         os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied")
     run:
@@ -75,6 +76,7 @@ rule copy_to_dcache:
         if target.endswith('/'):
             target = target[:-1]
 
-        shell("rclone --config {agh_dcache} copy {input} agh_processed:{target}/")    
+        shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")    
+        shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")    
         shell("touch {output}")
 
