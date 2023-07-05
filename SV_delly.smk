@@ -42,14 +42,14 @@ rule delly_call:
         bai = rules.markdup.output.mdbams_bai
     output:
         call = config['DELLY'] + '/first_call/{sample}.bcf'
-    conda: 'envs/preprocess.yaml'
+    conda: 'envs/delly.yaml'
     benchmark: os.path.join(config['BENCH'],'{sample}_dellycall.txt')
     shell: "delly call -g {ref} -o {output} {input.bam}"
 
 rule delly_merge:
     input: expand('{delly}/first_call/{sample}.bcf', delly = config['DELLY'], sample = sample_names)
     output: config['DELLY'] + '/Merged_sites.bcf'
-    conda: 'envs/preprocess.yaml'
+    conda: 'envs/delly.yaml'
     benchmark: os.path.join(config['BENCH'],'dellymerge.txt')
     shell: "delly merge -o {output} {input}"
 
@@ -58,7 +58,7 @@ rule delly_genotype:
         bam = rules.markdup.output.mdbams,
         sites = rules.delly_merge.output
     output: calls = config['DELLY'] + '/geno_call/{sample}_geno.bcf'
-    conda: 'envs/preprocess.yaml'
+    conda: 'envs/delly.yaml'
     benchmark: os.path.join(config['BENCH'],'{sample}_dellygenotype.txt')
     shell: "delly call -g {ref} -v {input.sites} -o {output.calls} {input.bam}"
 
@@ -73,7 +73,7 @@ rule bcf_merge:
 rule filter:
     input: rules.bcf_merge.output.bcf_merge
     output: bcf_filter = os.path.join(config['DELLY'], 'Filtred_SV.bcf')
-    conda: 'envs/preprocess.yaml'
+    conda: 'envs/delly.yaml'
     benchmark: os.path.join(config['BENCH'],'svfilter.txt')
     shell: "delly filter -f germline -o {output} {input}"
 

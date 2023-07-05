@@ -13,7 +13,7 @@ rule BedToIntervalList:
     params:
         java_options=config['DEFAULT_JAVA_OPTIONS'],
         seq_dict = os.path.join(config['RES'], config['ref_male_dict'])
-    conda: "envs/gatk.yaml"   
+    conda: "envs/vcf_handling.yaml"   
     resources: 
         n = 1,
         mem_mb = 1000       

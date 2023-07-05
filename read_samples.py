@@ -277,7 +277,7 @@ def read_samplefile(filename, config, prefixpath=None):
             samples.append(res)
 
     for capture_kit in capture_kits:
-        f = os.path.join(config['RES'], config['kit_folder'], capture_kit + '_hg38.bed')
+        f = os.path.join(config['RES'], config['kit_folder'], capture_kit + '.bed')
         if not os.path.isfile(f):
             warning(False, 'capture kit file does not exist: ' + f)
     print("")

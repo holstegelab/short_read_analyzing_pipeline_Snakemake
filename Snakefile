@@ -67,6 +67,10 @@ module GLnexus:
     snakefile: 'GLnexus.smk'
     config: config
 
+module Reference_preparation:
+    snakefile: "Reference_preparation.smk"
+    config: config
+
 
 
 #SV = config.get("SV", "RUN_SV")
@@ -174,9 +178,6 @@ if end_point == "gVCF":
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
     END_RULE = [expand("{source}/{sample}.finished",sample=sample_names, source = config['SOURCEDIR']), rules.Stat_all.input]
 elif end_point == 'PrepareRef':
-    module Reference_preparation:
-    snakefile: "Reference_preparation.smk"
-    config: config
     use rule * from Reference_preparation
     END_RULE = rules.Reference_preparation_all.input
 elif end_point == "Align" or end_point == "Aligner":

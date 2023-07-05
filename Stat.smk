@@ -199,7 +199,7 @@ rule hs_stats:
     resources: mem_mb = get_mem_mb_hs_stats,
                tmpdir = tmpdir,  
                n=1            
-    conda: 'envs/gatk.yaml'               
+    conda: 'envs/vcf_handling.yaml'               
     shell:
         """gatk  --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
             -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.targets} \
@@ -234,7 +234,7 @@ rule Artifact_stats:
     resources: mem_mb = get_mem_mb_Artifact_stats,
                 tmpdir= tmpdir,
                 n=1
-    conda: 'envs/gatk.yaml'
+    conda: 'envs/vcf_handling.yaml'
     shell:
         """gatk --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectSequencingArtifactMetrics  --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
                     -R {params.ref} --DB_SNP {params.dbsnp} --INTERVALS {input.interval} 2> {log}"""
@@ -262,7 +262,7 @@ rule OXOG_metrics:
                 mem_mb = get_mem_mb_OXOG_metrics,
                 tmpdir= tmpdir,
                 n=1
-    conda: 'envs/gatk.yaml'
+    conda: 'envs/vcf_handling.yaml'
     shell:
        """gatk  --java-options "-Xmx{resources.mem_mb}M {params.java_options}" CollectOxoGMetrics -I {input.bam} -O {output} -R {params.ref} \
          --INTERVALS {input.interval} 2> {log}"""

@@ -108,14 +108,14 @@ rule realign_to_shifted_ref:
 rule mutect_orig:
     input: bam = rules.realign_to_orig_ref.output.bam,
             bai = rules.realign_to_orig_ref.output.bai
-    output: vcf = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty = True),
-            tbi = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty = True),
+    output: vcf = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz'), non_empty = True),
+            tbi = ensure(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.tbi'), non_empty = True),
             stat = ensure(temp(os.path.join(config['chrM'], 'variants', '{sample}.chrM_orig.vcf.gz.stats')), non_empty = True)
     conda: "envs/gatk.yaml"
     log: os.path.join(config['LOG'],"{sample}.mutect_orig.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig.txt')
     params: mt_ref = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf} 2> {log}"
+    shell: "gatk Mutect2 -R {params.mt_ref} -ERC GVCF -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf} 2> {log}"
 
 rule mutect_shifted:
     input: bam = rules.realign_to_shifted_ref.output.bam_shifted,
@@ -127,7 +127,7 @@ rule mutect_shifted:
     log: os.path.join(config['LOG'],"{sample}.mutect_shift.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift.txt')
     params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref_shift} -ERC GVCF -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
 rule merge_stats:
     input: orig = rules.mutect_orig.output.stat,
@@ -234,7 +234,7 @@ rule mutect_orig_NUMT:
     log: os.path.join(config['LOG'],"{sample}.mutect_orig_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_orig_NUMT.txt')
     params: mt_ref = os.path.join(config['RES'], config['ORIG_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref} -ERC GVCF -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
 rule mutect_shifted_NUMT:
     input: bam = rules.realign_to_shifted_ref_NUMT.output.bam_shifted,
@@ -246,7 +246,7 @@ rule mutect_shifted_NUMT:
     log: os.path.join(config['LOG'],"{sample}.mutect_shift_NUMT.log")
     benchmark: os.path.join(config['BENCH'], '{sample}.mutect_shift_NUMT.txt')
     params: mt_ref_shift = os.path.join(config['RES'], config['SHIFTED_MT_fa'])
-    shell: "gatk Mutect2 -R {params.mt_ref_shift} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
+    shell: "gatk Mutect2 -R {params.mt_ref_shift} -ERC GVCF -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}"
 
 rule merge_stats_NUMT:
     input: orig = rules.mutect_orig_NUMT.output.stat,

@@ -138,7 +138,7 @@ rule DVWhatshapPhasingMerge:
     resources: 
         n=1,
         mem_mb = 600
-    conda: "envs/whatshap.yaml"
+    conda: "envs/vcf_handling.yaml"
     shell: """
         mkdir -p `dirname {output.wstats}`
         whatshap phase  --ignore-read-groups --reference {ref} {input.vcf} {input.bams} -o {output.vcf}        
