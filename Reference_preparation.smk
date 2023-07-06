@@ -32,10 +32,10 @@ RES = config['RES']
 
 rule Reference_preparation_all:
     input:
-        expand('{RES}{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_male_hash']),
-        expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_male_str']),
-        expand('{RES}{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_female_hash']),
-        expand('{RES}{sex_ref_str}', RES=RES, sex_ref_str=config['ref_female_str']),
+        expand('{RES}/{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_male_hash']),
+        expand('{RES}/{sex_ref_str}', RES=RES, sex_ref_str=config['ref_male_str']),
+        expand('{RES}/{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_female_hash']),
+        expand('{RES}/{sex_ref_str}', RES=RES, sex_ref_str=config['ref_female_str']),
         os.path.join(config['RES'],config['SHIFTED_MT_fai']),
         os.path.join(config['RES'],config['ORIG_MT_fai']),
         os.path.join(config['RES'],config['SHIFTED_MT_dict']),
@@ -118,7 +118,7 @@ rule ComposeSTRTableFile:
         dict= ancient(os.path.join(config['RES'],config['ref_male_dict']))
     output:
         str_file=os.path.join(config['RES'], config['ref_male_str'])
-    conda: "envs/preprocess.yaml"
+    conda: "envs/vcf_handling.yaml"
     resources:
         mem_mb=12000,
         n=2
@@ -149,7 +149,7 @@ rule ComposeSTRTableFile_1:
         dict= ancient(os.path.join(config['RES'],config['ref_female_dict']))
     output:
         str_file = os.path.join(config['RES'], config['ref_female_str'])
-    conda: "envs/preprocess.yaml"
+    conda: "envs/vcf_handling.yaml"
     resources:
         mem_mb=12000,
         n=2

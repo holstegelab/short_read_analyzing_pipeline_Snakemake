@@ -273,13 +273,23 @@ rule HaplotypeCaller:
                 -R {ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} 
 
         mkdir -p `dirname {output.wstats}`
-        whatshap unphase  {output.genotyped_vcf} >  {output.tmp_vcf}
-        whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf}
-        whatshap stats {output.genotyped_vcf} > {output.wstats}
-        whatshap stats {output.vcf} >> {output.wstats}
-        python {params.merge_script} {output.orig_gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
-        bcftools annotate -x 'FORMAT/PGT,FORMAT/PS,FORMAT/PID' {output.tmp_gvcf} -o {output.gvcf}
-        bcftools index --tbi {output.gvcf}
+        if [ {params.ploidy} -eq 2 ]
+        then 
+            whatshap unphase  {output.genotyped_vcf} >  {output.tmp_vcf}
+            whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf}
+            whatshap stats {output.genotyped_vcf} > {output.wstats}
+            whatshap stats {output.vcf} >> {output.wstats}
+            python {params.merge_script} {output.orig_gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
+            bcftools annotate -x 'FORMAT/PGT,FORMAT/PS,FORMAT/PID' {output.tmp_gvcf} -o {output.gvcf}
+        else
+            cp {output.genotyped_vcf} {output.tmp_vcf}
+            cp {output.tmp_vcf} {output.vcf}
+            whatshap stats {output.genotyped_vcf} > {output.wstats}
+            touch {output.mwstats}
+            cp {output.orig_gvcf} {output.tmp_gvcf}
+            bcftools view {output.orig_gvcf} -o {output.gvcf}
+        fi  
+        bcftools index --tbi {output.gvcf}          
         """
 
 

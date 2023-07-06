@@ -41,7 +41,7 @@ mode = config.get("computing_mode", "WES")
 rule VQSR_all:
     input:
         rules.Genotype_all.input,
-        expand("{vcf}/VQSR/{chr}/Merged_after_VQSR_{chr}_{mode}.vcf",vcf=config['VCF_Final'], chr = chr, mode = mode),
+        expand("{vcf}/VQSR/{chr}/Merged_after_VQSR_{chr}_{mode}.vcf",vcf=config['VCF_Final'], chr = main_chr, mode = mode),
     default_target: True
 
 

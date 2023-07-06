@@ -40,6 +40,7 @@ module Combine_gVCF:
 bins = config['RES'] + config['bin_file_ref']
 gVCF_combine_method = config.get("Combine_gVCF_method", "DBIMPORT")
 mode = config.get("computing_mode", "WES")
+
 if gVCF_combine_method == "DBIMPORT":
     use rule * from DBImport
     rule_all_combine = rules.DBImport_all.input
@@ -56,11 +57,11 @@ rule Genotype_all:
         rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
-        expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = chr),
-        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = chr),
-        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = chr),
-        expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz", vcf = config['VCF_Final'], mode = mode, chr = chr),
-        expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz.tbi", vcf = config['VCF_Final'], mode = mode, chr = chr)
+        expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = main_chr),
+        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = main_chr),
+        expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = main_chr),
+        expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz", vcf = config['VCF_Final'], mode = mode, chr = main_chr),
+        expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz.tbi", vcf = config['VCF_Final'], mode = mode, chr = main_chr)
     default_target: True
 
 
@@ -90,7 +91,7 @@ if gVCF_combine_method == "DBIMPORT":
             dir = rules.GenomicDBImport.params.dbi,
             dbsnp = config['RES'] + config['dbsnp'],
             intervals = get_parts_capture_kit
-        conda: "envs/gatk.yaml"
+        conda: "envs/vcf_handling.yaml"
         resources: mem_mb = get_mem_mb_genotype
         priority: 40
         shell:
@@ -106,7 +107,7 @@ elif gVCF_combine_method == "COMBINE_GVCF":
         benchmark: config['BENCH'] + "/GenotypeDBI_{chr}.{chr_p}.{mode}.txt"
         params:
             dbsnp=config['RES'] + config['dbsnp'],
-        conda: "envs/gatk.yaml"
+        conda: "envs/vcf_handling.yaml"
         resources: mem_mb = get_mem_mb_genotype
         priority: 40
         shell:
@@ -123,7 +124,7 @@ rule merge_per_chr:
     log: config['LOG'] + "/merge_per_chr_{chr}.{mode}.log"
     benchmark: config['BENCH'] + "/merge_per_chr_{chr}.{mode}.txt"
     priority: 45
-    conda: "envs/gatk.yaml"
+    conda: "envs/vcf_handling.yaml"
     resources: mem_mb = config['merge_per_chr']['mem']
     shell:
         """{gatk} GatherVcfs {params.inputs} -O {output} -R {ref} 2> {log}"""
@@ -182,12 +183,11 @@ rule basic_stats_per_chr:
     log: os.path.join(config['LOG'], "VCF_stats.{chr}.{mode}.log")
     benchmark: os.path.join(config['BENCH'], "VCF_stats.{chr}.{mode}.txt")
     params: dbsnp = os.path.join(config['RES'], config['dbsnp'])
-    conda: "envs/gatk.yaml"
+    conda: "envs/vcf_handling.yaml"
     threads: config['basic_stats_per_chr']['n']
-    shell:
-        "{gatk} CollectVariantCallingMetrics \
+    shell:"""{gatk} CollectVariantCallingMetrics \
         -R {ref} -I {input.vcf} -O stats/BASIC.{wildcards.chr}.{wildcards.mode} \
-        --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"
+        --DBSNP {params.dbsnp} --THREAD_COUNT {threads} 2> {log}"""
 
 
 

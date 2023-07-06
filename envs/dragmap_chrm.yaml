@@ -1,0 +1,9 @@
+channels:
+- conda-forge
+- bioconda
+- default
+- defaults
+dependencies:
+- samtools=1.17
+- dragmap=1.2.1
+name: dragmap

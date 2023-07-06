@@ -1,0 +1,8 @@
+channels:
+- conda-forge
+- bioconda
+- default
+- defaults
+dependencies:
+- delly=1.1.3
+name: delly
