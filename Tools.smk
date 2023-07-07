@@ -30,7 +30,7 @@ rule BedSplit:
         nsplit = lambda wildcards: chromosome_splits[wildcards.chrom]
     shell: """
         mkdir -p {output.bed_file_folder}
-        split {input.bed_file} -a 3 -d -n l/{params.nsplit} {output.bed_file_folder}/{capture_kit}_chrom_{chrom}.split.
+        split {input.bed_file} -a 3 -d -n l/{params.nsplit} --additional-suffix .bed  {output.bed_file_folder}/{wildcards.capture_kit}_chrom_{wildcards.chrom}.split.
         """
 
 rule CreateBins:
@@ -39,17 +39,18 @@ rule CreateBins:
            targets=ancient(os.path.join(config['RES'], config['kit_folder'], config['TARGETS'] + '.bed'))
     output: directory(os.path.join(config['RES'], config['kit_folder'], 'bins'))
     params:
-        nsplit = 1000
+        nsplit = 1000,
+        ref = os.path.join(config['RES'], config['ref_male'])
     conda: "envs/preprocess.yaml"
     shell:"""
         mkdir -p {output}
         cd {output}
         bedtools slop -i {input.targets}  -g {input.fai} -b 100 | bedtools merge > gencode_43_cds.100padding.bed
-        awk '{print $1 "\t" 0 "\t" $2}' {input.fai} | grep -v chrom > all_chroms.bed
-        bedtools multiinter -i all_chroms.bed gencode_100padding.bed | cut -f1-3 > all_chroms_gencode.bed
+        awk '{{print $1 "\t" 0 "\t" $2}}' {input.fai} | grep -v chrom > all_chroms.bed
+        bedtools multiinter -i all_chroms.bed gencode_43_cds.100padding.bed | cut -f1-3 > all_chroms_gencode.bed
         bedtools subtract -a all_chroms_gencode.bed -b {input.mask} > all_chroms.masked.bed
         bedtools makewindows -b all_chroms.masked.bed -w 10000 > all_chroms.masked_windows.bed
-        bedtools nuc -fi ../../Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa -bed all_chroms.masked_windows.bed > all_chroms.masked_windows_annot.bed
+        bedtools nuc -fi {params.ref} -bed all_chroms.masked_windows.bed > all_chroms.masked_windows_annot.bed
         awk '$10 < $12' all_chroms.masked_windows_annot.bed | cut -f1-3  > all_chroms.masked_windows_annot_selected.bed
 
         touch all_chroms.split
@@ -57,7 +58,7 @@ rule CreateBins:
 
         split all_chroms.masked_windows_annot_selected.bed -a 4 -d -n l/{params.nsplit} all_chroms.split.
 
-        ls all_chroms.split.* | xargs -I{} sh -c 'bedtools merge -i {} > {}.bed'
+        ls all_chroms.split.* | xargs -I{{}} sh -c 'bedtools merge -i {{}} | awk '$2 != $3' > {{}}.bed'
         rm all_chroms.split.????
         """
 

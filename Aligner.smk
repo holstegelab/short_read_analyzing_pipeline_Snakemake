@@ -891,13 +891,15 @@ rule markdup:
     log:
         samtools_markdup=os.path.join(config['LOG'],"{sample}.markdup.log")
     resources:
-        n="1.6",
+        n=1,
         mem_mb=get_mem_mb_markdup,
         temp_loc=os.path.join("markdup_temporary_{sample}")
     conda: "envs/preprocess.yaml"
+    #write index is buggy in samtools 1.17, 2/110 invalid index, probably race condition due to multithreading.
+    #switching to single thread
     shell:
         """
-            samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} -@ 4 {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
+            samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
         """
     
 
