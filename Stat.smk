@@ -39,6 +39,34 @@ use rule * from Aligner
 # module VCF:
 #     snakefile: 'gVCF.smk'
 
+
+def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
+    """If samples are on tape, we do not have sample readgroup info.
+    That is, the 'readgroups' field is empty.
+
+    This function first checks if the readgroup info is available on disk,
+    in the file config['SAMPLEINFODIR']/<sample>.dat. 
+
+    Alternatively, the function injects a checkpoint rule to load this readgroup info.
+    """
+
+    sinfo = SAMPLEINFO[sample]
+    if not 'readgroups' in sinfo:
+        rgpath = os.path.join(config['SAMPLEINFODIR'], sample + ".dat")
+        if os.path.exists(rgpath):
+            xsample = utils.load(rgpath)
+        elif checkpoint: 
+            #no readgroup info yet
+            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            xsample = utils.load(filename)
+        sinfo = sinfo.copy()
+        sinfo['readgroups'] = xsample['readgroups']
+        sinfo['alternative_names'] = sinfo.get('alternative_names',set()).union(xsample['alternative_names'])
+        SAMPLEINFO[sample] = sinfo
+    return sinfo
+
+
+
 module Tools:
     snakefile: 'Tools.smk'
     config: config
@@ -402,10 +430,11 @@ rule gather_rg_stats:
         n=1,
         mem_mb=1000
     run:
-        sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
+        smsinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         sample_readgroups = []
-        for sample, sinfo in sampleinfo.items():
-            for readgroup in sinfo['readgroups']:
+        for sample, sinfo in smsinfo.items():
+            x = sampleinfo(SAMPLEINFO, sample)
+            for readgroup in x['readgroups']:
                 sample_readgroups.append((sample, readgroup['info']['ID']))
 
         sample_readgroups.sort()
