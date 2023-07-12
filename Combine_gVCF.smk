@@ -1,23 +1,12 @@
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['gatk']
-samtools = config['samtools']
-bcftools = config['bcftools']
-dragmap = config['dragmap']
-verifybamid2 = config['verifybamid2']
-
-ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     readgroup="[\w\d_\-@]+",
 
-from read_samples import *
 from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
 
-# extract all sample names from SAMPLEINFO dict to use it rule all
-sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -28,31 +17,46 @@ module gVCF:
     config: config
 use rule * from gVCF
 
-# rule all:
-#     expand('{samplefile}.done', samplefile=SAMPLE_FILES)
+
 mode = config.get("computing_mode", "WES")
 
 rule Combine_gVCF_all:
     input:
-        expand(["{gvcf}/MERGED/bin_level/{chr}_{chr_p}.{mode}.g.vcf.gz"], zip, chr = main_chrs_db, chr_p = chr_p, gvcf = [config['gVCF']]*853, mode = mode*853),
+        expand(os.path.join(GVCF, "MERGED/{samplefile}.{region}.wg.vcf.gz"), samplefile=SAMPLE_FILES, region=level1_regions),
     default_target: True
 
 
-def get_mem_mb_combine_gvcf(wildcrads, attempt):
-    return attempt*(config['combinegvcfs']['mem'])
+def get_input_combine_files(wildcards):
+    samples = SAMPLEFILE_TO_SAMPLES[wildcards.samplefile]
+    res = []
+    for sample in samples:
+        
+        if 'wgs' in SAMPLEINFO[sample]['sample_type']:
+            res.append(pj(GVCF, wildcards.region,  sample + '.' + wildcards.region + '.wg.vcf.gz'))
+        else:
+            region = convert_to_level0(wildcards.region)
+            res.append(pj(GVCF, region,  sample + '.' + region + '.wg.vcf.gz'))
+
+    return res
+
 
 rule combinegvcfs:
+    """Create a combined gVCF file for each chromosome per batch of samples"""
     input:
-        gvcf = expand("{gvcf}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
-        intervals = os.path.join(config['RES'], config['kit_folder'], 'BINS', 'interval_list', '{chr}_{chr_p}.interval_list')
-    output: chr_gvcfs = config['gVCF'] + "/MERGED/bin_level/{chr}_{chr_p}.{mode}.g.vcf.gz"
-    log: combine =config['LOG'] + "/{chr}_{chr_p}_{mode}.combine.log"
-    benchmark:
-        config['BENCH'] + "/{chr}_{chr_p}_{mode}.combinegvcf_NV.txt"
-    conda: "envs/gatk.yaml"
+        gvcf = get_input_combine_files,
+        interval =lambda wildcards: region_to_file(wildcards.region, wgs=True, extension='interval_list')
+    output: gvcfs = pj(GVCF, "MERGED/{samplefile}.{region}.wg.vcf.gz")
+    log: combine = pj(LOG, "{samplefile}.{region}.combine.log")
+    benchmark: pj(BENCH, "{samplefile}.{region}.combinegvcf_NV.txt")
+    conda: CONDA_VCF
     priority: 30
-    resources: mem_mb = get_mem_mb_combine_gvcf
+    resources: 
+        mem_mb =lambda wildcards, attempt: attempt*7000
+        n = 1
     params:
-        inputs = expand("--variant {gvcf}/reblock/{chr}/{sample}.{chr}.{mode}.g.vcf.gz", gvcf = config['gVCF'], sample = sample_names, allow_missing=True),
+        inputs = lambda wildcards, input: [f"--variant {file}" for file in input.gvcf]
+        
     shell:
-        """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {ref} -L {input.intervals} 2> {log}"""
+        """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {REF} -L {input.interval} 2> {log}"""
+
+

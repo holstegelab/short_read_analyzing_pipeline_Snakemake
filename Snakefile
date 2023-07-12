@@ -5,24 +5,11 @@ import os
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
-gatk = config['gatk']
-samtools = config['samtools']
-bcftools = config['bcftools']
-dragmap = config['dragmap']
-verifybamid2 = config['verifybamid2']
-ref = config['RES'] + config['ref']
-
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
 
-from read_samples import *
 from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
-sample_names = SAMPLEINFO.keys()
-   
-# extract all sample names from SAMPLEINFO dict to use it rule all
-sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -112,12 +99,12 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied"),
-                os.path.join(config['gVCF'], "{sample}.done"),
-                os.path.join(config['DEEPVARIANT'], "{sample}.done"),
-                os.path.join(config['STAT'], "{sample}.done")
+                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
+                pj(GVCF, "{sample}.done"),
+                pj(DEEPVARIANT, "{sample}.done"),
+                pj(STAT, "{sample}.done")
             output:
-                os.path.join(config['SOURCEDIR'], "{sample}.finished")
+                pj(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -137,11 +124,11 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied"),
-                os.path.join(config['gVCF'], "{sample}.done"),
-                os.path.join(config['STAT'], "{sample}.done")
+                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
+                pj(GVCF, "{sample}.done"),
+                pj(STAT, "{sample}.done")
             output:
-                os.path.join(config['SOURCEDIR'], "{sample}.finished")
+                pj(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -162,11 +149,11 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied"),                
-                os.path.join(config['DEEPVARIANT'], "{sample}.done"),
-                os.path.join(config['STAT'], "{sample}.done")
+                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),                
+                pj(DEEPVARIANT, "{sample}.done"),
+                pj(STAT, "{sample}.done")
             output:
-                os.path.join(config['SOURCEDIR'], "{sample}.finished")
+                pj(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -176,7 +163,7 @@ if end_point == "gVCF":
                 """
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. "
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
-    END_RULE = [expand("{source}/{sample}.finished",sample=sample_names, source = config['SOURCEDIR']), rules.Stat_all.input]
+    END_RULE = [expand("{source}/{sample}.finished",sample=sample_names, source = SOURCEDIR), rules.Stat_all.input]
 elif end_point == 'PrepareRef':
     use rule * from Reference_preparation
     END_RULE = rules.Reference_preparation_all.input

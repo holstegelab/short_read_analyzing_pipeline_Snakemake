@@ -1,33 +1,8 @@
-import pandas as pd
-import read_stats
-import os
-import getpass
-
-configfile: srcdir("Snakefile.cluster.json")
-configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['gatk']
-samtools = config['samtools']
-bcftools = config['bcftools']
-dragmap = config['dragmap']
-verifybamid2 = config['verifybamid2']
-
-
-tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
-tmpdir_alternative = os.path.join(config['tmpdir'],getpass.getuser())
-
-os.makedirs(tmpdir,mode=0o700,exist_ok=True)
+from common import *
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
-
-
-from read_samples import *
-from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
-
-# extract all sample names from SAMPLEINFO dict to use it rule all
-sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -36,26 +11,26 @@ use rule * from Aligner
 
 rule Encrypt_all:
     input: 
-        expand("{cram}/{sample}.mapped_hg38.cram.copied",sample=sample_names, cram = config['CRAM'])
+        expand("{cram}/{sample}.mapped_hg38.cram.copied",sample=sample_names, cram = CRAM)
     default_target: True
 
-sk = config.get("private_key", os.path.join(config['RES'],".c4gh/master_key_for_encryption"))
-pk1 = config.get("public_key", os.path.join(config['RES'], ".c4gh/recipient1.pub"))
-pk2 = config.get("public_key_2", os.path.join(config['RES'],".c4gh/recipient2.pub"))
+sk = pj(RESOURCES,".c4gh/master_key_for_encryption")
+pk1 = pj(RESOURCES, ".c4gh/recipient1.pub")
+pk2 = pj(RESOURCES, ".c4gh/recipient2.pub")
 
 PKs = [pk1, pk2]
 
 
-agh_dcache = config.get('agh_processed', os.path.join(config['RES'],".agh/agh_processed.conf"))
+agh_dcache = config.get('agh_processed', pj(RESOURCES,".agh/agh_processed.conf"))
 
 
 rule Encrypt_crams:
     input: rules.mCRAM.output.cram
-    output: enCRAM=temp(os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.c4gh"))
+    output: enCRAM=temp(pj(CRAM,"{sample}.mapped_hg38.cram.c4gh"))
     params:
-            private_key = sk,
-            public_key = expand("--recipient_pk {PKs}", PKs = PKs)
-    conda: "envs/preprocess.yaml"            
+        private_key = sk,
+        public_key = expand("--recipient_pk {PKs}", PKs = PKs)
+    conda: CONDA_MAIN         
     shell:
         """
         crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
@@ -66,7 +41,7 @@ rule copy_to_dcache:
         cram=rules.Encrypt_crams.output.enCRAM,
         crai=rules.mCRAM.output.crai
     output:
-        os.path.join(config['CRAM'],"{sample}.mapped_hg38.cram.copied")
+        pj(CRAM,"{sample}.mapped_hg38.cram.copied")
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         target = sample['target']

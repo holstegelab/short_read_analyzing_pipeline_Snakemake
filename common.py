@@ -1,18 +1,148 @@
-import os
-import csv
-from collections import OrderedDict
-
-import read_samples
-from read_samples import PROTOCOLS
 import utils
 import yaml
+
+from constants import *
+from read_samples import *
+
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs_ploidy_male = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY', 'chrXH','chrYH']
 main_chrs_ploidy_female = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
 
-chromosome_splits = {'chr1':80}
+
+# Genome split levels (see Tools.smk). 
+
+# 4 different components: A: autosomes + MT, X: X chromosome, Y: Y chromosome, F: full genome
+# Autosomes have 5 different levels: 0: no split, 1: 10 splits, 2: 100 splits, 3: 1000 splits, 4: 10000 splits
+# X and Y chromosome are split separately in 4 levels (levels: 0, 5, 50, 500 for X, 0, 2, 20, 200 for Y)
+# full genome is not split (only level 0)
+
+# 1. Split elements are 4-tuples of (component, level (nr. of digits), splitnr, ploidy)
+# 2. A corresponding string region describer is generated from this tuple, e.g. ('A', 2, 3, 2) -> 'A23'
+#    or ('X', 1, 3, 1) -> 'X3H' (see get_regions function below)
+# 3. String region describers can be used to get the corresponding bed /interval_list files describing 
+#    the region, e.g. A23 -> wes_bins/merged.autosplit2.03.bed or wgs_bins/genome.autosplit2.03.bed (see region_to_file function below)
+
+# Note: The split files are not disjoint. The split files of a higher level
+# are a subset of the split files of a lower level. E.g. genome.autosplit1.3.bed combines
+# genome.autosplit2.30.bed to genome.autosplit2.39.bed, and genome.autosplit2.30.bed
+# combines genome.autosplit3.300.bed to genome.autosplit3.399.bed.
+# Function convert_to_level0 (see below) can be used to convert a region describer to a level 0 region describer.
+
+# Note 2: exome and wgs splits are synced. That is
+# merged.<component>split<level>.<splitnr>.bed is always the exome region within
+# genome.<component>split<level>.<splitnr>.bed.
+# Note also that due to this at higher levels the exome split files can sporadically be empty.
+# also, exome levels only go to level 3 (for auto) and level 2 (for X and Y).
+
+# Note 3: autosomes of level n are usually combined with sex chromosomes of level n-1. This is described
+#         by the level0_range, level1_range, level2_range, level3_range etc. lists below.
+
+
+
+level0_range = [('F', 0,0,2), ('X',0,0, 1), ('Y', 0,0, 1)]
+
+level1_range = [('A', 1,x,2) for x in range(0,10)] + \
+                [('X',0,0, 2), ('X', 0,0, 1),
+                 ('Y',0,0, 2), ('Y', 0,0, 1)]
+
+level2_range = [('A', 2,x,2) for x in range(0,100)] + \
+               [('X', 1,x,2) for x in range(0,5)] + \
+               [('X', 1, x, 1) for x in range(0, 5)] + \
+               [('Y', 1, x,2) for x in range(0,2)] + \
+               [('Y', 1, x, 1) for x in range(0, 2)] 
+
+level3_range = [('A', 3, x,2) for x in range(0,1000)] + \
+               [('X', 2, x,2) for x in range(0,50)] + \
+               [('X', 2, x, 1) for x in range(0, 50)] + \
+               [('Y', 2, x,2) for x in range(0,20)] + \
+               [('Y', 2, x, 1) for x in range(0, 20)]               
+
+level4_range = [('A', 4, x,2) for x in range(0,10000)] + \
+                [('X', 3, x,2) for x in range(0,500)] + \
+                [('X', 3, x, 1) for x in range(0, 500)] + \
+                [('Y', 3, x,2) for x in range(0,200)] + \
+                [('Y', 3, x, 1) for x in range(0, 200)]
+              
+
+def get_regions(lrange):
+    """Converts a region describer (tuple format) to a list of regions (string format).
+    E.g. [('A', 1, 3, 1), ('A', 1, 4, 2)] -> ['A03H', 'A04']
+    """
+    res = []
+    
+    for component, level,splitnr, ploidy in lrange:
+        if ploidy == 1:
+            ploidy = 'H'
+        else:
+            ploidy = ''
+        if level == 0:
+            region = f'{component}{ploidy}'
+        else:
+            region = f'{component}{splitnr:0{level}d}{ploidy}'
+        res.append(region)
+        
+    return res
+
+level0_regions = get_regions(level0_range)
+level1_regions = get_regions(level1_range)
+level2_regions = get_regions(level2_range)
+level3_regions = get_regions(level3_range)
+level4_regions = get_regions(level4_range)
+
+
+def convert_to_level0(region):
+    """Converts a region describer of level >=0 to the corresponding level 0 region.
+    E.g. A33H -> A, X22H -> XH, X1 -> F
+    """
+    if region in level0_regions:
+        return region
+    if region.startswith('A') or region.startswith('F'):
+        return 'F'
+    elif region.startswith('X'):
+        return 'F' if not region.endswith('H') else 'XH'
+    elif region.startswith('Y'):
+        return 'F' if not region.endswith('H') else 'YH'
+    else:
+        raise ValueError(f'Unknown region {region}')
+    
+
+def region_to_file(region, wgs=False, extension='bed'):
+    """ Converts a region describer to the filename of the file describing the region.
+    
+        E.g. A33H, wgs=False, extension=bed -> <interval_folder>/wes_bins/merged.autosplit2.33.bed
+        
+        :param region: region describer
+        :param wgs: whether to use the wgs or wes intervals
+        :param extension: extension of the file (bed or interval_list)
+    """
+    
+    component = region[0]
+    if region.endswith('H'):
+        region = region[:-1]
+
+    split = region[1:]
+    
+    if component == 'A':
+        component = 'auto'
+    elif component == 'F':
+        component = 'full'
+
+    level = len(split)
+    if level > 0:
+        split = '.' + split
+    else:
+        split = ''
+    if wgs: 
+        f = pj(INTERVALS_DIR, f'wgs_bins/genome.{component}split{level}{split}.{extension}')     
+    else:
+        f = pj(INTERVALS_DIR, f'wes_bins/merged.{component}split{level}{split}.{extension}')        
+    return f
+    
+
+
+# OLD REGIONS
 
 chr_p = [str('0') + str(e) for e in range(0, 10)] + [str(i) for i in range(10, 90)] + [str(a) for a in range(9000, 9762)]
 main_chrs_db = []
@@ -66,125 +196,6 @@ valid_chr_p = {'chr1': chr_p[:84],
                'chrX': chr_p[820:850],
                'chrY': chr_p[850:]}
 
-SAMPLEFILE_TO_SAMPLES = {}
-MAX_BATCH_SIZE = 2 * 1024 #2TB
-
-
-#function to read in and cache a samplefile
-def samplefile(sfilename, config):
-    basename = os.path.splitext(os.path.basename(sfilename))[0]
-    if not basename in SAMPLEFILE_TO_SAMPLES: 
-        if not os.path.isfile(sfilename):
-            raise RuntimeError('Sample file ' + sfilename + ' does not exist')
-       
-        datfilename = os.path.realpath(sfilename)[:-4] + '.adat'
-        if not os.path.isfile(datfilename):
-            if not os.path.isfile(sfilename):
-                raise RuntimeError('Sample file ' + sfilename + ' does not exist')
-            samplelist = read_samples.read_samplefile(sfilename, config)
-            #using ordereddict to main stable order
-            sampleinfodict = OrderedDict([(a['sample'], a) for a in samplelist])
-            utils.save(sampleinfodict,datfilename)
-        else:
-            sampleinfodict = utils.load(datfilename)
-
-        SAMPLEFILE_TO_SAMPLES[basename] = sampleinfodict
-    return SAMPLEFILE_TO_SAMPLES[basename]
-
-
-def load_samplefiles(filedir, config):
-    
-    if not 'SAMPLE_FILES' in config:
-        #already loaded
-
-        SAMPLE_FILES = []
-        SAMPLEINFO = {}
-        SAMPLE_TO_BATCH = {}
-        SAMPLEFILE_TO_BATCHES = {}
-
-        #read in all tsv files in current workdir as samplefiles
-        for f in os.listdir(filedir):
-            if f.endswith('.tsv') and not f.startswith('sample_'): #possible sample file
-                f = os.path.join(filedir, f)
-                with open(f, 'r', encoding='utf-8') as fopen:
-                    ncount = len(fopen.readline().split('\t'))
-                if ncount == 7 or ncount == 8 or ncount == 9: #sample file
-                    basename = os.path.splitext(os.path.basename(f))[0]
-                    SAMPLE_FILES.append(basename)
-                    w = samplefile(f, config)
-                    
-                    #generate some indices
-                    no_readgroup = []
-                    for sample,info in w.items():
-                        if sample in SAMPLEINFO:
-                            print('WARNING!: Sample ' + sample + ' is defined in more than one sample files.')
-                        SAMPLEINFO[sample] = info
-                        SAMPLE_TO_BATCH[sample] = None #default
-                   
-                        if len(info.get('readgroups',[])) == 0:
-                            no_readgroup.append(sample)
-                    if no_readgroup:
-                        print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w)))
-                    
-
-                    #assign to batches for staging from archive or dcache
-                    cursize_full = 0 #size if all files need to be staged
-                    cursize_actual = 0 #size excluding files that are already retrieved
-                    
-                    #PROTOCOLS = ['dcache', 'archive']
-                    cursize = {p:{'full':0, 'actual':0} for p in PROTOCOLS}
-
-                    
-                    new_batch = {p:[] for p in PROTOCOLS}
-                    SAMPLEFILE_TO_BATCHES[basename] = {p:[] for p in PROTOCOLS}
-                    
-                    for sample,info in list(w.items()):
-                        #check if sample is on active storage
-                        if not info['from_external']: 
-                            continue
-
-                        #check if sample is already retrieved
-                        info['need_retrieval'] = True
-                        filesize = info['filesize']
-                        
-                        if os.path.exists(os.path.join(os.getcwd(), config['SOURCEDIR'], sample + '.retrieved')) or \
-                            os.path.exists(os.path.join(os.getcwd(), config['SOURCEDIR'], sample + '.finished')):
-                            info['need_retrieval'] = False
-                            filesize=0
-                        
-                        
-                        protocol = info['from_external']
-                        
-                        #check if batch is full
-                        if (cursize[protocol]['full'] + info['filesize']) > MAX_BATCH_SIZE: #stable batch allocation
-                            w[sample] = info
-                            SAMPLEFILE_TO_BATCHES[basename][protocol].append({'samples':new_batch[protocol], 'size':cursize[protocol]['actual']})
-                            new_batch[protocol] = []
-                            cursize[protocol]['actual'] = 0
-                            cursize[protocol]['full'] = 0
-                        #add to batch
-                        new_batch[protocol].append(sample)
-                        #update batch size
-                        cursize[protocol]['full'] += info['filesize']
-                        cursize[protocol]['actual'] += filesize
-                        
-
-                    
-                    
-                    for p in PROTOCOLS:
-                        #add last batch
-                        if new_batch[p]:
-                            SAMPLEFILE_TO_BATCHES[basename][p].append({'samples':new_batch[p], 'size':cursize[p]['actual']})
-
-                        #assign batches to samples
-                        for pos, batch in enumerate(SAMPLEFILE_TO_BATCHES[basename][p]):
-                            for sample in batch['samples']:
-                                SAMPLE_TO_BATCH[sample] = f'{p}_{pos}'
-
-        SAMPLE_FILES.sort()
-
-
-    return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
 
 def get_validated_sex_file(input):
     #this file should exist after running 'get_validated_sex' job.
@@ -195,5 +206,20 @@ def get_validated_sex_file(input):
         xsample = yaml.load(f,Loader=yaml.FullLoader)
     return 'male' if  xsample['sex'] == 'M' else 'female'
 
+def get_ref_by_validated_sex(wildcards, input):
+    sex = get_validated_sex_file(input)
+    return REF_FEMALE if sex == 'female' else REF_MALE
 
+def get_refdir_by_validated_sex(wildcards, input):
+    sex = get_validated_sex_file(input)
+    return REF_FEMALE_DIR if sex == 'female' else REF_MALE_DIR
 
+def get_strref_by_validated_sex(wildcards, input):
+    sex = get_validated_sex_file(input)
+    return REF_FEMALE_STR if sex == 'female' else REF_MALE_STR
+
+cache = {}
+SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',cache)
+
+# extract all sample names from SAMPLEINFO dict to use it rule all
+sample_names = SAMPLEINFO.keys()

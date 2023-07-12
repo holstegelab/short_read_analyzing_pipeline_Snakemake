@@ -42,6 +42,7 @@ DELLY: 'SV_delly'
 MULTICOHORT: 'Multicohort'
 DEEPVARIANT: 'deepvariant'
 chrM: 'chrM_analysis'
+
 #programs
 gatk: 'gatk'
 samtools: 'samtools'
@@ -108,6 +109,7 @@ verifybamid_wgs: 'verifybamid_hg38_res/wgs/1000g.phase3.100k.b38.vcf.gz.dat'
 refflat: 'refFlat.txt'
 
 NUMTs: 'databases/NUMT_list_hg38.bed'
+
 # VQSR DBses
 dbsnp: 'databases/HG38_dbSNP_v155_updatesd.vcf.gz'
 hapmap: 'databases/hapmap_3.3.hg38.vcf.gz'

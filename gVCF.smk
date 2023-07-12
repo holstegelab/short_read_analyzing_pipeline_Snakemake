@@ -1,35 +1,11 @@
-import pandas as pd
-import read_stats
-import os
-import getpass
-import yaml
-
-configfile: srcdir("Snakefile.cluster.json")
-configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['gatk']
-samtools = config['samtools']
-bcftools = config['bcftools']
-dragmap = config['dragmap']
-verifybamid2 = config['verifybamid2']
-
-ref = config['RES'] + config['ref']
-
-tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
-tmpdir_alternative = os.path.join(config['tmpdir'],getpass.getuser())
-
-os.makedirs(tmpdir,mode=0o700,exist_ok=True)
+from common import *
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
 
 
-from read_samples import *
-from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
 
-# extract all sample names from SAMPLEINFO dict to use it rule all
-sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -46,33 +22,28 @@ module Tools:
     config: config
 use rule * from Tools
 
-mode = config.get("computing_mode", "WES")
-
-
 
 
 rule gVCF_all:
     input:
-        expand("{gvcf}/{sample}.done",sample=sample_names, gvcf = config['gVCF']),
+        expand("{gvcf}/{sample}.done",sample=sample_names, gvcf = GVCF),
         rules.Aligner_all.input
     default_target: True
 
 def get_gvcf_files(wildcards):
     sample = wildcards['sample']
-    res = []
-    for chrom in main_chrs_ploidy_male:
-        if 'Y' in chrom or 'H' in chrom:
-            res.append(os.path.join(config['gVCF'], chrom, sample + '.' + chrom + '.g.vcf.gz'))
-        else:        
-            res.append(os.path.join(config['gVCF'], chrom, sample + '.' + chrom + '.wg.vcf.gz'))
-    return res
+    regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions    
+    return [pj(GVCF, region, f'{sample}.{region}.wg.vcf.gz') for region in regions]
+
 
 rule gvcf_sample_done:
     input:
         get_gvcf_files
     output:
-        touch(os.path.join(config['gVCF'], "{sample}.done"))
-
+        touch(pj(GVCF, "{sample}.done"))
+    resources:
+        n=1,
+        mem_mb=50
 
 
 
@@ -82,38 +53,14 @@ rule ComposeSTRTableFile:
     output:
         str_table = "{path}.str.zip"
     params:
-        java_options=config['DEFAULT_JAVA_OPTIONS']
+        java_options=DEFAULT_JAVA_OPTIONS
     resources: 
         n = 1,
         mem_mb = 3000
-    conda: "envs/vcf_handling.yaml"        
+    conda: CONDA_VCF   
     shell:
         """gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}m {params.java_options}" -R {input.ref_fasta} -O {output.str_table}"""
 
-
-
- 
-def get_strref_by_validated_sex(wildcards, input):
-    sex = get_validated_sex_file(input)
-    if sex == 'female':
-        ref=os.path.join(config['RES'],config['ref_female_str'])
-    else:
-        ref=os.path.join(config['RES'],config['ref_male_str'])
-
-    return ref
-
-def get_ref_by_validated_sex(wildcards, input):
-    sex = get_validated_sex_file(input)
-    if sex == 'female':
-        ref=os.path.join(config['RES'],config['ref_female'])
-    else:
-        ref=os.path.join(config['RES'],config['ref_male'])
-
-    return ref
-
- 
-def get_mem_mb_CalibrateDragstrModel(wildcards, attempt):
-    return attempt * int(1750)
 
 rule CalibrateDragstrModel:
     """CalibrateDragstrModel. Estimates the parameters of the dragstr model from a set of aligned reads.
@@ -124,80 +71,48 @@ rule CalibrateDragstrModel:
         bai= rules.markdup.output.mdbams_bai,
         validated_sex = rules.get_validated_sex.output.yaml       
     output:
-        dragstr_model = config['BAM'] + "/{sample}-dragstr.txt"
+        dragstr_model = pj(BAM, "{sample}-dragstr.txt")
     priority: 26
     params:
         ref=get_ref_by_validated_sex,
         str_ref = get_strref_by_validated_sex,
-        java_options=config['DEFAULT_JAVA_OPTIONS']
+        java_options=DEFAULT_JAVA_OPTIONS
     resources: 
         n = 1,
-        mem_mb = get_mem_mb_CalibrateDragstrModel
-    log: config['LOG'] + '/' + "{sample}_calibratedragstr.log"
-    benchmark: config['BENCH'] + "/{sample}_calibrate_dragstr.txt"
-    conda: 'envs/vcf_handling.yaml'
+        mem_mb = lambda wildcards, attempt: attempt * 1750
+    log: pj(LOG, "{sample}_calibratedragstr.log")
+    benchmark: pj(BENCH, "{sample}_calibrate_dragstr.txt")
+    conda: CONDA_VCF
     shell:
         """{gatk} CalibrateDragstrModel --java-options \
                     "-Xmx{resources.mem_mb}m {params.java_options}"  -R {params.ref} -I {input.bam} \
                     -O {output} -str {params.str_ref} 2>{log}"""
 
-# verifybamid
-# verifybamid has some bugs and require samtools lower version
-# to avoid any bugs verifybamid step runs in different conda enviroment
-
-
-
-def get_chrom_capture_kit(wildcards):
-    """Get capture kit in case of WES, or otherwise chromosome in case of WGS."""
-    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    chrom = wildcards.chrom
-    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
-        capture_kit_chr_path = chrom
-    else:        
-        capture_kit_chr_path = os.path.join(config['RES'], config['kit_folder'], capture_kit,  capture_kit + '_chrom_' + chrom + '.interval_list')
-
-    return capture_kit_chr_path
-
-
-
 def read_contam_w(wildcards):
     """Read contamination from verifybamid output file."""
-    filename = os.path.join(config['STAT'], 'contam', wildcards['sample'] +  '.verifybamid.pca2.selfSM')
+    filename = pj(STAT, 'contam', wildcards['sample'] +  '.verifybamid.pca2.selfSM')
     with open(filename,'r', encoding='utf-8') as f:
         c = csv.reader(f, delimiter='\t')
         c = iter(c)
         headers = c.__next__()
         data = c.__next__()
         freemix = float(data[6])
+
     if freemix < 0.01: #only remove contamination if it is more than 1%
         freemix = 0.0        
     return freemix
 
 def get_mem_mb_HaplotypeCaller(wildcards, attempt):
     """Get memory for HaplotypeCaller."""
-    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
-        res = 1750
-    else:
-        res = 1400
+    res = 1750 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 1400
     return (attempt - 1) * res * 3 + res #aggressively reserve more memory
 
 
-def get_chrom_merged_capture_kit(wildcards):
-    chrom = wildcards.chrom
-    chrom = chrom.replace('XH', 'X').replace('YH', 'Y')
-    if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
-        capture_kit_chr_path = []
-    else:
-        capture_kit_chr_path = [os.path.join(config['RES'], config['kit_folder'], config['MERGED_CAPTURE_KIT'], config['MERGED_CAPTURE_KIT'] + '_chrom_' + chrom + '.interval_list')]
-    
-    return capture_kit_chr_path
-
-def get_chrom_ploidy(wildcards):
-    if wildcards['chrom'] in ['chrXH', 'chrYH']:
-        ploidy = 1
-    else:
-        ploidy = 2
-    return ploidy
+def region_to_interval_file(wildcards):
+    """Converts a region to a interval file location (see common.py and Tools.smk)"""
+    sample = wildcards['sample']
+    region = wildcards['region']
+    return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='interval_list')
 
 rule HaplotypeCaller:
     """HaplotypeCaller. Call SNPs and indels for each sample."""
@@ -207,40 +122,39 @@ rule HaplotypeCaller:
         bai = rules.markdup.output.mdbams_bai,
         model = rules.CalibrateDragstrModel.output.dragstr_model,
         contam= rules.verifybamid.output.VBID_stat,
-        interval= get_chrom_merged_capture_kit,
+        interval= region_to_interval_file,
         validated_sex = rules.get_validated_sex.output.yaml
     output:
-        orig_gvcf= ensure(temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz")), non_empty=True),
-        orig_gvcf_tbi = ensure(temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.g.vcf.gz.tbi")), non_empty=True),
-        genotyped_vcf = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.vcf.gz")),
-        genotyped_vcf_tbi = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.vcf.gz.tbi")),
-        tmp_vcf = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.tmp.vcf.gz")),
-        vcf = temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.w.vcf.gz")),
-        wstats = os.path.join(config['STAT'], "whatshap_phasing/{sample}.{chrom}.stats"),
-        mwstats = os.path.join(config['STAT'], "whatshap_phasing/{sample}.{chrom}.merge_stats"),
-        tmp_gvcf= temp(os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf")), 
-        gvcf= os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf.gz"), 
-        gvcf_tbi = os.path.join(config['gVCF'], "{chrom}/{sample}.{chrom}.wg.vcf.gz.tbi"), 
+        orig_gvcf= ensure(temp(pj(GVCF, "{region}/{sample}.{region}.g.vcf.gz")), non_empty=True),
+        orig_gvcf_tbi = ensure(temp(pj(GVCF, "{region}/{sample}.{region}.g.vcf.gz.tbi")), non_empty=True),
+        genotyped_vcf = temp(pj(GVCF, "{region}/{sample}.{region}.vcf.gz")),
+        genotyped_vcf_tbi = temp(pj(GVCF, "{region}/{sample}.{region}.vcf.gz.tbi")),
+        tmp_vcf = temp(pj(GVCF, "{region}/{sample}.{region}.tmp.vcf.gz")),
+        vcf = temp(pj(GVCF, "{region}/{sample}.{region}.w.vcf.gz")),
+        vcf_tbi = temp(pj(GVCF, "{region}/{sample}.{region}.w.vcf.gz.tbi")),
+        wstats = pj(STAT, "whatshap_phasing/{sample}.{region}.stats"),
+        mwstats = pj(STAT, "whatshap_phasing/{sample}.{region}.merge_stats"),
+        tmp_gvcf= temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf")), 
+        gvcf= pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz"), 
+        gvcf_tbi = pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi"), 
     log:
-        HaplotypeCaller=config['LOG'] + "/{sample}_{chrom}_haplotypecaller.log"
+        HaplotypeCaller=pj(LOG, "{sample}_{region}_haplotypecaller.log")
     benchmark:
-        config['BENCH'] + "/{sample}_{chrom}_haplotypecaller.txt"
-    conda: "envs/vcf_handling.yaml"
+        pj(BENCH, "{sample}_{region}_haplotypecaller.txt")
+    conda: CONDA_VCF
     resources: 
                n=1, #average 1.3 cores
                mem_mb = get_mem_mb_HaplotypeCaller,
                tmpdir = tmpdir_alternative
     params:
-        interval = lambda wildcards, input: wildcards['chrom'].replace('YH', 'Y').replace('XH','X') if len(input.interval) == 0 else input.interval[0],
-        dbsnp = config['RES'] + config['dbsnp'],
-        padding=300,  # extend intervals to this bp
+        dbsnp = DBSNP,
+        padding=0,  #padding is included in the interval file. Keep at 0 to prevent overlapping intervals
         contam_frac = read_contam_w, # get contamination fraction per sample
-        # command to get path to capture_kit interval list from SAMPLEFILE
-        ploidy = get_chrom_ploidy,
-        java_options=config['DEFAULT_JAVA_OPTIONS'],
+        ploidy = lambda wildcards: 1 if wildcards['region'].endswith('H') else 2,
+        java_options=DEFAULT_JAVA_OPTIONS,
         ref=get_ref_by_validated_sex,
-        dragen_mode = lambda wildcards: '--dragen-mode true' if not 'H' in wildcards['chrom'] else '',
-        merge_script=srcdir("scripts/merge_phasing.py")
+        dragen_mode = lambda wildcards: '--dragen-mode true' if not 'H' in wildcards['region'] else '',
+        merge_script=srcdir(MERGEPHASE)
     priority: 28
     #Overview of available annotations (GATK version 4.4)
     #AS_StandardAnnotation: AS_BaseQualityRankSumTest, AS_FisherStrand, AS_InbreedingCoeff, AS_MappingQualityRankSumTest, AS_QualByDepth, AS_RMSMappingQuality, AS_ReadPosRankSumTest, AS_StrandOddsRatio (all allele specific annotations)
@@ -260,9 +174,19 @@ rule HaplotypeCaller:
     #to consider: --population-callset in combination with gnomad,  --use-posteriors-to-calculate-qual
 
     #max-mnp-distance: not compatible with multiple sample gVCF calling, omitted.
+
+    #PHASING
+    #GATK: physical phasing depends on de bruijn graph, which is not always optimal. In practice this means
+    #that the phasing is only short distance (~50bp). Whathap uses the full dna fragment, usually 300bp, to phase.
+    #Here we use whatshap to phase the gatk called variants, and then merge the whatshap phased variants with the gatk phased variants.
+    #This way we get the best of both worlds: the gatk phasing is used for short distance phasing also of variants with low read
+    #support (which might become full variants during multi-sample genotyping), and the whatshap phasing is used for long distance phasing.
+    
+    #WORKAROUND: Due to bug in whatshap stats for empty contigs, we use || true to prevent pipeline from crashing when no heterozygous variants 
+    #are found.
     shell: """ 
         {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller     \
-            -R {params.ref} -L {params.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
+            -R {params.ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
             --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
             --annotate-with-num-discovered-alleles --adaptive-pruning \
             -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
@@ -270,53 +194,49 @@ rule HaplotypeCaller:
             {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}
 
         {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" GenotypeGVCFs \
-                -R {ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} 
+                -R {params.ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} 
 
         mkdir -p `dirname {output.wstats}`
         if [ {params.ploidy} -eq 2 ]
         then 
             whatshap unphase  {output.genotyped_vcf} >  {output.tmp_vcf}
             whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf}
-            whatshap stats {output.genotyped_vcf} > {output.wstats}
-            whatshap stats {output.vcf} >> {output.wstats}
+            bcftools index --tbi {output.vcf}
+            whatshap stats {output.genotyped_vcf} > {output.wstats} || true
+            whatshap stats {output.vcf} >> {output.wstats} || true
             python {params.merge_script} {output.orig_gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
             bcftools annotate -x 'FORMAT/PGT,FORMAT/PS,FORMAT/PID' {output.tmp_gvcf} -o {output.gvcf}
         else
-            cp {output.genotyped_vcf} {output.tmp_vcf}
-            cp {output.tmp_vcf} {output.vcf}
-            whatshap stats {output.genotyped_vcf} > {output.wstats}
+            touch {output.tmp_vcf}
+            touch {output.vcf}
+            touch {output.vcf}.tbi
+            whatshap stats {output.genotyped_vcf} > {output.wstats} || true
             touch {output.mwstats}
-            cp {output.orig_gvcf} {output.tmp_gvcf}
+            touch {output.tmp_gvcf}
             bcftools view {output.orig_gvcf} -o {output.gvcf}
         fi  
         bcftools index --tbi {output.gvcf}          
         """
 
-
-
-    
-
-
-def get_mem_mb_reblock_gvcf(wildcrads, attempt):
-    return attempt * int(2500)
-
 rule reblock_gvcf:
     input:
         gvcf = rules.HaplotypeCaller.output.orig_gvcf,
-        idx = rules.HaplotypeCaller.output.orig_gvcf_tbi
-    output: gvcf_reblock = ensure(os.path.join(config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz"), non_empty=True),
-            tbi = ensure(os.path.join(config['gVCF'], "reblock/{chrom}/{sample}.{chrom}.g.vcf.gz.tbi"), non_empty=True)
-    log: Reblock=config['LOG'] + "/{sample}_{chrom}_reblock.log"
+        idx = rules.HaplotypeCaller.output.orig_gvcf_tbi,
+        validated_sex = rules.get_validated_sex.output.yaml
+    output: gvcf_reblock = ensure(pj(GVCF, "reblock/{region}/{sample}.{region}.g.vcf.gz"), non_empty=True),
+            tbi = ensure(pj(GVCF, "reblock/{region}/{sample}.{region}.g.vcf.gz.tbi"), non_empty=True)
+    log: Reblock=pj(LOG, "{sample}_{region}_reblock.log")
     benchmark:
-        config['BENCH'] + "/{sample}_{chrom}_reblock.txt"
-    conda: "envs/vcf_handling.yaml"
+        pj(BENCH, "{sample}_{region}_reblock.txt")
+    conda: CONDA_VCF
     priority: 29
     params:
-        dbsnp=config['RES'] + config['dbsnp'],
-        java_options=config['DEFAULT_JAVA_OPTIONS']
+        dbsnp=DBSNP,
+        java_options=DEFAULT_JAVA_OPTIONS,
+        ref=get_ref_by_validated_sex
     resources: 
         n=2,
-        mem_mb = get_mem_mb_reblock_gvcf
+        mem_mb = lambda wildcards, attempt: attempt * 2500
     shell:
-        """{gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF   --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
+        """{gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF   --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {params.ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""
 

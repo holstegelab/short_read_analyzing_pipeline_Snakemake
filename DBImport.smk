@@ -5,14 +5,6 @@ import getpass
 
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
-gatk = config['gatk']
-samtools = config['samtools']
-bcftools = config['bcftools']
-dragmap = config['dragmap']
-verifybamid2 = config['verifybamid2']
-cur_dir = os.getcwd()
-
-ref = config['RES'] + config['ref']
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -21,11 +13,8 @@ wildcard_constraints:
 
 from read_samples import *
 from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
-# extract all sample names from SAMPLEINFO dict to use it rule all
-sample_names = SAMPLEINFO.keys()
-tmpdir_alternative = os.path.join(config['tmpdir'],getpass.getuser())
-tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
+
+
 
 module Aligner:
     snakefile: 'Aligner.smk'

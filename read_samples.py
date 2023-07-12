@@ -12,8 +12,11 @@ import stat
 import bz2
 import time
 import argparse
-
 import utils
+
+from constants import *
+from collections import OrderedDict
+
 
 PROTOCOLS = ['archive','dcache']
 
@@ -139,7 +142,7 @@ sexes = set(['F', 'M'])
 
 
 
-def read_samplefile(filename, config, prefixpath=None):
+def read_samplefile(filename, prefixpath=None):
     """Read a sample file and return a list of samples.
 
     Sample file format:
@@ -156,7 +159,6 @@ def read_samplefile(filename, config, prefixpath=None):
 
 
     :param filename: name of the sample file
-    :param config: configuration dictionary
     :param prefixpath: path to prepend to all filenames
     :return: list of sample dictionaries."""
     
@@ -269,7 +271,7 @@ def read_samplefile(filename, config, prefixpath=None):
 
                res['from_external'] = protocols.pop()
             else:
-                res, warnings = get_readgroups(res, prefixpath, config)
+                res, warnings = get_readgroups(res, prefixpath)
                 for w in warnings:
                     warning(False, w)
                 res['from_external'] = False
@@ -277,7 +279,7 @@ def read_samplefile(filename, config, prefixpath=None):
             samples.append(res)
 
     for capture_kit in capture_kits:
-        f = os.path.join(config['RES'], config['kit_folder'], capture_kit + '.bed')
+        f = pj(INTERVALS_DIR, capture_kit + '.bed')
         if not os.path.isfile(f):
             warning(False, 'capture kit file does not exist: ' + f)
     print("")
@@ -299,11 +301,10 @@ def append_prefix(prefix, filename):
         return filename
 
 
-def get_readgroups(sample, sourcedir, config):
+def get_readgroups(sample, sourcedir):
     """Obtains readgroups from fastq, SRA, or bam/cram files. Stores in the sample dictionary.
     :param sample: sample dictionary
     :param sourcedir: directory where the files are located
-    :param config: config dictionary
     
     :return: sample dictionary, list of warnings
     """
@@ -415,7 +416,7 @@ def get_readgroups(sample, sourcedir, config):
                     reference_file = "GRCh38_full_analysis_set_plus_decoy_hla.fa"  #default reference file
 
                 if not reference_file.startswith('/'): #relative path, look in cram reference folder
-                    reference_file = os.path.join(config['RES'], config['CRAMREFS'], sample['file2'][0])
+                    reference_file = pj(CRAMREFS, sample['file2'][0])
             else:
                 reference_file = None
 
@@ -498,15 +499,43 @@ def read_fastqfile(filename):
             header = header.strip()
             error(' ' in header, 'Unexpected fastq header format: ' + header)
             machine_info, read_info = header.split(' ')
-
             machine_fields = machine_info.split(':')
-            read_fields = read_info.split(':')
+            
+            if len(machine_fields) == 7:
+                instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y = machine_fields
+            elif len(machine_fields) == 6:
+                instrument_name, flowcell_id, flowcell_lane, tile_number, x, y = machine_fields
+            elif len(machine_fields) == 1:
+                instrument_name = 'UNKNOWN'
+                run_id = machine_fields[0]
+                flowcell_id = '0'
+                flowcell_lane = '0'
+                tile_number = '0'
+                x = '0'
+                y = '0'                   
+            else:     
+                error(False, 'Unexpected fastq header format: ' + header)
 
-            error(len(machine_fields) == 7, 'Unexpected fastq header format: ' + header)
-            error(len(read_fields) == 4, 'Unexpected fastq header format: ' + header)
+            if '/' in read_info:   
+                read_info, pairid = read_info.split('/')
+                          
+            read_fields = read_info.split(':')             
+            
+            if len(read_fields) == 1:
+                index_seq = read_fields[0]
 
-            instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y = machine_fields
-            pairid, filtered, control_bits, index_seq = read_fields
+            elif len(read_fields) == 4:
+                pairid, filtered, control_bits, index_seq = read_fields                
+            elif len(read_fields) == 5:
+                flowcell_id, flowcell_lane, tile_number, x,y = read_fields
+                index_seq = ''
+            elif len(read_fields) == 7:
+                instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y = read_fields
+                index_seq = ''
+            else:
+                error(False, 'Unexpected fastq header format: ' + header)
+            
+            
         elif '/' in header:  # french format, no multiplex
             machine_info, read_fields = header.split('/')
             machine_fields = machine_info.split(':')
@@ -524,7 +553,7 @@ def read_fastqfile(filename):
                 x = '0'
                 y = '0'
             else:
-                error(len(machine_fields) == 6, 'Unexpected fastq header format: ' + header)
+                error(False, 'Unexpected fastq header format: ' + header)
 
             index_seq = '0'
             pairid = read_fields.strip('\n')
@@ -541,22 +570,141 @@ def read_fastqfile(filename):
 
     return res
 
+
+
+############# CODE used in Snakemake pipeline ######################
+SAMPLEFILE_TO_SAMPLES = {}
+MAX_BATCH_SIZE = 2 * 1024 #2TB
+
+
+#function to read in and cache a samplefile 
+def samplefile(sfilename):
+    basename = os.path.splitext(os.path.basename(sfilename))[0]
+    if not basename in SAMPLEFILE_TO_SAMPLES: 
+        if not os.path.isfile(sfilename):
+            raise RuntimeError('Sample file ' + sfilename + ' does not exist')
+       
+        datfilename = os.path.realpath(sfilename)[:-4] + '.adat'
+        if not os.path.isfile(datfilename):
+            if not os.path.isfile(sfilename):
+                raise RuntimeError('Sample file ' + sfilename + ' does not exist')
+            samplelist = read_samplefile(sfilename)
+            #using ordereddict to main stable order
+            sampleinfodict = OrderedDict([(a['sample'], a) for a in samplelist])
+            utils.save(sampleinfodict,datfilename)
+        else:
+            sampleinfodict = utils.load(datfilename)
+
+        SAMPLEFILE_TO_SAMPLES[basename] = sampleinfodict
+    return SAMPLEFILE_TO_SAMPLES[basename]
+
+
+def load_samplefiles(filedir, cache):
+    
+    if not 'SAMPLE_FILES' in cache:
+        #already loaded
+
+        SAMPLE_FILES = []
+        SAMPLEINFO = {}
+        SAMPLE_TO_BATCH = {}
+        SAMPLEFILE_TO_BATCHES = {}
+
+        #read in all tsv files in current workdir as samplefiles
+        for f in os.listdir(filedir):
+            if f.endswith('.tsv') and not f.startswith('sample_'): #possible sample file
+                f = os.path.join(filedir, f)
+                with open(f, 'r', encoding='utf-8') as fopen:
+                    ncount = len(fopen.readline().split('\t'))
+                if ncount == 7 or ncount == 8 or ncount == 9: #sample file
+                    basename = os.path.splitext(os.path.basename(f))[0]
+                    SAMPLE_FILES.append(basename)
+                    w = samplefile(f)
+                    
+                    #generate some indices
+                    no_readgroup = []
+                    for sample,info in w.items():
+                        if sample in SAMPLEINFO:
+                            print('WARNING!: Sample ' + sample + ' is defined in more than one sample files.')
+                        SAMPLEINFO[sample] = info
+                        SAMPLE_TO_BATCH[sample] = None #default
+                   
+                        if len(info.get('readgroups',[])) == 0:
+                            no_readgroup.append(sample)
+                    if no_readgroup:
+                        print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w)))
+                    
+
+                    #assign to batches for staging from archive or dcache
+                    cursize_full = 0 #size if all files need to be staged
+                    cursize_actual = 0 #size excluding files that are already retrieved
+                    
+                    #PROTOCOLS = ['dcache', 'archive']
+                    cursize = {p:{'full':0, 'actual':0} for p in PROTOCOLS}
+
+                    
+                    new_batch = {p:[] for p in PROTOCOLS}
+                    SAMPLEFILE_TO_BATCHES[basename] = {p:[] for p in PROTOCOLS}
+                    
+                    for sample,info in list(w.items()):
+                        #check if sample is on active storage
+                        if not info['from_external']: 
+                            continue
+
+                        #check if sample is already retrieved
+                        info['need_retrieval'] = True
+                        filesize = info['filesize']
+                        
+                        if os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.retrieved')) or \
+                            os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.finished')):
+                            info['need_retrieval'] = False
+                            filesize=0
+                        
+                        
+                        protocol = info['from_external']
+                        
+                        #check if batch is full
+                        if (cursize[protocol]['full'] + info['filesize']) > MAX_BATCH_SIZE: #stable batch allocation
+                            w[sample] = info
+                            SAMPLEFILE_TO_BATCHES[basename][protocol].append({'samples':new_batch[protocol], 'size':cursize[protocol]['actual']})
+                            new_batch[protocol] = []
+                            cursize[protocol]['actual'] = 0
+                            cursize[protocol]['full'] = 0
+                        #add to batch
+                        new_batch[protocol].append(sample)
+                        #update batch size
+                        cursize[protocol]['full'] += info['filesize']
+                        cursize[protocol]['actual'] += filesize
+                        
+
+                    
+                    
+                    for p in PROTOCOLS:
+                        #add last batch
+                        if new_batch[p]:
+                            SAMPLEFILE_TO_BATCHES[basename][p].append({'samples':new_batch[p], 'size':cursize[p]['actual']})
+
+                        #assign batches to samples
+                        for pos, batch in enumerate(SAMPLEFILE_TO_BATCHES[basename][p]):
+                            for sample in batch['samples']:
+                                SAMPLE_TO_BATCH[sample] = f'{p}_{pos}'
+
+        SAMPLE_FILES.sort()
+
+
+    return (SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES)
+
+###############################################
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process sample description files for the preprocessing pipeline.')	
     parser.add_argument('samplefiles', metavar='SAMPLEFILE', nargs='+', help='Path to sample file.')
-    parser.add_argument('--config', default='', help='Location of the preprocessing pipeline path config file (default: Snakefile.paths.yaml)')
+    
     parser.add_argument('--data_root', default='', help='Root folder in which to look for source files (referred to from sample file) (default=folder of sample file).')
     args = parser.parse_args()
     data_root = args.data_root
 
-    #load config
-    if not args.config:
-        configfile = os.path.join(os.path.dirname(os.path.realpath(__file__)),'Snakefile.paths.yaml')
-    else:
-        configfile = os.path.expanduser(args.config)
-    config = utils.read_yaml_config(configfile)
 
     samplefiles = [os.path.expanduser(sample_file) for sample_file in args.samplefiles]
     for samplefile in samplefiles:
-        read_samplefile(samplefile, config, args.data_root)
+        read_samplefile(samplefile, args.data_root)
 
