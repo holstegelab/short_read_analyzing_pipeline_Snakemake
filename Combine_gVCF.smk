@@ -57,6 +57,6 @@ rule combinegvcfs:
         inputs = lambda wildcards, input: [f"--variant {file}" for file in input.gvcf]
         
     shell:
-        """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {REF} -L {input.interval} 2> {log}"""
+        """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {REF_MALE} -L {input.interval} 2> {log}"""
 
 

@@ -74,11 +74,11 @@ rule deepvariant:
     resources:
         n="1.5", #set in profile using singularity-args. Waiting for rule-specific args. 
         nshards=2,
-        mem_mb=get_mem_mb_deepvariant 
+        mem_mb=get_mem_mb_deepvariant,
     log: pj(LOG,"{sample}.{region}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{output.inter_dir}"  2> {log}
+        /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{output.inter_dir}"  2> {log}
         """
 
 
