@@ -51,7 +51,7 @@ rule combinegvcfs:
     conda: CONDA_VCF
     priority: 30
     resources: 
-        mem_mb =lambda wildcards, attempt: attempt*7000
+        mem_mb =lambda wildcards, attempt: attempt*7000,
         n = 1
     params:
         inputs = lambda wildcards, input: [f"--variant {file}" for file in input.gvcf]
