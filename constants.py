@@ -84,7 +84,7 @@ ORIG_MT_fa= pj(RESOURCES,'MT_ref/chrM_hg38.fasta')
 ORIG_MT_dict= pj(RESOURCES,'MT_ref/chrM_hg38.dict')
 ORIG_MT_fai= pj(RESOURCES,'MT_ref/chrM_hg38.fasta.fai')
 ORIG_MT= pj(RESOURCES,'MT_ref')
-
+NUMTs= pj(RESOURCES, 'databases/NUMT_list_hg38.bed')
 mask_bed= 'Ref_PhiX_Male/hg38_alt_mask.male.bed'
 str_ref= 'Ref_PhiX_Male/GRCh38.str.zip'
 
