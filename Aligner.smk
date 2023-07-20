@@ -735,7 +735,7 @@ rule dechimer:
     resources:
         n="1.4", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
         mem_mb=275
-    conda: CONDA_PYPY        
+    # conda: CONDA_PYPY
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]    
@@ -745,7 +745,7 @@ rule dechimer:
             cmd = """    samtools view -h --threads 2 {input.bam} |\
                          pypy {params.dechimer} --min_align_length 40 --loose_ends -i - -s {output.stats} |\
                           samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
-            shell(cmd)
+            shell(cmd, conda_env = CONDA_PYPY)
         else:
             cmd = """
                     #switching to copy instead of hard link, as hard link also updates modification time input.bam
@@ -816,11 +816,11 @@ rule merge_rgs:
         n=1,
         mem_mb=150
     priority: 19
-    conda: CONDA_MAIN
+    # conda: CONDA_MAIN
     run:
         if len(input.bam) > 1:
             cmd = "samtools merge -@ {resources.n} {output} {input.bam} 2> {log}"
-            shell(cmd)
+            shell(cmd, conda_env = CONDA_MAIN)
         else:
             #switching to copy as hard link updates also time of input.bam
             cmd = "cp {input.bam} {output}"
