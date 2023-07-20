@@ -212,8 +212,8 @@ rule sort_by_name_NUMT:
 
 rule align_NUMT_to_chrM:
     input: rules.sort_by_name_NUMT.output
-    output: bam = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam')),
-            bai = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')),
+    output: bam = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.realign.bam')),
+            bai = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.realign.bai')),
             bam_shifted= temp(pj(chrM,"NUMTs",'{sample}_NUMTs_shifted.reads.bam')),
             bai_shifted=temp(pj(chrM,"NUMTs",'{sample}_NUMTs_shifted.reads.bai'))
     conda: "envs/dragmap_chrm.yaml"
