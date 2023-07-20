@@ -113,7 +113,7 @@ rule mutect_orig:
             """
                 mkdir -p {params.variants_dir}
              ((gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}  2> {log})   
-             gatk Mutect2 -R {params.mt_ref_shift} -L chrM:1-650 -L chrM:15919-16069 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift} 2>> {log}) &&
+             gatk Mutect2 -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift} 2>> {log}) &&
              gatk LiftoverVcf -I {output.vcf_shift} -O {output.vcf_shift_back} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} 
             """
 # -L chrM:500-16069
@@ -177,7 +177,7 @@ rule mutect_orig_bp_resolut:
             """
                 mkdir -p {params.variants_dir}
              ((gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf_BP}  2> {log})   
-              gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-650 -L chrM:15919-16069 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift_BP} 2>> {log}) &&
+              gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift_BP} 2>> {log}) &&
               gatk LiftoverVcf -I {output.vcf_shift_BP} -O {output.vcf_shift_back_BP} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} && 
               gatk MergeVcfs -I {output.vcf_shift_back_BP} -I {output.vcf_BP} -O {output.merged_vcf_BP} 2>> {log} && 
               bcftools norm -d exact -O v {output.merged_vcf_BP} | bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_BP_with_anno}  - 2>> {log}
