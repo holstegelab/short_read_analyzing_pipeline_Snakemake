@@ -321,7 +321,6 @@ rule split_alignments_by_readgroup:
         mem_mb=get_mem_mb_split_alignments
     params:
         cramref=get_cram_ref
-    conda: CONDA_MAIN        
     run:
         sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)        
         readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
@@ -352,7 +351,7 @@ rule split_alignments_by_readgroup:
                 samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
 
                 """
-            shell(cmd)
+            shell(cmd, conda_env = CONDA_MAIN)
 
 
 

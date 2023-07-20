@@ -22,6 +22,7 @@ CONDA_VCF = 'envs/vcf_handling.yaml'
 CONDA_PYPY = 'envs/pypy.yaml'
 CONDA_KMC = 'envs/kmc.yaml'
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
+CONDA_GATK_CNV = 'envs/gatk_gcnv.yaml'
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
 
@@ -56,6 +57,8 @@ samtools= 'samtools'
 bcftools= 'bcftools'
 dragmap= 'dragen-os'
 verifybamid2= 'verifybamid2'
+java_cnv = pj(SOFTWARE, '/java/jdk-17.0.7/bin/java')
+gatk_cnv = pj(SOFTWARE, 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.0.0-27-gabe8148-SNAPSHOT-local.jar')
 
 #custom scripts (encapsulate in srcdir())
 BAMMERGE= 'scripts/bam_merge.py'
