@@ -282,7 +282,7 @@ rule merge_vcfs_NUMT:
              gatk MergeMutectStats --stats {input.stats} --stats {input.stats_shifted} -O {output.merged_stat} 2>> {log} &&
              gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} &&
                bcftools norm -d exact -O v -o {output.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
-               bgzip {output.filtred_norm_vcf_gz} && tabix {output.filtred_norm_vcf_gz}
+               bgzip {output.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
             """
 
 rule mutect_orig_NUMT_BP_resolution:
