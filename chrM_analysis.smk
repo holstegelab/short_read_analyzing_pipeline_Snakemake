@@ -132,20 +132,20 @@ rule merge_vcfs:
             merged_stat= ensure(pj(chrM,'variants','{sample}.chrM_merged.vcf.gz.stats'),non_empty=True),
             filtred_vcf= ensure(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz'),non_empty=True),
             filtred_tbi=ensure(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz.tbi'),non_empty=True),
-            filtred_norm_vcf = ensure(pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf'),non_empty=True),
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf.gz'),non_empty=True),
     conda: "envs/gatk.yaml"
     log: pj(LOG,"{sample}.vcf_merge.log")
     benchmark: pj(BENCH, '{sample}.vcf_merge.txt')
-    params: mt_ref=pj(ORIG_MT_fa)
+    params: mt_ref=pj(ORIG_MT_fa),
+            filtred_norm_vcf= (pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf')),
     resources: n = 2
     shell:
             """
                  gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat} 2> {log}
                gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 2>> {log} && 
                gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} && 
-               bcftools norm -d exact -O v -o {output.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
-               bgzip {output.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
+               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
+               bgzip {params.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
             """
 rule mutect_orig_bp_resolut:
     input: bam = rules.realign_to_orig_ref.output.bam,
@@ -270,19 +270,20 @@ rule merge_vcfs_NUMT:
             merged_stat= ensure(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_merged.vcf.gz.stats')),
             filtred_vcf= ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred.vcf.gz')),non_empty=True),
             filtred_tbi = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred.vcf.gz.tbi')),non_empty=True),
-            filtred_norm_vcf= ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf')),non_empty=True),
+
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf.gz'),non_empty=True),
     conda: "envs/gatk.yaml"
     log: pj(LOG,"{sample}.vcf_merge_NUMT.log")
     benchmark: pj(BENCH, '{sample}.vcf_merge_NUMT.txt')
-    params: mt_ref= pj(ORIG_MT_fa)
+    params: mt_ref= pj(ORIG_MT_fa),
+            filtred_norm_vcf= (pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf'))
     shell:
             """
             gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 2> {log} 
              gatk MergeMutectStats --stats {input.stats} --stats {input.stats_shifted} -O {output.merged_stat} 2>> {log} &&
              gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} &&
-               bcftools norm -d exact -O v -o {output.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
-               bgzip {output.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
+               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
+               bgzip {params.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
             """
 
 rule mutect_orig_NUMT_BP_resolution:
