@@ -165,7 +165,7 @@ rule mutect_orig_bp_resolut:
             merged_vcf_BP = ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz')),non_empty=True),
             merged_tbi_BP = ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz.tbi')),non_empty=True),
             merged_vcf_BP_with_anno = ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'),non_empty=True),
-            merged_vcf_BP_norm= ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz'),non_empty=True)),
+            merged_vcf_BP_norm= ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz')),non_empty=True),
     conda: "envs/gatk.yaml"
     log: pj(LOG,"{sample}.mutect_orig_BP_res.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_BP_res.txt')
@@ -305,7 +305,7 @@ rule mutect_orig_NUMT_BP_resolution:
             tbi_shiftback = ensure(temp(pj(chrM,'variants','NUMTs', 'gVCF','{sample}.chrM_NUMT_shifted_backshifted_BP_res.g.vcf.gz.tbi')),non_empty=True),
             merged_vcf = ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz')),non_empty=True),
             merged_vcf_with_anno = ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'),non_empty=True),
-            merged_vcf_norm= ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz'),non_empty=True)),
+            merged_vcf_norm= ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')),non_empty=True),
     conda: "envs/gatk.yaml"
     log: pj(LOG,"{sample}.mutect_orig_NUMT_BP_res.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_NUMT_BP_res.txt')
