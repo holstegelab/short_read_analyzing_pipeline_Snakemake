@@ -145,7 +145,7 @@ rule merge_vcfs:
                gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 2>> {log} && 
                gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} && 
                bcftools norm -d exact -O v -o {output.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
-               bgzip {output.filtred_norm_vcf_gz} && tabix {output.filtred_norm_vcf_gz}
+               bgzip {output.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
             """
 rule mutect_orig_bp_resolut:
     input: bam = rules.realign_to_orig_ref.output.bam,
