@@ -587,11 +587,11 @@ rule kmer_combine:
     resources:
         n=1, #very low usage (<1)
         mem_mb=1000,
-    conda: CONDA_KMC
+    # conda: CONDA_KMC
     run:
         final = output.out1[:-8]
-        shell("cp {input.in_files[0]} {final}.kmc_pre")
-        shell("cp {input.in_files[1]} {final}.kmc_suf")
+        shell("cp {input.in_files[0]} {final}.kmc_pre", conda_env = CONDA_KMC)
+        shell("cp {input.in_files[1]} {final}.kmc_suf", conda_env = CONDA_KMC)
         
         for i in range(2, len(input['in_files']),2):
             fname = input['in_files'][i][:-8]
@@ -599,7 +599,7 @@ rule kmer_combine:
                 mv {final}.kmc_suf {final}.tmp.kmc_suf
                 kmc_tools simple {final}.tmp {fname} union {final} -ocsum
                 rm {final}.tmp.kmc_suf
-                rm {final}.tmp.kmc_pre""")
+                rm {final}.tmp.kmc_pre""", conda_env = CONDA_KMC)
 
 def get_mem_mb_validated_sex(wildcards, attempt):
     """Utility function to get the memory for the align_reads rule.
