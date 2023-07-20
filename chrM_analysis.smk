@@ -145,7 +145,8 @@ rule merge_vcfs:
                gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 2>> {log} && 
                gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} && 
                bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
-               bgzip {params.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
+               bgzip {params.filtred_norm_vcf} && 
+               tabix {output.filtred_norm_vcf_gz}
             """
 rule mutect_orig_bp_resolut:
     input: bam = rules.realign_to_orig_ref.output.bam,
@@ -164,6 +165,7 @@ rule mutect_orig_bp_resolut:
             merged_vcf_BP = ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz')),non_empty=True),
             merged_tbi_BP = ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz.tbi')),non_empty=True),
             merged_vcf_BP_with_anno = ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'),non_empty=True),
+            merged_vcf_BP_norm= ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz'),non_empty=True)),
     conda: "envs/gatk.yaml"
     log: pj(LOG,"{sample}.mutect_orig_BP_res.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_BP_res.txt')
@@ -180,7 +182,8 @@ rule mutect_orig_bp_resolut:
               gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift_BP} 2>> {log}) &&
               gatk LiftoverVcf -I {output.vcf_shift_BP} -O {output.vcf_shift_back_BP} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} && 
               gatk MergeVcfs -I {output.vcf_shift_back_BP} -I {output.vcf_BP} -O {output.merged_vcf_BP} 2>> {log} && 
-              bcftools norm -d exact -O v {output.merged_vcf_BP} | bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_BP_with_anno}  - 2>> {log}
+              bcftools norm -d exact -o {output.merged_vcf_BP_norm} -O z {output.merged_vcf_BP} && tabix {output.merged_vcf_BP_norm} &&
+            bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_BP_with_anno}  {output} 2>> {log}
             """
 
 # (gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat} 2> {log})
@@ -302,6 +305,7 @@ rule mutect_orig_NUMT_BP_resolution:
             tbi_shiftback = ensure(temp(pj(chrM,'variants','NUMTs', 'gVCF','{sample}.chrM_NUMT_shifted_backshifted_BP_res.g.vcf.gz.tbi')),non_empty=True),
             merged_vcf = ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz')),non_empty=True),
             merged_vcf_with_anno = ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'),non_empty=True),
+            merged_vcf_norm= ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz'),non_empty=True)),
     conda: "envs/gatk.yaml"
     log: pj(LOG,"{sample}.mutect_orig_NUMT_BP_res.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_NUMT_BP_res.txt')
@@ -316,7 +320,8 @@ rule mutect_orig_NUMT_BP_resolution:
              gatk Mutect2  -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shifted} 2>>{log} &&
              gatk LiftoverVcf -I {output.vcf_shifted} -O {output.vcf_shiftback} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} && 
               gatk MergeVcfs -I {output.vcf_shiftback} -I {output.vcf} -O {output.merged_vcf} 2>> {log} && 
-              bcftools norm -d exact -O v {output.merged_vcf} | bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  - 2>> {log}
+              bcftools norm -d exact -o {output.merged_vcf_norm} -O z {output.merged_vcf} && tabix {output.merged_vcf_norm}
+               bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  {output.merged_vcf_norm} 2>> {log}
             """
 
 
