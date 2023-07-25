@@ -121,6 +121,9 @@ KILO_G = pj(RESOURCES,'databases/1000G_phase1.snps.high_confidence.hg38.vcf.gz')
 MILLS = pj(RESOURCES,'databases/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz')
 DBSNP_INDEL = pj(RESOURCES,'databases/Homo_sapiens_assembly38.known_indels.vcf.gz')
 
+#path to file with adapters
+ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')
+
 #windows
 WINDOWS = pj(INTERVALS_DIR, 'windows/all.selected.sorted.3.bed')
 WINDOWS_ANNOTATED = pj(INTERVALS_DIR, 'windows/all.selected.sorted.bed')

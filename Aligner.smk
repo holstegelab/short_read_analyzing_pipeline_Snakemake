@@ -464,13 +464,14 @@ rule adapter_removal:
         pj(BENCH,"{sample}.{readgroup}.adapter_removal.txt")
     priority: 10
     conda: CONDA_MAIN
+    params: adapters = ADAPTERS
     resources: 
         n="3.5",
         mem_mb=200
     ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
     shell:
         """
-		    AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 
+		    AdapterRemoval --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 
 		"""
 
 rule adapter_removal_identify:
