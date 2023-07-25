@@ -487,9 +487,10 @@ rule adapter_removal_identify:
         n="2.8", 
         mem_mb=200
     benchmark: pj(BENCH,"{sample}.{readgroup}.adapter_removal_identify.txt")
+    params: adapters=ADAPTERS
     shell:
         """
-		AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]}  --threads 4 > {output.stats}
+		AdapterRemoval --identify-adapters --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]}  --threads 4 > {output.stats}
 		"""
 
 
