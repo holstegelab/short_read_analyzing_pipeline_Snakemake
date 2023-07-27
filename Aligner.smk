@@ -351,7 +351,7 @@ rule split_alignments_by_readgroup:
                 samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
 
                 """
-            shell(cmd, conda_env = CONDA_MAIN)
+            shell(cmd, conda_env = CONDA_MAIN_RUN)
 
 
 
@@ -592,8 +592,8 @@ rule kmer_combine:
     # conda: CONDA_KMC
     run:
         final = output.out1[:-8]
-        shell("cp {input.in_files[0]} {final}.kmc_pre", conda_env = CONDA_KMC)
-        shell("cp {input.in_files[1]} {final}.kmc_suf", conda_env = CONDA_KMC)
+        shell("cp {input.in_files[0]} {final}.kmc_pre", conda_env = CONDA_KMC_RUN)
+        shell("cp {input.in_files[1]} {final}.kmc_suf", conda_env = CONDA_KMC_RUN)
         
         for i in range(2, len(input['in_files']),2):
             fname = input['in_files'][i][:-8]
@@ -601,7 +601,7 @@ rule kmer_combine:
                 mv {final}.kmc_suf {final}.tmp.kmc_suf
                 kmc_tools simple {final}.tmp {fname} union {final} -ocsum
                 rm {final}.tmp.kmc_suf
-                rm {final}.tmp.kmc_pre""", conda_env = CONDA_KMC)
+                rm {final}.tmp.kmc_pre""", conda_env = CONDA_KMC_RUN)
 
 def get_mem_mb_validated_sex(wildcards, attempt):
     """Utility function to get the memory for the align_reads rule.
@@ -747,7 +747,7 @@ rule dechimer:
             cmd = """    samtools view -h --threads 2 {input.bam} |\
                          pypy {params.dechimer} --min_align_length 40 --loose_ends -i - -s {output.stats} |\
                           samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
-            shell(cmd, conda_env = CONDA_PYPY)
+            shell(cmd, conda_env = CONDA_PYPY_RUN)
         else:
             cmd = """
                     #switching to copy instead of hard link, as hard link also updates modification time input.bam
@@ -822,7 +822,7 @@ rule merge_rgs:
     run:
         if len(input.bam) > 1:
             cmd = "samtools merge -@ {resources.n} {output} {input.bam} 2> {log}"
-            shell(cmd, conda_env = CONDA_MAIN)
+            shell(cmd, conda_env = CONDA_MAIN_RUN)
         else:
             #switching to copy as hard link updates also time of input.bam
             cmd = "cp {input.bam} {output}"

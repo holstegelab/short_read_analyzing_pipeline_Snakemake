@@ -15,12 +15,17 @@ TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
 #resource folder with cram reference fasta files
 CRAMREFS = pj(RESOURCES,'cram_refs')
 
+# dir with this file
+SNAKEMAKE_DIR_PATH = os.path.relpath('constants.py').split('/').pop()
 #conda env's paths
 CONDA_VERIFYBAMID = 'envs/verifybamid.yaml'
 CONDA_MAIN = 'envs/preprocess.yaml'
+CONDA_MAIN_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_MAIN)
 CONDA_VCF = 'envs/vcf_handling.yaml'
 CONDA_PYPY = 'envs/pypy.yaml'
+CONDA_PYPY_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_PYPY)
 CONDA_KMC = 'envs/kmc.yaml'
+CONDA_KMC_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_KMC)
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 CONDA_GATK_CNV = 'envs/gatk_gcnv.yaml'
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
