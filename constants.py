@@ -21,12 +21,12 @@ SNAKEMAKE_DIR_PATH = os.path.abspath('')
 #conda env's paths
 CONDA_VERIFYBAMID = 'envs/verifybamid.yaml'
 CONDA_MAIN = 'envs/preprocess.yaml'
-CONDA_MAIN_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_MAIN)
+CONDA_MAIN_RUN = os.path.abspath(CONDA_MAIN)
 CONDA_VCF = 'envs/vcf_handling.yaml'
 CONDA_PYPY = 'envs/pypy.yaml'
-CONDA_PYPY_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_PYPY)
+CONDA_PYPY_RUN =os.path.abspath(CONDA_PYPY)
 CONDA_KMC = 'envs/kmc.yaml'
-CONDA_KMC_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_KMC)
+CONDA_KMC_RUN = os.path.abspath(CONDA_KMC)
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 CONDA_GATK_CNV = pj(RESOURCES, 'gatk_4.4', 'build', 'gatkcondaenv.yml')
 
