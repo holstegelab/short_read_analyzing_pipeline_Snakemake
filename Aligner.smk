@@ -737,7 +737,7 @@ rule dechimer:
     resources:
         n="1.4", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
         mem_mb=275
-    # conda: CONDA_PYPY
+    conda: CONDA_PYPY_RUN
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]    
