@@ -16,17 +16,17 @@ TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
 CRAMREFS = pj(RESOURCES,'cram_refs')
 
 # dir with this file
-ENVS_DIR_PATH = os.path.abspath('envs')
+SNAKEMAKE_DIR_PATH = os.getcwd()
 
 #conda env's paths
 CONDA_VERIFYBAMID = 'envs/verifybamid.yaml'
 CONDA_MAIN = 'envs/preprocess.yaml'
-CONDA_MAIN_RUN = pj(ENVS_DIR_PATH, 'preprocess.yaml')
+CONDA_MAIN_RUN = pj(SNAKEMAKE_DIR_PATH, 'envs/preprocess.yaml')
 CONDA_VCF = 'envs/vcf_handling.yaml'
 CONDA_PYPY = 'envs/pypy.yaml'
-CONDA_PYPY_RUN = pj(ENVS_DIR_PATH, 'pypy.yaml')
+CONDA_PYPY_RUN = pj(SNAKEMAKE_DIR_PATH, 'envs/pypy.yaml')
 CONDA_KMC = 'envs/kmc.yaml'
-CONDA_KMC_RUN = pj(ENVS_DIR_PATH, 'kmc.yaml')
+CONDA_KMC_RUN = pj(SNAKEMAKE_DIR_PATH, 'envs/kmc.yaml')
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 CONDA_GATK_CNV = pj(RESOURCES, 'gatk_4.4', 'build', 'gatkcondaenv.yml')
 
