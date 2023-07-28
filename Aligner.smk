@@ -747,7 +747,7 @@ rule dechimer:
             cmd = """    samtools view -h --threads 2 {input.bam} |\
                          pypy {params.dechimer} --min_align_length 40 --loose_ends -i - -s {output.stats} |\
                           samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
-            shell(cmd, conda_env = CONDA_PYPY_RUN)
+            shell(cmd)
         else:
             cmd = """
                     #switching to copy instead of hard link, as hard link also updates modification time input.bam
