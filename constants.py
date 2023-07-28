@@ -16,7 +16,8 @@ TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
 CRAMREFS = pj(RESOURCES,'cram_refs')
 
 # dir with this file
-SNAKEMAKE_DIR_PATH = os.path.relpath('constants.py').split('/').pop()
+SNAKEMAKE_DIR_PATH = os.path.abspath('')
+
 #conda env's paths
 CONDA_VERIFYBAMID = 'envs/verifybamid.yaml'
 CONDA_MAIN = 'envs/preprocess.yaml'
@@ -27,7 +28,8 @@ CONDA_PYPY_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_PYPY)
 CONDA_KMC = 'envs/kmc.yaml'
 CONDA_KMC_RUN = pj(SNAKEMAKE_DIR_PATH, CONDA_KMC)
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
-CONDA_GATK_CNV = 'envs/gatk_gcnv.yaml'
+CONDA_GATK_CNV = pj(RESOURCES, 'gatk_4.4', 'build', 'gatkcondaenv.yml')
+
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
 
@@ -54,6 +56,8 @@ DELLY= 'SV_delly'
 MULTICOHORT= 'Multicohort'
 DEEPVARIANT= 'deepvariant'
 chrM= 'chrM_analysis'
+GATK_gCNV = 'GATK_gCNV'
+
 
 #programs
 SOFTWARE = pj(RESOURCES, 'software')
