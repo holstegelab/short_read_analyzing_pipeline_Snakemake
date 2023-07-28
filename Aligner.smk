@@ -319,6 +319,7 @@ rule split_alignments_by_readgroup:
     resources:
         n=1,
         mem_mb=get_mem_mb_split_alignments
+    conda: CONDA_MAIN
     params:
         cramref=get_cram_ref
     run:
@@ -351,7 +352,7 @@ rule split_alignments_by_readgroup:
                 samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
 
                 """
-            shell(cmd, conda_env = CONDA_MAIN_RUN)
+            shell(cmd)
 
 
 
@@ -589,11 +590,11 @@ rule kmer_combine:
     resources:
         n=1, #very low usage (<1)
         mem_mb=1000,
-    # conda: CONDA_KMC
+    conda: CONDA_KMC
     run:
         final = output.out1[:-8]
-        shell("cp {input.in_files[0]} {final}.kmc_pre", conda_env = CONDA_KMC_RUN)
-        shell("cp {input.in_files[1]} {final}.kmc_suf", conda_env = CONDA_KMC_RUN)
+        shell("cp {input.in_files[0]} {final}.kmc_pre")
+        shell("cp {input.in_files[1]} {final}.kmc_suf")
         
         for i in range(2, len(input['in_files']),2):
             fname = input['in_files'][i][:-8]
@@ -601,7 +602,7 @@ rule kmer_combine:
                 mv {final}.kmc_suf {final}.tmp.kmc_suf
                 kmc_tools simple {final}.tmp {fname} union {final} -ocsum
                 rm {final}.tmp.kmc_suf
-                rm {final}.tmp.kmc_pre""", conda_env = CONDA_KMC_RUN)
+                rm {final}.tmp.kmc_pre""")
 
 def get_mem_mb_validated_sex(wildcards, attempt):
     """Utility function to get the memory for the align_reads rule.
@@ -737,7 +738,7 @@ rule dechimer:
     resources:
         n="1.4", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
         mem_mb=275
-    conda: CONDA_PYPY_RUN
+    conda: CONDA_PYPY
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]    
@@ -818,11 +819,11 @@ rule merge_rgs:
         n=1,
         mem_mb=150
     priority: 19
-    # conda: CONDA_MAIN
+    conda: CONDA_MAIN
     run:
         if len(input.bam) > 1:
             cmd = "samtools merge -@ {resources.n} {output} {input.bam} 2> {log}"
-            shell(cmd, conda_env = CONDA_MAIN_RUN)
+            shell(cmd)
         else:
             #switching to copy as hard link updates also time of input.bam
             cmd = "cp {input.bam} {output}"
