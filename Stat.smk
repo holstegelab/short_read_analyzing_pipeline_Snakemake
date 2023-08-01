@@ -121,7 +121,7 @@ rule gather_coverage:
         mapped=get_stats_samtools
     output:
         hdf5=pj('{samplefile}.coverage.hdf5')
-    # resources:
+    resources:
         n=1,
         mem_mb=500 
     run:
