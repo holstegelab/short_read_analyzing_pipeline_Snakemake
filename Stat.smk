@@ -53,7 +53,8 @@ rule Stat_all:
         expand("{samplefile}.bam_rg_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.coverage.hdf5", samplefile = SAMPLE_FILES),
-        expand(pj(STAT, "{sample}.done"), sample = sample_names)
+        expand(pj(STAT, "{sample}.done"), sample = sample_names),
+        pj(STAT, 'PCA_stat.txt')
     default_target: True        
     
 
