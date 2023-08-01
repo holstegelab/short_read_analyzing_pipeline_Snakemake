@@ -1,7 +1,8 @@
 from common import *
 import read_stats
 import utils
-
+from scripts.pca import *
+import pandas as pd
 
 wildcard_constraints:
     sample="[\w\d_\-@]+"
@@ -119,7 +120,7 @@ rule gather_coverage:
         mapped=get_stats_samtools
     output:
         hdf5=pj('{samplefile}.coverage.hdf5')
-    resources:
+    # resources:
         n=1,
         mem_mb=500 
     run:
@@ -128,6 +129,28 @@ rule gather_coverage:
         annotation = WINDOWS_ANNOTATED
 
         read_stats.write_coverage_to_hdf5(annotation, samples, list(input.mapped), list(input.cov), output.hdf5)
+
+
+rule clustering_samples:
+    input: expand('{samplefile}.coverage.hdf5',  samplefile = SAMPLE_FILES)
+    output: pj(STAT, 'PCA_stat.txt')
+    conda: CONDA_PCA
+    run:
+        shell("touch {output}")
+        df_with_all_samplefiles = pd.DataFrame()
+        for SF in SAMPLE_FILES:
+            df_with_all_samplefiles, num_samples = load_hdf5_data('{SF}.coverage.hdf5', df_with_all_samplefiles, 'coverage' )
+            with open(pj(STAT, 'PCA_stat.txt'), 'a') as f:
+                print(f'Loaded {num_samples} samples from {SF}', file=f)
+        PCA_t, cum_exp_var = perform_pca(df_with_all_samplefiles, n_comp= 3)
+        best_dict = get_scores_and_labels(combinations, data=PCA_t)
+        PCA_t['cluster'] = best_dict['best_labels']
+        with open(pj(STAT,'PCA_stat.txt'),'a') as f:
+            print(f"Cumulative variance = {cum_exp_var}",file=f)
+            print(best_dict, file=f)
+        for SF in SAMPLE_FILES:
+            add_cluster_info_to_hdf5(SF, clustred_data=PCA_t)
+
 
 
 def get_svd(wildcards):

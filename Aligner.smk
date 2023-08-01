@@ -750,8 +750,8 @@ rule dechimer:
                           samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
             shell(cmd)
         else:
+            #switching to copy instead of hard link, as hard link also updates modification time input.bam
             cmd = """
-                    #switching to copy instead of hard link, as hard link also updates modification time input.bam
                     cp {input.bam} {output.bam}
                     touch {output.stats}
                    """
