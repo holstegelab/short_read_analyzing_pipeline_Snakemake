@@ -140,7 +140,7 @@ rule clustering_samples:
         shell("touch {output}")
         df_with_all_samplefiles = pd.DataFrame()
         for SF in SAMPLE_FILES:
-            df_with_all_samplefiles, num_samples = load_hdf5_data('{SF}.coverage.hdf5', df_with_all_samplefiles, 'coverage' )
+            df_with_all_samplefiles, num_samples = load_hdf5_data(f'{SF}.coverage.hdf5', df_with_all_samplefiles, 'coverage' )
             with open(pj(STAT, 'PCA_stat.txt'), 'a') as f:
                 print(f'Loaded {num_samples} samples from {SF}', file=f)
         PCA_t, cum_exp_var = perform_pca(df_with_all_samplefiles, n_comp= 3)
