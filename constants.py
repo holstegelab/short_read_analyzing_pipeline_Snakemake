@@ -11,6 +11,7 @@ MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'merged_capture_kits_cds.bed')
 MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'merged_capture_kits_cds.interval_list')
 TARGETS_BED = pj(INTERVALS_DIR,'gencode_43_cds.bed')
 TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
+PL_PR_TABLE = pj(RESOURCES, 'ploydi_priors_table_hg38.tsv')
 
 #resource folder with cram reference fasta files
 CRAMREFS = pj(RESOURCES,'cram_refs')
