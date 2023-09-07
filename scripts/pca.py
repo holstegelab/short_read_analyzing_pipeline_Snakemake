@@ -54,7 +54,7 @@ group_name = 'coverage'
 #     return scores, cum_expl_var
 
 
-def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-6, ncomponents = 10):
+def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-4, ncomponents = 10):
     ipca = IncrementalPCA(n_components=ncomponents)
     batch_size = batch_size
     MAX_DELTA = np.inf
