@@ -32,7 +32,7 @@ def get_sample_name(sample_index, cohort):
 
 def get_groups_from_hdf5(hdf5_file):
     with h5py.File(hdf5_file, 'r') as f:
-        groups = list(f['coverage']['group'])
+        groups = list(f['coverage']['cluster_3_cor_cov'])
     return groups
 
 hdf5_files = [f"{SF}.coverage.hdf5" for SF in SAMPLE_FILES]
@@ -42,7 +42,7 @@ for hdf5_file in hdf5_files:
 
 def get_samples_in_group(hdf5_file, group):
     with h5py.File(hdf5_file, 'r') as f:
-        samples = list(f['coverage']['sample'][f['coverage']['group'] == group])
+        samples = list(f['coverage']['sample'][f['coverage']['cluster_3_cor_cov'] == group])
     return samples
 
 def input_func(wildcards):
@@ -80,7 +80,12 @@ def generate_scatter_list(start, end):
 scatter_merged_cature_kit = generate_scatter_list('0001', '0148')
 
 rule gCNV_gatk_all:
-    input: expand("scatter_{part}", part = parts)
+    input:
+        expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'),scatter=scatter_merged_cature_kit,cohort=groups),
+    default_target: True
+
+
+# expand("scatter_{part}", part = parts)
 
 
 
