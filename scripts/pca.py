@@ -52,13 +52,13 @@ group_name = 'coverage'
 #     explained_variance_ratio = pca.explained_variance_ratio_
 #     cum_expl_var = np.cumsum(explained_variance_ratio)
 #     return scores, cum_expl_var
-
-
-def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-4, ncomponents = 10):
+MAX_DELTA = np.inf
+previous_components = 0
+def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 10):
     ipca = IncrementalPCA(n_components=ncomponents)
     batch_size = batch_size
-    MAX_DELTA = np.inf
-    previous_components = 0
+    # MAX_DELTA = np.inf
+    # previous_components = 0
     i = 0
     while MAX_DELTA > max_delta:
         batches = []  # Reset batches list for each iteration
