@@ -136,15 +136,15 @@ def add_cluster_info_to_hdf5(SF, clustred_data, clusters):
             # print(len(relevant_data))
             # print(len(list(data_group['samples'])))
 
-            if 'group' in data_group:
+            if cluster in data_group:
                 # If 'group' dataset exists, modify its values with the relevant data
-                data_group['group'][:] = relevant_data
+                data_group[cluster][:] = relevant_data
             else:
                 # If 'group' dataset doesn't exist, create a new one and write the relevant data into it
-                data_group.create_dataset('group', data=relevant_data)
+                data_group.create_dataset(cluster, data=relevant_data)
             # Print samples and corresponding 'group' values
             samples = [s.decode('utf-8') for s in data_group['samples'][()]]
-            group_values = data_group['group'][()]
+            group_values = data_group[cluster][()]
 
             for sample, group_value in zip(samples, group_values):
                 return f"Sample: {sample}, Group: {group_value}"
