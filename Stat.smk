@@ -178,7 +178,11 @@ rule clustering_samples:
         # PCA_t['cluster'] = best_dict['best_labels']
         with open(pj(STAT,'PCA_stat.txt'),'a') as f:
             print(f"Cumulative variance = {expl_var}",file=f)
-            print(best_dict, file=f)
+            print(best_dict_2, file=f)
+            print(best_dict_3,file=f)
+            print(best_dict_4,file=f)
+            print(best_dict_6,file=f)
+            print(best_dict_10,file=f)
 
         for SF in SAMPLE_FILES:
             add_cluster_info_to_hdf5(f'{SF}.coverage.hdf5', clustred_data=PCA_t, clusters=clusters)
