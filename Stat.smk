@@ -143,7 +143,7 @@ rule clustering_samples:
         shell("touch {output.stat}")
         hdf5_files = input
         PCA_t, expl_var = perform_ipca(hdf5_files=hdf5_files)
-        best_dict = get_scores_and_labels(combinations,data=PCA_t)
+        # best_dict = get_scores_and_labels(combinations,data=PCA_t)
         PCA_2 = PCA_t[[0, 1]]
         data_2 = scale(PCA_2)
         PCA_3 = PCA_t[[0, 1, 2]]
