@@ -59,6 +59,7 @@ def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-6, ncomponents = 
     batch_size = batch_size
     MAX_DELTA = np.inf
     previous_components = 0
+    i = 0
     while MAX_DELTA > max_delta:
         batches = []  # Reset batches list for each iteration
         sample_names = []
