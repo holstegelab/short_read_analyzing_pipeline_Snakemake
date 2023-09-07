@@ -35,6 +35,12 @@ def get_groups_from_hdf5(hdf5_file):
         groups = list(f['coverage']['cluster_3_cor_cov'])
     return groups
 
+hdf5_files = [f"{SF}.coverage.hdf5" for SF in SAMPLE_FILES]
+groups = set()
+for hdf5_file in hdf5_files:
+    groups.update(get_groups_from_hdf5(hdf5_file))
+# Filter out the '-1' group
+filtered_groups = sorted([group for group in groups if group != '-1'])
 
 def get_samples_in_group(hdf5_file, group):
     with h5py.File(hdf5_file, 'r') as f:
@@ -73,7 +79,6 @@ def generate_scatter_list(start, end):
     return string_list
 
 scatter_merged_cature_kit = generate_scatter_list('0001', '0148')
-# filtred_groups = []
 
 rule gCNV_gatk_all:
     input:
@@ -88,12 +93,6 @@ rule update_info:
     input: stat= pj(STAT,'PCA_stat.txt'),
     output: IU = touch(temp('info_updated_gCNV'))
     run:
-        hdf5_files = [f"{SF}.coverage.hdf5" for SF in SAMPLE_FILES]
-        groups = set()
-        for hdf5_file in hdf5_files:
-            groups.update(get_groups_from_hdf5(hdf5_file))
-        # Filter out the '-1' group
-        filtered_groups = sorted([group for group in groups if group != '-1'])
 
 
 def get_capture_kit_path(wildcards):
@@ -115,8 +114,7 @@ def get_preprocessed_capture_kit(wildcards):
 rule collect_read_counts:
     input: bam = rules.markdup.output.mdbams,
             # Merged capture kit for test
-            capture_kit = MERGED_CAPTURE_KIT_IVL,
-            IU = rules.update_info.output.IU
+            capture_kit = MERGED_CAPTURE_KIT_IVL
             # capture_kit= ancient(get_preprocessed_capture_kit),
     output: ReadCounts = pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5')
     params: java = java_cnv,
