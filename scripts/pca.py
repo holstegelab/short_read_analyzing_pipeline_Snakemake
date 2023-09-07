@@ -52,13 +52,13 @@ group_name = 'coverage'
 #     explained_variance_ratio = pca.explained_variance_ratio_
 #     cum_expl_var = np.cumsum(explained_variance_ratio)
 #     return scores, cum_expl_var
-MAX_DELTA = np.inf
-previous_components = 0
+# MAX_DELTA = np.inf
+# previous_components = 0
 def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 10):
     ipca = IncrementalPCA(n_components=ncomponents)
     batch_size = batch_size
-    # MAX_DELTA = np.inf
-    # previous_components = 0
+    MAX_DELTA = np.inf
+    previous_components = 0
     i = 0
     while MAX_DELTA > max_delta:
         batches = []  # Reset batches list for each iteration
@@ -80,7 +80,7 @@ def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 
         cum_expl_var = np.cumsum(explained_variance_ratio)
         print(f"Cumulative variance = {cum_expl_var}")
         delta = np.abs(components - previous_components)
-        max_delta = np.max(delta)
+        MAX_DELTA = np.max(delta)
         i = i + batch_size
         previous_components = components
     pca_components = pd.DataFrame(ipca.components_.T, index=sample_names)
