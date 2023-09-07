@@ -107,6 +107,12 @@ def get_scores_and_labels(combinations, data):
         num_clusters = len(labels_set)
         if -1 in labels_set:
             num_clusters -= 1
+        if (num_clusters < 2):
+            scores.append(-10)
+            all_labels_list.append('bad')
+            c = (eps, num_samples)
+            print(f"Combination {c} on iteration {i + 1} of {N} has {num_clusters} clusters. Moving on")
+            continue
         scores.append(ss(X, labels))
         all_labels_list.append(labels)
         print(f"Index: {i}, Score: {scores[-1]}, NumClusters: {num_clusters}")
