@@ -73,8 +73,8 @@ def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-4, ncomponents = 
                 corrected_cov = cov / bases_mapped
                 batches.append(corrected_cov)
 
-        corrected_cov_combined = np.concatenate(tuple(batches), axis=0).T
-        ipca.partial_fit(corrected_cov_combined)
+        corrected_cov_combined = np.concatenate(tuple(batches), axis=0)
+        ipca.partial_fit(corrected_cov_combined.T)
         components = ipca.components_
         explained_variance_ratio = ipca.explained_variance_ratio_
         cum_expl_var = np.cumsum(explained_variance_ratio)
@@ -132,7 +132,7 @@ def add_cluster_info_to_hdf5(SF, clustred_data, clusters):
             mask = [sample in samples_in_file for sample in clustred_data.index]
             # print(mask)
             # Get the relevant data for the current file using the mask
-            relevant_data = clustred_data['cluster'][mask]
+            relevant_data = clustred_data[cluster][mask]
             # print(len(relevant_data))
             # print(len(list(data_group['samples'])))
 
