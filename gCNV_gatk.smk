@@ -82,6 +82,7 @@ scatter_merged_cature_kit = generate_scatter_list('0001', '0148')
 rule gCNV_gatk_all:
     input:
         expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'),scatter=scatter_merged_cature_kit,cohort=groups),
+        rules.Stat_all.input
     default_target: True
 
 
@@ -122,7 +123,8 @@ rule collect_read_counts:
             """
 
 rule filterintervals:
-    input: input_func
+    input: input_func,
+            stat= pj(STAT,'PCA_stat.txt'),
     output: filtered_intervals = pj(GATK_gCNV, 'filtred_intervals', '{cohort}_filtred.interval_list')
     params: inputs = sample_list_per_cohort,
             java= java_cnv,
