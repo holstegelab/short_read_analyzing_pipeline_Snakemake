@@ -126,34 +126,33 @@ def get_scores_and_labels(combinations, data):
             'best_labels': best_labels,
             'best_score': best_score}
 
-def add_cluster_info_to_hdf5(SF, clustred_data, clusters):
+def add_cluster_info_to_hdf5(SF, clustred_data, cluster):
     file_path= f'{SF}.coverage.hdf5'
-    for cluster in clusters:
-        with h5py.File(file_path, 'a') as f:
-            data_group = f['coverage']
+    with h5py.File(file_path, 'a') as f:
+        data_group = f['coverage']
 
-            # Extract sample names from the 'coverage' group
-            samples_in_file = [s.decode('utf-8') for s in data_group['samples'][()]]
-            # print(samples_in_file)
-            mask = [sample in samples_in_file for sample in clustred_data.index]
-            # print(mask)
-            # Get the relevant data for the current file using the mask
-            relevant_data = clustred_data[cluster][mask]
-            # print(len(relevant_data))
-            # print(len(list(data_group['samples'])))
+        # Extract sample names from the 'coverage' group
+        samples_in_file = [s.decode('utf-8') for s in data_group['samples'][()]]
+        # print(samples_in_file)
+        mask = [sample in samples_in_file for sample in clustred_data.index]
+        # print(mask)
+        # Get the relevant data for the current file using the mask
+        relevant_data = clustred_data[cluster][mask]
+        # print(len(relevant_data))
+        # print(len(list(data_group['samples'])))
 
-            if cluster in data_group:
-                # If 'group' dataset exists, modify its values with the relevant data
-                data_group[cluster][:] = relevant_data
-            else:
-                # If 'group' dataset doesn't exist, create a new one and write the relevant data into it
-                data_group.create_dataset(cluster, data=relevant_data)
-            # Print samples and corresponding 'group' values
-            samples = [s.decode('utf-8') for s in data_group['samples'][()]]
-            group_values = data_group[cluster][()]
+        if cluster in data_group:
+            # If 'group' dataset exists, modify its values with the relevant data
+            data_group[cluster][:] = relevant_data
+        else:
+            # If 'group' dataset doesn't exist, create a new one and write the relevant data into it
+            data_group.create_dataset(cluster, data=relevant_data)
+        # Print samples and corresponding 'group' values
+        samples = [s.decode('utf-8') for s in data_group['samples'][()]]
+        group_values = data_group[cluster][()]
 
-            for sample, group_value in zip(samples, group_values):
-                return f"Sample: {sample}, Group: {group_value}"
+        for sample, group_value in zip(samples, group_values):
+            return f"Sample: {sample}, Group: {group_value}"
 
 # best_dict = get_scores_and_labels(combinations, X = data)
 #

@@ -183,9 +183,9 @@ rule clustering_samples:
             print(best_dict_4,file=f)
             print(best_dict_6,file=f)
             print(best_dict_10,file=f)
-
-        for SF in SAMPLE_FILES:
-            add_cluster_info_to_hdf5(f'{SF}', clustred_data=PCA_t, clusters=clusters)
+        for cluster in clusters:
+            for SF in SAMPLE_FILES:
+                add_cluster_info_to_hdf5(f'{SF}', clustred_data=PCA_t, clusters=cluster)
 
 
 
