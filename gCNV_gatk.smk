@@ -89,12 +89,6 @@ rule gCNV_gatk_all:
 
 # expand("scatter_{part}", part = parts)
 
-rule update_info:
-    input: stat= pj(STAT,'PCA_stat.txt'),
-    output: IU = touch(temp('info_updated_gCNV'))
-    run:
-
-
 def get_capture_kit_path(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
     if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
