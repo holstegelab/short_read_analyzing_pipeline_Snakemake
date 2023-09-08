@@ -47,6 +47,15 @@ def get_samples_in_group(hdf5_file, group):
         samples = list(f['coverage']['sample'][f['coverage']['cluster_3_cor_cov'] == group])
     return samples
 
+def get_samples_in_all_groups(hdf5_file):
+    with h5py.File(hdf5_file, 'r') as f:
+        samples = list(f['coverage']['sample'][f['coverage']['cluster_3_cor_cov'] != -1])
+    return samples
+grouped_samples = []
+for hdf5_file in hdf5_files:
+    grouped_samples.append(get_samples_in_all_groups(hdf5_file))
+
+
 def input_func(wildcards):
     group = wildcards.group
     hdf5_file = wildcards.hdf5_file
@@ -183,6 +192,8 @@ rule PostprocessGermlineCNVCalls:
     wildcard_constraints:
         cohort = '|'.join(groups),
         index = '|'.join([str(idx).zfill(4) for idx in get_samples_in_group(hdf5_files[0], groups)])
+    run:
+
 #     how to come from INDEX to SAMPLE NAME?
 #     function to read a tsv file and get a sample name from it
 #     how to iterate over indexes?
