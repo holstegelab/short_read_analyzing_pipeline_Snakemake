@@ -185,7 +185,7 @@ rule clustering_samples:
             print(best_dict_10,file=f)
 
         for SF in SAMPLE_FILES:
-            add_cluster_info_to_hdf5({SF}, clustred_data=PCA_t, clusters=clusters)
+            add_cluster_info_to_hdf5(f'{SF}', clustred_data=PCA_t, clusters=clusters)
 
 
 

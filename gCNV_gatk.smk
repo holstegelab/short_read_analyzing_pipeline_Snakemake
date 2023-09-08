@@ -71,9 +71,6 @@ def sample_list_per_cohort(wildcards):
         allow_missing=True
     )
 
-
-
-
 def generate_scatter_list(start, end):
     string_list = [f"{i:04d}_of_{end}" for i in range(int(start), int(end) + 1)]
     return string_list
