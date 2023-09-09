@@ -4,7 +4,6 @@ channels:
 - default
 - defaults
 dependencies:
-- kmc=3.2.1
 - python=3.11
 - numpy=1.24.3
 - pandas=2.0.2

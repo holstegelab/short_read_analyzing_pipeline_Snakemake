@@ -37,10 +37,13 @@ class BamRecord:
         tags = ['%s:%s:%s' % (tag, extract_tag_type[tag_value.__class__], tag_value)  for tag, tag_value in self.tags.items()]
         return '\t'.join([self.qname, str(self.flag), self.rname, self.pos, self.mapq, self.cigar, self.rnext, self.pnext, self.tlen, self.seq, self.qual] + tags)
 
-    def toFastqRecord(self):
-        self = self.unmap()
+    def toFastqRecord(self, restore_seq=True, readgroup_name=None):
+        self = self.unmap(restore_seq, orig_orientation=True)
         readnr = 1 if self.flag & 0x40 else 2
-        header = '@%s/%d' % (self.qname, readnr)
+        if readgroup_name is not None:
+            header = '@%s:%s/%d' % (self.qname, readgroup_name, readnr)
+        else:
+            header = '@%s/%d' % (self.qname, readnr)
         record = header + '\n' + self.seq + '\n+\n' + self.qual + '\n'
         return record
 
@@ -78,7 +81,10 @@ class BamRecord:
     def is_reversed(self):
         return bool(self.flag & 0x10)
 
-    def unmap(self, restore_seq=True):
+    def unmap(self, restore_seq=True, orig_orientation=None):
+        if orig_orientation is None:
+            orig_orientation = restore_seq
+
         has_tag = False
         if restore_seq:
             for k in ['YB','YQ','ZB','ZQ']:
@@ -94,8 +100,8 @@ class BamRecord:
             read.mapq = '0'
             read.rname = '*'
             
-            read.seq = read.orig_seq(orig_orientation=restore_seq, include_prefix=restore_seq, include_postfix=restore_seq)
-            read.qual = read.orig_qual(orig_orientation=restore_seq, include_prefix=restore_seq, include_postfix=restore_seq)
+            read.seq = read.orig_seq(orig_orientation=orig_orientation, include_prefix=restore_seq, include_postfix=restore_seq)
+            read.qual = read.orig_qual(orig_orientation=orig_orientation, include_prefix=restore_seq, include_postfix=restore_seq)
             read.flag = read.flag & (~0x10)
 
             read.flag = read.flag | 0x4
@@ -126,6 +132,10 @@ class BamRecord:
             if ctype == 'M' or ctype == 'I' or ctype == '=' or ctype == 'X':
                 pos += length
         return pos
+
+    def get_aligner_available_read_length(self):
+        return len(self.seq) 
+
 
     def get_orig_read_length(self):
         if self.cigar == '*' or not 'H' in self.cigar:
@@ -572,4 +582,18 @@ def process_readgroup(readgroup):
 
 
     return result
-  
+
+
+def calculate_alignment_score(reads):
+    ascore = 0.0
+    max_ascore = 0.0 
+    if 'primary' in reads:
+        #this assumes that max ascore == equal to the read length. This might be different for other aligners/scoring parameters
+        max_ascore = reads['primary'].get_aligner_available_read_length() 
+        if not reads['primary'].is_unmapped():
+            ascore += float(reads['primary'].getTagValue('AS',0))
+    for r in reads.get('supplementary',[]):
+        if not r.is_unmapped():
+            ascore += float(r.getTagValue('AS',0))
+    return (ascore, max_ascore)
+

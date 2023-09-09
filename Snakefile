@@ -17,6 +17,9 @@ module Aligner:
 module gVCF:
     snakefile: 'gVCF.smk'
     config: config
+module Kraken:
+    snakefile: 'Kraken.smk'
+    config: config
 module DBImport:
     snakefile: 'DBImport.smk'
     config: config
@@ -91,7 +94,7 @@ if end_point == "gVCF":
         use rule * from gVCF
         use rule * from Deepvariant
         use rule * from Aligner
-
+        use rule * from Kraken
 
         rule finished_sample:
             """Finish processing a sample. 
@@ -102,7 +105,9 @@ if end_point == "gVCF":
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
                 pj(GVCF, "{sample}.done"),
                 pj(DEEPVARIANT, "{sample}.done"),
-                pj(STAT, "{sample}.done")
+                pj(STAT, "{sample}.done"),
+                pj(KRAKEN, "{sample}.report.tsv")
+
             output:
                 pj(SOURCEDIR, "{sample}.finished")
             resources:
@@ -117,6 +122,7 @@ if end_point == "gVCF":
     elif gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
         use rule * from Aligner
+        use rule * from Kraken
         
         rule finished_sample:
             """Finish processing a sample. 
@@ -126,7 +132,8 @@ if end_point == "gVCF":
             input:
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
                 pj(GVCF, "{sample}.done"),
-                pj(STAT, "{sample}.done")
+                pj(STAT, "{sample}.done"),
+                pj(KRAKEN, "{sample}.report.tsv")
             output:
                 pj(SOURCEDIR, "{sample}.finished")
             resources:
@@ -142,6 +149,7 @@ if end_point == "gVCF":
     elif gvcf_caller == "Deepvariant":
         use rule * from Deepvariant
         use rule * from Aligner
+        use rule * from Kraken
         
         rule finished_sample:
             """Finish processing a sample. 
@@ -151,7 +159,8 @@ if end_point == "gVCF":
             input:
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),                
                 pj(DEEPVARIANT, "{sample}.done"),
-                pj(STAT, "{sample}.done")
+                pj(STAT, "{sample}.done"),
+                pj(KRAKEN, "{sample}.report.tsv")
             output:
                 pj(SOURCEDIR, "{sample}.finished")
             resources:

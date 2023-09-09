@@ -21,6 +21,7 @@ CONDA_MAIN = 'envs/preprocess.yaml'
 CONDA_VCF = 'envs/vcf_handling.yaml'
 CONDA_PYPY = 'envs/pypy.yaml'
 CONDA_KMC = 'envs/kmc.yaml'
+CONDA_KRAKEN = 'envs/kraken.yaml'
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
@@ -36,6 +37,7 @@ GVCF= 'gvcf'
 VCF= 'vcfs'
 VCF_Final= 'Final_VCF'
 STAT= 'stats'
+KRAKEN= 'kraken'
 READGROUPS= 'readgroups'
 FQ= 'fq'
 uBAM= 'uBAM'
@@ -121,6 +123,10 @@ DBSNP_INDEL = pj(RESOURCES,'databases/Homo_sapiens_assembly38.known_indels.vcf.g
 #windows
 WINDOWS = pj(INTERVALS_DIR, 'windows/all.selected.sorted.3.bed')
 WINDOWS_ANNOTATED = pj(INTERVALS_DIR, 'windows/all.selected.sorted.bed')
+
+
+# kraken db
+KRAKEN_DB = pj(RESOURCES, 'kraken/pluspf_20230605')
 
 #tmp folders
 TMPDIR = 'tmp' #do not use scratch, amount of storage is limited

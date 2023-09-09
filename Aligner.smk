@@ -7,7 +7,8 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     extension='sam|bam|cram',
     filetype = 'fq|fastq',
-    batchnr='[\d]+'
+    batchnr='[\d]+',
+    readid='R1|R2'
     # readgroup="[\w\d_\-@]+"
 
 
@@ -110,7 +111,7 @@ checkpoint get_readgroups:
     output:
         pj(SAMPLEINFODIR, "{sample}.dat")
     resources:
-        n=1,
+        n="1",
         mem_mb=150        
     run:
         sample = SAMPLEINFO[wildcards['sample']]
@@ -118,7 +119,7 @@ checkpoint get_readgroups:
             prefixpath = SOURCEDIR # location where the data is downloaded from the external data repository
         else:
             prefixpath = sample['prefix']               
-        sample,warnings = read_samples.get_readgroups(sample, prefixpath, config)
+        sample,warnings = read_samples.get_readgroups(sample, prefixpath)
         if warnings:
             warningfile = pj(SAMPLEINFODIR, wildcards['sample'] + '.warnings')
             if warnings:
@@ -140,7 +141,7 @@ rule archive_get:
     resources:
         arch_use_add=lambda wildcards: SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]['size'],
         partition="archive",
-        n=1,
+        n="1",
         mem_mb=100
     run:
         dname = os.path.dirname(str(output))
@@ -208,7 +209,7 @@ rule start_sample:
     resources:
         active_use_add=calculate_active_use,
         mem_mb=50,
-        n=1
+        n="1"
     shell: """
         touch {output}
         """
@@ -226,7 +227,7 @@ rule archive_to_active:
     resources:
         arch_use_remove=lambda wildcards: SAMPLEINFO[wildcards['sample']]['filesize'],
         partition="archive",
-        n=1,
+        n="1",
         mem_mb=50
     output:
         temp(pj(SOURCEDIR, "{sample}.archive_retrieved"))
@@ -317,7 +318,7 @@ rule split_alignments_by_readgroup:
         #there can be multiple read groups in 'filename'. Store them in this folder.        
         readgroups=temp(directory(pj(READGROUPS, "{sample}.sourcefile.{filename}")))
     resources:
-        n=1,
+        n="1",
         mem_mb=get_mem_mb_split_alignments
     params:
         cramref=get_cram_ref
@@ -422,7 +423,7 @@ rule fastq_bz2togz:
     output:
         temp("{path}.{filetype}.gz")
     resources:
-        n=1,
+        n="1",
         mem_mb=150        
     shell: """
         bzcat {input} | bgzip > {output}
@@ -511,96 +512,109 @@ def get_mem_mb_kmer_reads(wildcards, attempt):
     """Utility function to get the memory for the align_reads rule.
 
     """
-    MEM_DEFAULT_USAGE =12000
+    MEM_DEFAULT_USAGE =36000
     return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
 
-def get_prepared_fastq(wildcards):
+def get_all_prepared_fastq(wildcards):
     """Utility function to get the path to the (adapter-removed) fastq files for a sample."""
-    file1 = pj(FQ, wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_1.fq.gz')
-    file2 = pj(FQ, wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_2.fq.gz')
-    return [file1,file2]
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    files = []
+    for readgroup in readgroups_b:
+        files.append(pj(FQ, wildcards['sample'] + '.' + readgroup['info']['ID'] + '.fastq.cut_1.fq.gz'))
+        files.append(pj(FQ, wildcards['sample'] + '.' + readgroup['info']['ID'] + '.fastq.cut_2.fq.gz'))
+    return files
 
 
 rule kmer_reads:
     input:
-        fastq=get_prepared_fastq
+        fastq=get_all_prepared_fastq
     output:
-        out1=temp(pj(KMER,"{sample}.{readgroup}.kmc_pre")),
-        out2=temp(pj(KMER,"{sample}.{readgroup}.kmc_suf")),
-        lst=temp(pj(KMER,"{sample}.{readgroup}.lst"))
+        out1=temp(pj(KMER,"{sample}.kmc_pre")),
+        out2=temp(pj(KMER,"{sample}.kmc_suf")),
+        lst=pj(KMER,"{sample}.lst")
     params:
-        rg_params=get_readgroup_params,
         tmpdir = pj(tmpdir, "kmer_{sample}"),
         kmerdir=KMER
     conda: CONDA_KMC
-    log:
-        kmer_log=pj(LOG,"{sample}.{readgroup}.kmer.log"),
-    benchmark:
-        pj(BENCH,"{sample}.{readgroup}.kmer.txt")
-    priority: 15
-    resources:
-        n="4.3",
-        mem_mb=get_mem_mb_kmer_reads
-    shell:
-        """
-            mkdir -p {params.kmerdir}
-            mkdir -p {params.tmpdir}
-            echo '{input.fastq[0]}' > {output.lst}
-            echo '{input.fastq[1]}' >> {output.lst}
-            kmc -fq -k32 -cs8192 -t6 -m12 @{output.lst} {params.kmerdir}/{wildcards.sample}.{wildcards.readgroup} {params.tmpdir}
-        """
-# # function to get information about readgroups
-# # needed if sample contain more than 1 fastq files
-def get_kmer_combine_by_readgroup(wildcards):
-    """Get sorted bam files for all readgroups for a given sample."""
-    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
-    readgroups_b = sinfo['readgroups']
-    files = []
-    
-    for readgroup in readgroups_b:
-        files.append(pj(KMER,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.kmc_pre'))
-        files.append(pj(KMER,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.kmc_suf'))
-    return files
-
-
-def get_mem_mb_kmer_combine(wildcards, attempt):
-    info = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
-    readgroups_b = sinfo['readgroups']
-    if len(readgroups_b) <= 1:
-        return 100
-    else:
-        res = 7500
-        return (attempt-1) * 0.5 * res + res
-
-rule kmer_combine:
-    input:
-        in_files=get_kmer_combine_by_readgroup,
-        rg=ensure_readgroup_info
-    output:
-        out1=temp(pj(KMER,"{sample}.kmc_pre")),
-        out2=temp(pj(KMER,"{sample}.kmc_suf"))
     log:
         kmer_log=pj(LOG,"{sample}.kmer.log"),
     benchmark:
         pj(BENCH,"{sample}.kmer.txt")
     priority: 15
     resources:
-        n=1, #very low usage (<1)
-        mem_mb=1000,
-    conda: CONDA_KMC
+        n="8",
+        mem_mb=get_mem_mb_kmer_reads
     run:
-        final = output.out1[:-8]
-        shell("cp {input.in_files[0]} {final}.kmc_pre")
-        shell("cp {input.in_files[1]} {final}.kmc_suf")
-        
-        for i in range(2, len(input['in_files']),2):
-            fname = input['in_files'][i][:-8]
-            shell("""mv {final}.kmc_pre {final}.tmp.kmc_pre
-                mv {final}.kmc_suf {final}.tmp.kmc_suf
-                kmc_tools simple {final}.tmp {fname} union {final} -ocsum
-                rm {final}.tmp.kmc_suf
-                rm {final}.tmp.kmc_pre""")
+        with open(output.lst,'w') as f:
+            for file in input.fastq: 
+                f.write(file + '\n')
+        #set threads of second stage to 1, as we encountered some issues (corrupt files)
+        shell("""
+            mkdir -p {params.kmerdir}
+            mkdir -p {params.tmpdir}
+            kmc -fq -k32 -cs8192 -sf12 -sp12 -sr1 -m36 @{output.lst} {params.kmerdir}/{wildcards.sample} {params.tmpdir}
+            """)
+# # function to get information about readgroups
+# # needed if sample contain more than 1 fastq files
+#def get_kmer_combine_by_readgroup(wildcards):
+#    """Get sorted bam files for all readgroups for a given sample."""
+#    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+#    readgroups_b = sinfo['readgroups']
+#    files = []
+#    
+#    for readgroup in readgroups_b:
+#        files.append(pj(KMER,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.kmc_pre'))
+#        files.append(pj(KMER,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.kmc_suf'))
+#    return files
+#
+#
+#def get_mem_mb_kmer_combine(wildcards, attempt):
+#    info = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+#    readgroups_b = sinfo['readgroups']
+#    if len(readgroups_b) <= 1:
+#        return 100
+#    else:
+#        res = 7500
+#        return (attempt-1) * 0.5 * res + res
+#
+#rule kmer_combine:
+#    input:
+#        in_files=get_kmer_combine_by_readgroup,
+#        rg=ensure_readgroup_info
+#    output:
+#        conf=pj(KMER,"{sample}.config"),
+#        out1=temp(pj(KMER,"{sample}.kmc_pre")),
+#        out2=temp(pj(KMER,"{sample}.kmc_suf"))
+#    log:
+#        kmer_log=pj(LOG,"{sample}.kmer.log"),
+#    benchmark:
+#        pj(BENCH,"{sample}.kmer.txt")
+#    priority: 15
+#    resources:
+#        n=1, #very low usage (<1)
+#        mem_mb=1000,
+#    conda: CONDA_KMC
+#    run:
+#        output_db = output.out1[:-8]
+#        in_dbs = []
+#        #create config file
+#        with open(output.conf,'w') as f:
+#            f.write('INPUT:\n')
+#
+#            for pos,  file in enumerate(input.in_files[::2]):
+#                filepath = file[:-8]
+#                f.write('set_%d = %s\n' % (pos,filepath))
+#                in_dbs.append('set_%d' % pos)
+#            f.write('OUTPUT:\n')
+#            combine = ' + sum '.join(in_dbs)
+#            f.write('%s = %s\n' % (output_db, combine))
+#        #combine kmers            
+#        with open(output.conf,'r') as f:
+#            print(f.read())
+#        shell("kmc_tools complex {output.conf}")
+
 
 def get_mem_mb_validated_sex(wildcards, attempt):
     """Utility function to get the memory for the align_reads rule.
@@ -620,20 +634,23 @@ rule get_validated_sex:
        chrm=pj(KMER,"{sample}.chrm.tsv"),
        auto=pj(KMER,"{sample}.auto.tsv") 
     resources:
-        n=1,
+        n="1",
         mem_mb=get_mem_mb_validated_sex   
     params:
         kmerdir=KMER,
         process_sex = srcdir('scripts/process_sex.py')
     conda: CONDA_KMC        
     shell:  """
-           #intersecting fastq kmers with kmers of intersect region of exomes that are unique to chrX, chrY, chrM and autosomes
+           #intersecting fastq kmers with kmers that are unique to chrY
            kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_CHRY} -cx1 intersect {output.chry}.tmp  -ocleft
            #make sure that all kmers in chrY are present (as chrY is not always present in samples)
            kmc_tools simple {output.chry}.tmp {KMER_CHRY} union {output.chry}  -ocsum
            
+           #intersecting fastq kmers with kmers that are unique to chrX
            kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_CHRX} -cx1 intersect {output.chrx} -ocleft
+           #intersecting fastq kmers with kmers that are unique to chrM
            kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_CHRM} -cx1 intersect {output.chrm}  -ocleft
+           #intersecting fastq kmers with kmers that are unique to autosomes
            kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_AUTO} -cx1 intersect {output.auto} -ocleft
 
            #dumping kmers to tsv files            
@@ -661,6 +678,12 @@ def get_mem_mb_align_reads(wildcards, attempt):
     """
     MEM_DEFAULT_USAGE = 38000
     return (attempt - 1) * 0.25 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
+
+def get_prepared_fastq(wildcards):
+    """Utility function to get the path to the (adapter-removed) fastq files for a sample."""
+    file1 = pj(FQ, wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_1.fq.gz')
+    file2 = pj(FQ, wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_2.fq.gz')
+    return [file1,file2]
 
 rule align_reads:
     """Align reads to reference genome."""
@@ -698,7 +721,9 @@ rule merge_bam_alignment:
         stats=rules.adapter_removal_identify.output.stats
     output:
         bam=pj(BAM,"{sample}.{readgroup}.merged.bam"),
-        stats=pj(STAT,"{sample}.{readgroup}.merge_stats.tsv")
+        badmap_fastq1=pj(FQ,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
+        badmap_fastq2=pj(FQ,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
+        stats=ensure(pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"), non_empty=True)
     conda: CONDA_PYPY
     benchmark:
         pj(BENCH,"{sample}.{readgroup}.mergebam.txt")
@@ -712,7 +737,7 @@ rule merge_bam_alignment:
     shell:
         """
          (samtools view -h --threads 2 {input.bam} | \
-         pypy {params.bam_merge} -a  {input.fastq[0]} -b {input.fastq[1]} -s {output.stats}  |\
+         pypy {params.bam_merge} -a  {input.fastq[0]} -b {input.fastq[1]} -ua {output.badmap_fastq1} -ub {output.badmap_fastq2} -s {output.stats}  |\
          samtools fixmate -@ 2 -u -O BAM -m - {output.bam}) 2> {log}
         """
 
@@ -781,6 +806,8 @@ rule sort_bam_alignment:
             (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M --write-index -o {output.bam}##idx##{output.bai} {input}) 2> {log.samtools_sort}            
         """
 
+
+
 # # function to get information about readgroups
 # # needed if sample contain more than 1 fastq files
 def get_readgroups_bam(wildcards):
@@ -814,7 +841,7 @@ rule merge_rgs:
     log: pj(LOG,"{sample}.mergereadgroups.log")
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     resources:
-        n=1,
+        n="1",
         mem_mb=150
     priority: 19
     conda: CONDA_MAIN
@@ -826,6 +853,33 @@ rule merge_rgs:
             #switching to copy as hard link updates also time of input.bam
             cmd = "cp {input.bam} {output}"
             shell(cmd)
+
+def get_badmap_fastq(wildcards):
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    files = []
+    
+    for readgroup in readgroups_b:
+        files.append(pj(FQ,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.badmap_' + wildcards['readid'] + '.fastq.gz'))
+    return files
+
+
+
+rule merge_rgs_badmap:
+    """Combines fastq files across readgroups from unmapped/badly mapped read for contamination check."""
+    input:
+        fastq=get_badmap_fastq
+    output:
+        fastq=pj(FQ,"{sample}.badmap.{readid}.fastq.gz")
+    conda: CONDA_MAIN
+    resources:
+        n="1",
+        mem_mb=150
+    shell:
+        """
+        zcat {input.fastq} | bgzip > {output.fastq}
+        """
+
 
 def get_mem_mb_markdup(wildcards, attempt):
     res = 1500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 150
@@ -851,7 +905,7 @@ rule markdup:
     log:
         samtools_markdup=pj(LOG,"{sample}.markdup.log")
     resources:
-        n=1,
+        n="1",
         mem_mb=get_mem_mb_markdup,
         temp_loc=pj("markdup_temporary_{sample}")
     conda: CONDA_MAIN
@@ -861,7 +915,6 @@ rule markdup:
         """
             samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
         """
-    
 
 rule mCRAM:
     """Convert bam to mapped cram."""
@@ -872,7 +925,7 @@ rule mCRAM:
         cram=pj(CRAM,"{sample}.mapped_hg38.cram"),
         crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai")
     resources:
-        n=2,
+        n="2",
         mem_mb=1250
     benchmark: pj(BENCH,'{sample}.mCRAM.txt')
     priority: 30

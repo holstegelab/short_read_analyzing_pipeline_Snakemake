@@ -238,7 +238,31 @@ def process(querygroup, fastqrecord, stats):
         adapt_supplementary(r, r2_len, stats)
 
     rg = querygroup[0].getTagValue('RG')
-    return (querygroup,rg)
+
+    badly_mapped = False
+    #determine if record is badly mapped
+    #1) both reads are unmapped
+    #2) or one read is unmapped, and th other has a bad alignment score (AS tag) < 50 and < 0.5 * max(AS)
+    #3) both reads have a bad alignment score (AS tag) < 50 and < 0.5 * max(AS)
+    ascore1, max_ascore1 = calculate_alignment_score(reads1)
+    ascore2, max_ascore2 = calculate_alignment_score(reads2)
+    if(ascore1 < 50 and ascore2 < 50 and ascore1 < 0.5 * max_ascore1 and ascore2 < 0.5 * max_ascore2):
+        badly_mapped = True
+        if((ascore1 + ascore2) == 0): #fully unmapped
+            stats['fully_unmapped_fragments'] = stats.get('fully_unmapped_fragments',0) + 1
+        else:
+            stats['badly_mapped_fragments'] = stats.get('badly_mapped_fragments',0) + 1
+
+    if badly_mapped:
+        rgx = rg
+        if rgx is not None:
+            rgx = rgx.replace(' ','_').replace('@','_').replace(':','_')
+
+        badly_mapped_fastq = (reads1['primary'].toFastqRecord(restore_seq=False, readgroup_name=rgx), reads2['primary'].toFastqRecord(restore_seq=False, readgroup_name=rgx))
+    else:
+        badly_mapped_fastq = None
+
+    return (querygroup,rg, badly_mapped_fastq)
 
 
 
@@ -267,6 +291,8 @@ if __name__ == '__main__':
     parser.add_argument("-a", help='first fastq file')
     parser.add_argument("-b", help='second fastq file')
     parser.add_argument("-o", default='-', help='output sam file (default stdout)')
+    parser.add_argument("-ua", help='output gz fastq file 1 for badly aligned/unmapped fragments')
+    parser.add_argument("-ub", help='output gz fastq file 1 for badly aligned/unmapped fragments')
     parser.add_argument("-s", help='stats file')
     args = parser.parse_args()
     
@@ -289,6 +315,9 @@ if __name__ == '__main__':
             out = sys.stdout
         else:
             out = open(args.o, 'wt')
+        
+        out_unmapped_1 = gzip.open(args.ua,'wt')
+        out_unmapped_2 = gzip.open(args.ub,'wt')
             
         #with open('test.out', 'w') as out_file:
         with out as out_file:
@@ -309,9 +338,12 @@ if __name__ == '__main__':
                     if querygroup:
                         assert len(querygroup) >= 2, f'Reads are not paired for {querygroup[0]}'
                         fastq_record = freader.popRead(lastname)
-                        res_kept, rg = process(querygroup, fastq_record, stats)
+                        res_kept, rg, badly_mapped_fastq = process(querygroup, fastq_record, stats)
                         res_kept = '\n'.join([xrow.toSamRecord() for xrow in res_kept]) + '\n'
                         out_file.write(res_kept)
+                        if badly_mapped_fastq is not None:
+                            out_unmapped_1.write(badly_mapped_fastq[0])
+                            out_unmapped_2.write(badly_mapped_fastq[1])
 
                     lastname = row.qname
                     querygroup = [row]
@@ -319,10 +351,13 @@ if __name__ == '__main__':
                 assert len(querygroup) >= 2, 'Reads are not paired'
                 fastq_record = freader.popRead(lastname)
                 #Process
-                res_kept, rg = process(querygroup, fastq_record, stats)
+                res_kept, rg, badly_mapped_fastq = process(querygroup, fastq_record, stats)
 
                 res_kept = '\n'.join([xrow.toSamRecord() for xrow in res_kept]) + '\n'
                 out_file.write(res_kept)
+                if badly_mapped_fastq is not None:
+                    out_unmapped_1.write(badly_mapped_fastq[0])
+                    out_unmapped_2.write(badly_mapped_fastq[1])
 
             extra_fragment_counter = 0
             sys.stderr.write('\nRe-adding removed fragments\n')
@@ -342,7 +377,10 @@ if __name__ == '__main__':
                     out_file.write(res)
             except StopIteration:
                 pass
-        
+       
+        out_unmapped_1.close()
+        out_unmapped_2.close()
+
         #process size stats
         size_stats = numpy.zeros((max(max(stats['size_r1'].keys()), max(stats['size_r2'].keys()))+ 1,2),dtype=int)
         for key,value in stats['size_r1'].items():
@@ -356,6 +394,8 @@ if __name__ == '__main__':
         stats['supplementary_bp_ratio'] = float(stats.get('supplementary_aligned_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('supplementary_aligned_bp',0.0))
         with open(args.s,'wt') as f:            
             for key, value in stats.items():
+                sys.stderr.write('%s\t%s\n' % (key,str(value)))
+                sys.stderr.flush()
                 if isinstance(value, float):
                     f.write('%s\t %.5f\n' % (key,value))
                 else:
@@ -364,6 +404,7 @@ if __name__ == '__main__':
             for pos in range(1,size_stats.shape[0]):
                 f.write('%d\t%d\t%d\n' % (pos,size_stats[pos,0], size_stats[pos,1]))
             f.flush()
-            
+            sys.stderr.write('done\n')
+            sys.stderr.flush()
         
 
