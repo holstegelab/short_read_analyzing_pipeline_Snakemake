@@ -180,19 +180,19 @@ rule GermlineCNVCaller:
            {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output {output.OD} --output-prefix scatterd_{cohort}_{scatter}
     """
 
-rule PostprocessGermlineCNVCalls:
-    input:
-        models = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'), scatter = scatter_merged_cature_kit, allow_missing = True),
-        calls = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls'), scatter = scatter_merged_cature_kit, allow_missing = True),
-        sample_index = pj(GATK_gCNV, '{cohort}_scatter_0001', 'scatterd_{cohort}_0001-calls', 'SAMPLE_{index}'),
-    output:
-        genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}')
-    params:
-        sample = get_sample_name(str(wildcards.index).zfill(4), wildcards.cohort)  # Add leading zeros to index
-    wildcard_constraints:
-        cohort = '|'.join(groups),
-        index = '|'.join([str(idx).zfill(4) for idx in get_samples_in_group(hdf5_files[0], groups)])
-    run:
+# rule PostprocessGermlineCNVCalls:
+#     input:
+#         models = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'), scatter = scatter_merged_cature_kit, allow_missing = True),
+#         calls = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls'), scatter = scatter_merged_cature_kit, allow_missing = True),
+#         sample_index = pj(GATK_gCNV, '{cohort}_scatter_0001', 'scatterd_{cohort}_0001-calls', 'SAMPLE_{index}'),
+#     output:
+#         genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}')
+#     params:
+#         sample = get_sample_name(str(wildcards.index).zfill(4), wildcards.cohort)  # Add leading zeros to index
+#     wildcard_constraints:
+#         cohort = '|'.join(groups),
+#         index = '|'.join([str(idx).zfill(4) for idx in get_samples_in_group(hdf5_files[0], groups)])
+#     run:
 
 #     how to come from INDEX to SAMPLE NAME?
 #     function to read a tsv file and get a sample name from it
