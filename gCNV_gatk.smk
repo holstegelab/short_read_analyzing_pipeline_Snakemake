@@ -44,12 +44,12 @@ filtered_groups = sorted([group for group in groups if group != '-1'])
 
 def get_samples_in_group(hdf5_file, group):
     with h5py.File(hdf5_file, 'r') as f:
-        samples = list(f['coverage']['sample'][f['coverage']['cluster_3_cor_cov'] == group])
+        samples = list(f['coverage']['samples'][f['coverage']['cluster_3_cor_cov'] == group])
     return samples
 
 def get_samples_in_all_groups(hdf5_file):
     with h5py.File(hdf5_file, 'r') as f:
-        samples = list(f['coverage']['sample'][f['coverage']['cluster_3_cor_cov'] != -1])
+        samples = list(f['coverage']['samples'][f['coverage']['cluster_3_cor_cov'] != -1])
     return samples
 grouped_samples = []
 for hdf5_file in hdf5_files:
