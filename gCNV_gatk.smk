@@ -146,7 +146,7 @@ rule filterintervals:
 rule DetermineGCP:
     input: samples = input_func,
             intervals = rules.filterintervals.output.filtered_intervals
-    output: CPC = dir(pj('gCNV_{cohort}-calls')),
+    output: CPC = dir(pj(GATK_gCNV,  '{cohort}-calls')),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -156,7 +156,7 @@ rule DetermineGCP:
     # log: pj(LOG, '{cohort}.determinecontigploydi.log')
     # benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
-            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output {output.CPC}  {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
+            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output gCNV/ --output-prefix {wildcards.cohort}  {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
             """
 
 
@@ -166,8 +166,8 @@ rule GermlineCNVCaller:
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}'),
             contig_ploudi_calls = rules.DetermineGCP.output.CPC,
     output: OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
-            calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
-            models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
+            # calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
+            # models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
