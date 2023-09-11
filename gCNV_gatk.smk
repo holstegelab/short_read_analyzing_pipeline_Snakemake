@@ -176,7 +176,7 @@ rule GermlineCNVCaller:
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     # benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell: """
-           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{cohort}_{scatter}
+           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
     """
 
 # rule PostprocessGermlineCNVCalls:
