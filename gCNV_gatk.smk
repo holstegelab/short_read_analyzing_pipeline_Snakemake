@@ -4,6 +4,7 @@ import h5py
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
+    cohorts = "[\d]"
     # readgroup="[\w\d_\-@]+"
 
 module Aligner:
@@ -90,7 +91,7 @@ scatter_merged_cature_kit = generate_scatter_list('0001', '0148')
 
 rule gCNV_gatk_all:
     input:
-        expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'),scatter=scatter_merged_cature_kit,cohort=groups),
+        expand(dir(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model')),scatter=scatter_merged_cature_kit,cohort=groups),
         rules.Stat_all.input
     default_target: True
 
