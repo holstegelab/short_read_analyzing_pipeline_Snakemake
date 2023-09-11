@@ -161,13 +161,7 @@ rule DetermineGCP:
 
 
 rule GermlineCNVCaller:
-    input: samples =  expand(
-                            '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5',
-                            gatk_gcnv=GATK_gCNV,
-                            cohort={wildcards.cohort},
-                            sample=get_samples_in_group({wildcards.cohort}),
-                            allow_missing=True
-                        ),
+    input: samples = input_func,
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}'),
             contig_ploudi_calls = rules.DetermineGCP.output.CPC,
     output: # OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
