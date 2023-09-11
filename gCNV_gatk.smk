@@ -58,25 +58,24 @@ def get_samples_in_group(cohort, hdf5_files = hdf5_files):
 
 
 def input_func(wildcards):
-    group = wildcards['cohort']
-    # hdf5_file = wildcards.hdf5_file
-    samples_in_group = get_samples_in_group(group)
+    cohort = wildcards.cohort
+    samples_in_group = get_samples_in_group(cohort)
     return expand(
         '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5',
         gatk_gcnv=GATK_gCNV,
-        cohort=group,
+        cohort=cohort,
         sample=samples_in_group,
         allow_missing=True
     )
 
 def sample_list_per_cohort(wildcards):
-    group = wildcards['cohort']
+    cohort = wildcards.cohort
     # hdf5_file = wildcards.hdf5_file
-    samples_in_group = get_samples_in_group(group)
+    samples_in_group = get_samples_in_group(cohort)
     return expand(
         ' -I {gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5 ',
         gatk_gcnv=GATK_gCNV,
-        cohort=hdf5_file,
+        cohort=cohort,
         sample=samples_in_group,
         allow_missing=True
     )
