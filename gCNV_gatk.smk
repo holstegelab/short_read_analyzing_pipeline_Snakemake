@@ -60,7 +60,7 @@ for hdf5_file in hdf5_files:
 
 
 def input_func(wildcards):
-    group = wildcards.group
+    group = wildcards.cohort
     hdf5_file = wildcards.hdf5_file
     samples_in_group = get_samples_in_group(hdf5_file, group)
     return expand(
@@ -72,7 +72,7 @@ def input_func(wildcards):
     )
 
 def sample_list_per_cohort(wildcards):
-    group = wildcards.group
+    group = wildcards.cohort
     hdf5_file = wildcards.hdf5_file
     samples_in_group = get_samples_in_group(hdf5_file, group)
     return expand(
