@@ -58,7 +58,7 @@ def get_samples_in_group(cohort, hdf5_files = hdf5_files):
 
 
 def input_func(wildcards):
-    cohort = wildcards.cohort
+    cohort = wildcards['cohort']
     samples_in_group = get_samples_in_group(cohort)
     return expand(
         '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5',
@@ -69,8 +69,7 @@ def input_func(wildcards):
     )
 
 def sample_list_per_cohort(wildcards):
-    cohort = wildcards.cohort
-    # hdf5_file = wildcards.hdf5_file
+    cohort = wildcards['cohort']
     samples_in_group = get_samples_in_group(cohort)
     return expand(
         ' -I {gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5 ',
@@ -95,17 +94,6 @@ rule gCNV_gatk_all:
 
 # expand("scatter_{part}", part = parts)
 
-def get_capture_kit_path(wildcards):
-    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    if SAMPLEINFO[wildcards['sample']]['sample_type'].startswith('illumina_wgs'):
-        capture_kit_path = None
-    else:
-        capture_kit_path = pj(INTERVALS_DIR, capture_kit + '.interval_list')
-    return capture_kit_path
-
-def get_capture_kit(wildcards):
-    capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
-    return capture_kit
 
 def get_preprocessed_capture_kit(wildcards):
     capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit']
@@ -115,7 +103,6 @@ rule collect_read_counts:
     input: bam = rules.markdup.output.mdbams,
             # Merged capture kit for test
             capture_kit = MERGED_CAPTURE_KIT_IVL
-            # capture_kit= ancient(get_preprocessed_capture_kit),
     output: ReadCounts = pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5')
     params: java = java_cnv,
             gatk = gatk_cnv,
@@ -163,7 +150,7 @@ rule DetermineGCP:
 rule GermlineCNVCaller:
     input: samples = input_func,
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}'),
-            contig_ploudi_calls = rules.DetermineGCP.output.CPC,
+            contig_ploudi_calls = dir(pj(GATK_gCNV,  '{cohort}-calls')),
     output: # OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
             # calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
             models = dir(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'))
