@@ -158,7 +158,7 @@ rule DetermineGCP:
     # log: pj(LOG, '{cohort}.determinecontigploydi.log')
     # benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
-            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {cohort} --output gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
+            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
             """
 
 
@@ -169,8 +169,8 @@ rule GermlineCNVCaller:
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}'),
             contig_ploudi_calls = rules.DetermineGCP.output.CPC,
     output: # OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
-            calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
-            # models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
+            # calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
+            models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -179,7 +179,7 @@ rule GermlineCNVCaller:
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     # benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell: """
-           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output gCNV/{cohort}_scatter_{scatter} --output-prefix scatterd_{cohort}_{scatter}
+           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{cohort}_scatter_{scatter} --output-prefix scatterd_{cohort}_{scatter}
     """
 
 # rule PostprocessGermlineCNVCalls:
