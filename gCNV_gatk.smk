@@ -146,7 +146,7 @@ rule filterintervals:
 rule DetermineGCP:
     input: samples = input_func,
             intervals = rules.filterintervals.output.filtered_intervals
-    output: CPC = dir(pj('gCNV', '{cohort}-calls')),
+    output: CPC = dir(pj('gCNV_{cohort}-calls')),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -156,7 +156,7 @@ rule DetermineGCP:
     log: pj(LOG, '{cohort}.determinecontigploydi.log')
     benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
-            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output gCNV/ --output-prefix {wildcards.cohort} {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
+            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output {output.CPC} --output-prefix {wildcards.cohort} {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
             """
 
 
