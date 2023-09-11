@@ -153,8 +153,8 @@ rule DetermineGCP:
             capture_kit= pj(INTERVALS_DIR,'preprocessed_intervals_for_GATK_CNV','merged_capture_kits_cds.interval_list' ),
             contig_ploydi_priors = PL_PR_TABLE
     conda: CONDA_GATK_CNV
-    log: pj(LOG, '{cohort}.determinecontigploydi.log')
-    benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
+    # log: pj(LOG, '{cohort}.determinecontigploydi.log')
+    # benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
             {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output {output.CPC}  {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
             """
