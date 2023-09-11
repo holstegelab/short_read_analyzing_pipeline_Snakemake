@@ -147,7 +147,7 @@ rule filterintervals:
 rule DetermineGCP:
     input: samples = input_func,
             intervals = rules.filterintervals.output.filtered_intervals
-    output: CPC = dir(pj(GATK_gCNV, '/{cohort}-calls')),
+    output: CPC = dir(pj(GATK_gCNV, '{cohort}-calls')),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
