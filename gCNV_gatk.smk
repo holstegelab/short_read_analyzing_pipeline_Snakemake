@@ -156,7 +156,7 @@ rule DetermineGCP:
     # log: pj(LOG, '{cohort}.determinecontigploydi.log')
     # benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
-            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output gCNV/ --output-prefix {wildcards.cohort}  {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
+            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy --output gCNV/ --output-prefix {cohort}  {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 2> {log}
             """
 
 
