@@ -1,6 +1,6 @@
 from common import *
 import h5py
-
+import numpy as np
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -45,36 +45,34 @@ groups = set()
 for hdf5_file in hdf5_files:
     groups.update(get_groups_from_hdf5(hdf5_file))
 
-def get_samples_in_group(hdf5_file, group):
-    with h5py.File(hdf5_file, 'r') as f:
-        samples = list(f['coverage']['samples'][f['coverage']['cluster_3_cor_cov'] == group])
+def get_samples_in_group(cohort, hdf5_files = hdf5_files):
+    samples = []
+    for hdf5_file in hdf5_files:
+        with h5py.File(hdf5_file, 'r') as f:
+            data_group = f['coverage']
+            sample_list_per_hdf5_file = [s.decode('utf-8') for s in data_group['samples'][()]]
+            cohort_mask = np.array(data_group['cluster_3_cor_cov']) == cohort
+            cohort_samples = [sample_list_per_hdf5_file[i] for i, mask in enumerate(cohort_mask) if mask]
+            samples.extend(cohort_samples)
     return samples
-
-def get_samples_in_all_groups(hdf5_file):
-    with h5py.File(hdf5_file, 'r') as f:
-        samples = list(f['coverage']['samples'][f['coverage']['cluster_3_cor_cov'] != -1])
-    return samples
-grouped_samples = []
-for hdf5_file in hdf5_files:
-    grouped_samples.append(get_samples_in_all_groups(hdf5_file))
 
 
 def input_func(wildcards):
-    group = wildcards.cohort
-    hdf5_file = wildcards.hdf5_file
-    samples_in_group = get_samples_in_group(hdf5_file, group)
+    group = wildcards['cohort']
+    # hdf5_file = wildcards.hdf5_file
+    samples_in_group = get_samples_in_group(group)
     return expand(
         '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5',
         gatk_gcnv=GATK_gCNV,
-        cohort=hdf5_file,
+        cohort=group,
         sample=samples_in_group,
         allow_missing=True
     )
 
 def sample_list_per_cohort(wildcards):
-    group = wildcards.cohort
-    hdf5_file = wildcards.hdf5_file
-    samples_in_group = get_samples_in_group(hdf5_file, group)
+    group = wildcards['cohort']
+    # hdf5_file = wildcards.hdf5_file
+    samples_in_group = get_samples_in_group(group)
     return expand(
         ' -I {gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5 ',
         gatk_gcnv=GATK_gCNV,
