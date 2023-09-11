@@ -129,7 +129,6 @@ rule collect_read_counts:
 
 rule filterintervals:
     input: input_func,
-
     output: filtered_intervals = pj(GATK_gCNV, 'filtred_intervals', '{cohort}_filtred.interval_list')
     params: inputs = sample_list_per_cohort,
             java= java_cnv,
@@ -147,7 +146,7 @@ rule filterintervals:
 rule DetermineGCP:
     input: samples = input_func,
             intervals = rules.filterintervals.output.filtered_intervals
-    output: CPC = dir(pj(GATK_gCNV, '{cohort}-calls')),
+    output: CPC = dir(pj('gCNV', '{cohort}-calls')),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
