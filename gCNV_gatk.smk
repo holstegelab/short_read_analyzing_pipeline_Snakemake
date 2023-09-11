@@ -31,16 +31,18 @@ def get_sample_name(sample_index, cohort):
 
 
 def get_groups_from_hdf5(hdf5_file):
+    unique_groups = set()
     with h5py.File(hdf5_file, 'r') as f:
-        groups = list(f['coverage']['cluster_3_cor_cov'])
-    return groups
+        groups = f['coverage']['cluster_3_cor_cov']
+        for group in groups:
+            if group != -1:
+                unique_groups.add(group)
+    return (unique_groups)
 
 hdf5_files = [f"{SF}.coverage.hdf5" for SF in SAMPLE_FILES]
 groups = set()
 for hdf5_file in hdf5_files:
     groups.update(get_groups_from_hdf5(hdf5_file))
-# Filter out the '-1' group
-filtered_groups = sorted([group for group in groups if group != '-1'])
 
 def get_samples_in_group(hdf5_file, group):
     with h5py.File(hdf5_file, 'r') as f:
@@ -88,7 +90,7 @@ scatter_merged_cature_kit = generate_scatter_list('0001', '0148')
 
 rule gCNV_gatk_all:
     input:
-        expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'),scatter=scatter_merged_cature_kit,cohort=filtered_groups),
+        expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'),scatter=scatter_merged_cature_kit,cohort=groups),
         rules.Stat_all.input
     default_target: True
 
@@ -160,14 +162,15 @@ rule DetermineGCP:
             """
 
 
+expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'),scatter=scatter_merged_cature_kit,cohort=groups),
 
 rule GermlineCNVCaller:
     input: samples = input_func,
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}'),
             contig_ploudi_calls = rules.DetermineGCP.output.CPC,
-    output: OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
-            # calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
-            # models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
+    output: # OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
+            calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
+            models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -176,7 +179,7 @@ rule GermlineCNVCaller:
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     # benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell: """
-           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output {output.OD} --output-prefix scatterd_{cohort}_{scatter}
+           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output gCNV/{cohort}_scatter_{scatter} --output-prefix scatterd_{cohort}_{scatter}
     """
 
 # rule PostprocessGermlineCNVCalls:
