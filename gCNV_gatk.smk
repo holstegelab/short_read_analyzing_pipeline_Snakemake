@@ -170,7 +170,7 @@ rule GermlineCNVCaller:
             contig_ploudi_calls = rules.DetermineGCP.output.CPC,
     output: # OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
             calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
-            models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
+            # models = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'))
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
