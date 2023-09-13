@@ -30,7 +30,7 @@ CONDA_KMC = 'envs/kmc.yaml'
 CONDA_KMC_RUN = pj(RESOURCES, 'envs/kmc.yaml')
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 CONDA_PCA = 'envs/PCA.yaml'
-CONDA_GATK_CNV = pj(RESOURCES, 'gatk_4.4', 'build', 'gatkcondaenv.yml')
+CONDA_GATK_CNV = pj(RESOURCES, 'software', 'gatk_4.4', 'build', 'gatkcondaenv.yml')
 
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 

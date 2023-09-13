@@ -15,17 +15,17 @@ use rule * from Aligner
 module Stat:
     snakefile: 'Stat.smk'
     config: config
-use rule * from Stat
+# use rule * from Stat
 
 
 module Tools:
     snakefile: 'Tools.smk'
     config: config
-use rule * from Tools
+# use rule * from Tools
 
 def get_sample_name(sample_index, cohort):
     # Get the sample name from the "sample_name.txt" file
-    sample_name_file = os.path.join(GATK_gCNV, f'{cohort}_scatter_0001', f'scatterd_{cohort}_0001-calls', f'SAMPLE_{sample_index}', 'sample_name.txt')
+    sample_name_file = os.path.join(GATK_gCNV, f'{cohort}_scatter_0001', f'scatterd_{cohort}_0001-calls', f'SAMPLE_{sample_index:04d}', 'sample_name.txt')
     with open(sample_name_file, 'r') as f:
         sample_name = f.read().strip()
     return sample_name
@@ -51,15 +51,16 @@ def get_samples_in_group(cohort, hdf5_files = hdf5_files):
         with h5py.File(hdf5_file, 'r') as f:
             data_group = f['coverage']
             sample_list_per_hdf5_file = [s.decode('utf-8') for s in data_group['samples'][()]]
-            cohort_mask = np.array(data_group['cluster_3_cor_cov']) == cohort
+            cohort_mask = np.equal(data_group['cluster_3_cor_cov'], int(cohort))
             cohort_samples = [sample_list_per_hdf5_file[i] for i, mask in enumerate(cohort_mask) if mask]
             samples.extend(cohort_samples)
     return samples
 
 
+
 def input_func(wildcards):
     cohort = wildcards['cohort']
-    samples_in_group = get_samples_in_group(cohort)
+    samples_in_group = get_samples_in_group(cohort = cohort)
     return expand(
         '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5',
         gatk_gcnv=GATK_gCNV,
@@ -83,12 +84,14 @@ def generate_scatter_list(start, end):
     string_list = [f"{i:04d}_of_{end}" for i in range(int(start), int(end) + 1)]
     return string_list
 
-scatter_merged_cature_kit = generate_scatter_list('0001', '0148')
+scatter_merged_cature_kit = generate_scatter_list('0001', '148')
 
 rule gCNV_gatk_all:
     input:
-        expand(dir(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model')),scatter=scatter_merged_cature_kit,cohort=groups),
-        rules.Stat_all.input
+        expand('GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-model/calling_config.json',scatter=scatter_merged_cature_kit,cohort=groups),
+        expand('GATK_gCNV/filtred_intervals/{cohort}_filtred.interval_list', cohort=groups),
+        expand('GATK_gCNV/{cohort}-calls/contig_ploidy_prior.tsv', cohort = groups)
+        # rules.Stat_all.input
     default_target: True
 
 
@@ -111,7 +114,7 @@ rule collect_read_counts:
     log: pj(LOG, '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
     benchmark: pj(BENCH, '{sample}.{cohort}.collectreadcounts_gatkcnv.txt')
     shell: """
-            {params.java} -jar {params.gatk} CollectReadCounts -L {input.capture_kit} -R {params.ref} -imr OVERLAPPING_ONLY -I {input.bam} -O {output.ReadCounts}
+            {params.java} -jar {params.gatk} CollectReadCounts -L {input.capture_kit} -R {params.ref} -imr OVERLAPPING_ONLY -I {input.bam} -O {output.ReadCounts} 2> {log}
             """
 
 rule filterintervals:
@@ -127,33 +130,33 @@ rule filterintervals:
     log: pj(LOG, '{cohort}.filterintervals_gatkcnv.log')
     benchmark: pj(BENCH, '{cohort}.filterintervals_gatkcnv.txt')
     shell: """
-            {params.java} -jar {params.gatk} FilterIntervals -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals}
+            {params.java} -jar {params.gatk} FilterIntervals -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} 2> {log}
             """
 
 rule DetermineGCP:
     input: samples = input_func,
             intervals = pj(GATK_gCNV, 'filtred_intervals', '{cohort}_filtred.interval_list')
-    output: CPC = dir(pj(GATK_gCNV,  '{cohort}-calls')),
+    output: CPC = pj(GATK_gCNV,  '{cohort}-calls', 'contig_ploidy_prior.tsv'),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
-            capture_kit= pj(INTERVALS_DIR,'preprocessed_intervals_for_GATK_CNV','merged_capture_kits_cds.interval_list' ),
+            capture_kit= pj(INTERVALS_DIR,'preprocessed_intervals_for_GATK_CNV','merged_capture_kits_cds.interval_list'),
             contig_ploydi_priors = PL_PR_TABLE
     conda: CONDA_GATK_CNV
     # log: pj(LOG, '{cohort}.determinecontigploydi.log')
     # benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
-            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {wildcards.cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors} 
+            {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {wildcards.cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
             """
 
 
 rule GermlineCNVCaller:
     input: samples = input_func,
-            scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}'),
-            contig_ploudi_calls = dir(pj(GATK_gCNV,  '{cohort}-calls')),
+            scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}', 'scattered.interval_list'),
+            contig_ploudi_calls = (pj(GATK_gCNV,  '{cohort}-calls', 'contig_ploidy_prior.tsv')),
     output: # OD = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}')),
             # calls = dir(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls')),
-            models = dir(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model'))
+            models = pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model', 'calling_config.json')
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -165,19 +168,25 @@ rule GermlineCNVCaller:
            {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
     """
 
-# rule PostprocessGermlineCNVCalls:
-#     input:
-#         models = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'), scatter = scatter_merged_cature_kit, allow_missing = True),
-#         calls = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls'), scatter = scatter_merged_cature_kit, allow_missing = True),
-#         sample_index = pj(GATK_gCNV, '{cohort}_scatter_0001', 'scatterd_{cohort}_0001-calls', 'SAMPLE_{index}'),
-#     output:
-#         genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}')
-#     params:
-#         sample = get_sample_name(str(wildcards.index).zfill(4), wildcards.cohort)  # Add leading zeros to index
-#     wildcard_constraints:
-#         cohort = '|'.join(groups),
-#         index = '|'.join([str(idx).zfill(4) for idx in get_samples_in_group(hdf5_files[0], groups)])
-#     run:
+rule PostprocessGermlineCNVCalls:
+    input:
+        # models = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-model'), scatter = scatter_merged_cature_kit, allow_missing = True),
+        # calls = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls'), scatter = scatter_merged_cature_kit, allow_missing = True),
+        sample_index = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}'), scatter = scatter_merged_cature_kit, allow_missing = True),
+    output:
+        genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_intervales_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}'),
+
+    params:
+        sample = lambda wildcards: get_sample_name(wildcards.index, wildcards.cohort),
+        java= java_cnv,
+        gatk= gatk_cnv,
+    # wildcard_constraints:
+    #     cohort = '|'.join(groups),
+    #     index = '|'.join([str(idx).zfill(4) for idx in get_samples_in_group(hdf5_files[0], groups)])
+    shell:
+            """
+            {params.java} -jar {params.gatk} 
+            """
 
 #     how to come from INDEX to SAMPLE NAME?
 #     function to read a tsv file and get a sample name from it
