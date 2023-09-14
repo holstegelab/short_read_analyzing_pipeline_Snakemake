@@ -30,11 +30,11 @@ rule gVCF_all:
         rules.Aligner_all.input
     default_target: True
 
-def get_gvcf_files(wildcards):
+def get_gvcf_files(wildcards):#{{{
     sample = wildcards['sample']
     regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions    
     return [pj(GVCF, region, f'{sample}.{region}.wg.vcf.gz') for region in regions]
-
+#}}}
 
 rule gvcf_sample_done:
     input:
@@ -42,7 +42,7 @@ rule gvcf_sample_done:
     output:
         touch(pj(GVCF, "{sample}.done"))
     resources:
-        n=1,
+        n="1.0",
         mem_mb=50
 
 
@@ -55,7 +55,7 @@ rule ComposeSTRTableFile:
     params:
         java_options=DEFAULT_JAVA_OPTIONS
     resources: 
-        n = 1,
+        n = "1.0",
         mem_mb = 3000
     conda: CONDA_VCF   
     shell:
@@ -78,7 +78,7 @@ rule CalibrateDragstrModel:
         str_ref = get_strref_by_validated_sex,
         java_options=DEFAULT_JAVA_OPTIONS
     resources: 
-        n = 1,
+        n = "1.0",
         mem_mb = lambda wildcards, attempt: attempt * 1750
     log: pj(LOG, "{sample}_calibratedragstr.log")
     benchmark: pj(BENCH, "{sample}_calibrate_dragstr.txt")
@@ -88,7 +88,7 @@ rule CalibrateDragstrModel:
                     "-Xmx{resources.mem_mb}m {params.java_options}"  -R {params.ref} -I {input.bam} \
                     -O {output} -str {params.str_ref} 2>{log}"""
 
-def read_contam_w(wildcards):
+def read_contam_w(wildcards):#{{{
     """Read contamination from verifybamid output file."""
     filename = pj(STAT, 'contam', wildcards['sample'] +  '.verifybamid.pca2.selfSM')
     with open(filename,'r', encoding='utf-8') as f:
@@ -101,18 +101,22 @@ def read_contam_w(wildcards):
     if freemix < 0.01: #only remove contamination if it is more than 1%
         freemix = 0.0        
     return freemix
+#}}}
 
-def get_mem_mb_HaplotypeCaller(wildcards, attempt):
+def get_mem_mb_HaplotypeCaller(wildcards, attempt):#{{{
     """Get memory for HaplotypeCaller."""
-    res = 1750 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 1400
-    return (attempt - 1) * res * 3 + res #aggressively reserve more memory
+    res = 2400 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 1400
 
+    #HaplotypeCaller has exponential memory scaling on some regions. Average is very  low, but on some regions it can scale to 75 GB...
+    return (res * (3 ** (attempt - 1)))  #aggressively reserve more memory
+#}}}
 
-def region_to_interval_file(wildcards):
+def region_to_interval_file(wildcards):#{{{
     """Converts a region to a interval file location (see common.py and Tools.smk)"""
     sample = wildcards['sample']
     region = wildcards['region']
     return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='interval_list')
+#}}}
 
 rule HaplotypeCaller:
     """HaplotypeCaller. Call SNPs and indels for each sample."""
@@ -143,7 +147,7 @@ rule HaplotypeCaller:
         pj(BENCH, "{sample}_{region}_haplotypecaller.txt")
     conda: CONDA_VCF
     resources: 
-               n=1, #average 1.3 cores
+               n="0.9", #average 1.3 cores
                mem_mb = get_mem_mb_HaplotypeCaller,
                tmpdir = tmpdir_alternative
     params:
@@ -235,7 +239,7 @@ rule reblock_gvcf:
         java_options=DEFAULT_JAVA_OPTIONS,
         ref=get_ref_by_validated_sex
     resources: 
-        n=2,
+        n="2.0",
         mem_mb = lambda wildcards, attempt: attempt * 2500
     shell:
         """{gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF   --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {params.ref} -V {input.gvcf} -O {output.gvcf_reblock} -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 -G StandardAnnotation -G AS_StandardAnnotation 2> {log}"""

@@ -11,7 +11,7 @@ rule BedToIntervalList:
         seq_dict = REF_MALE_DICT
     conda: CONDA_VCF
     resources: 
-        n = 1,
+        n = "1.0",
         mem_mb = 1000       
     shell:
         """{gatk} BedToIntervalList  --java-options "-Xmx{resources.mem_mb}m {DEFAULT_JAVA_OPTIONS}"  -I {input.bed_file} -O {output.interval_list} -SD {params.seq_dict} --UNIQUE"""
@@ -36,14 +36,14 @@ rule CreateBinsFullGenome:
 
     """
     input: fai=ancient(REF_MALE_FAI),
-           mask=ancient(MASK_MALE_BED),
+           mask=ancient(REF_MALE_BED),
            merged_kit=ancient(MERGED_CAPTURE_KIT_BED)
     output: directory(pj(INTERVALS_DIR, 'wgs_bins'))
     params:
         nsplit = 1000
     conda: CONDA_MAIN
     resources:
-        n=1,
+        n="1.0",
         mem_mb=250
     shell:"""
         mkdir -p {output}
@@ -130,7 +130,7 @@ rule CreateBinsExome:
         nsplit = 1000     
     conda: CONDA_MAIN
     resources:
-        n=1,
+        n="1.0",
         mem_mb=250
     shell:"""
         mkdir -p {output}
@@ -184,7 +184,7 @@ rule select_bed_chrom:
     output:
         interval_list_chrom = "{folder}/{capture_kit}/{capture_kit}_chrom_{chrom}.bed" 
     resources:
-        n=1,
+        n="1.0",
         mem_mb=1000        
     shell:"""
             grep -P '^{wildcards.chrom}\t' {input} > {output}

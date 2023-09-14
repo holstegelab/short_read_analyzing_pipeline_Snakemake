@@ -597,3 +597,13 @@ def calculate_alignment_score(reads):
             ascore += float(r.getTagValue('AS',0))
     return (ascore, max_ascore)
 
+
+def aligned_to_chrom(reads, chrom):
+    if 'primary' in reads:
+        if chrom == reads['primary'].rname:
+            return True
+
+    for r in reads.get('supplementary',[]):
+        if r.rname == chrom:
+            return True
+    return False

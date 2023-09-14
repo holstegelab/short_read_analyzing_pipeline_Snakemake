@@ -253,6 +253,11 @@ def process(querygroup, fastqrecord, stats):
         else:
             stats['badly_mapped_fragments'] = stats.get('badly_mapped_fragments',0) + 1
 
+
+    if aligned_to_chrom(reads1, 'chrEBV') or aligned_to_chrom(reads2,'chrEBV'):
+        stats['chrEBV_mapped_fragments'] = stats.get('chrEBV_mapped_fragments',0) + 1
+        badly_mapped = True
+
     if badly_mapped:
         rgx = rg
         if rgx is not None:

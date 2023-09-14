@@ -17,6 +17,7 @@ cluster:
         --active-use-remove {resources.active_use_remove}
         --limit-threads {resources.limit_auto_threads}
         --info-input-mb {resources.input_mb}
+        --info-output-file {output[0]}
 default-resources:
     - partition=compute
     - time=3600
@@ -26,7 +27,7 @@ default-resources:
     - dcache_use_remove=0
     - active_use_add=0
     - active_use_remove=0
-    - n="1"
+    - n="1.0"
     - mem_mb=500
     - input_mb=input.size_mb
     - limit_auto_threads=8

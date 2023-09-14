@@ -31,6 +31,9 @@ rule Encrypt_crams:
         private_key = sk,
         public_key = expand("--recipient_pk {PKs}", PKs = PKs)
     conda: CONDA_MAIN         
+    resources:
+        mem_mb=200,
+        n="0.3"
     shell:
         """
         crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
@@ -40,6 +43,9 @@ rule copy_to_dcache:
     input:
         cram=rules.Encrypt_crams.output.enCRAM,
         crai=rules.mCRAM.output.crai
+    resources:
+        mem_mb=200,
+        n="0.1"
     output:
         pj(CRAM,"{sample}.mapped_hg38.cram.copied")
     run:

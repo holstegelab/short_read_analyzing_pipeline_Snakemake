@@ -35,7 +35,7 @@ rule Aligner_all:
     default_target: True
 
 
-def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
+def sampleinfo(SAMPLEINFO, sample, checkpoint=False):#{{{
     """If samples are on tape, we do not have sample readgroup info.
     That is, the 'readgroups' field is empty.
 
@@ -59,17 +59,9 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
         sinfo['alternative_names'] = sinfo.get('alternative_names',set()).union(xsample['alternative_names'])
         SAMPLEINFO[sample] = sinfo
     return sinfo
+#}}}
 
-def ensure_readgroup_info(wildcards):
-    """Make sure the readgroup info for a sample is available."""
-    sample = wildcards['sample']
-    sinfo = SAMPLEINFO[sample]
-    if not 'readgroups' in sinfo:       
-        filename = checkpoints.get_readgroups.get(sample=sample).output[0]
-        return [filename]
-    return []
-
-def get_source_files(wildcards):
+def get_source_files(wildcards):#{{{
     """Make sure the source files for a sample are available.
 
     When they need to be obtained from archive or dcache (as indicated by the prefix 'archive:' or 'dcache:'), 
@@ -89,15 +81,18 @@ def get_source_files(wildcards):
         if f.startswith('archive:'):
             if not archive_retrieve_add:
                 files.append(ancient(pj(SOURCEDIR, wildcards['sample'] + '.archive_retrieved')))
+                files.append(ancient(pj(SOURCEDIR, wildcards['sample'] + '.data')))
                 archive_retrieve_add = True
         elif f.startswith('dcache:'):
             if not archive_retrieve_add:
                 files.append(ancient(pj(SOURCEDIR, wildcards['sample'] + '.dcache_retrieved')))
+                files.append(ancient(pj(SOURCEDIR, wildcards['sample'] + '.data')))
                 archive_retrieve_add = True
         else:
             files.append(f)
 
     return files
+#}}}
 
 checkpoint get_readgroups:
     """Get the readgroup info for a sample.
@@ -116,7 +111,7 @@ checkpoint get_readgroups:
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         if sample['from_external']:
-            prefixpath = SOURCEDIR # location where the data is downloaded from the external data repository
+            prefixpath = pj(SOURCEDIR, wildcards['sample'] + '.data') # location where the data is downloaded from the external data repository
         else:
             prefixpath = sample['prefix']               
         sample,warnings = read_samples.get_readgroups(sample, prefixpath)
@@ -162,7 +157,7 @@ rule archive_get:
         shell("dmget -a " + archive_files)
         shell("touch {output}")
 
-def retrieve_batch(wildcards):
+def retrieve_batch(wildcards):#{{{
     """For a sample, determines which batch needs to be retrieved from tape."""
 
     sample = SAMPLEINFO[wildcards['sample']]
@@ -171,15 +166,16 @@ def retrieve_batch(wildcards):
     if sample['from_external']:
         #batch has format <protocol>_<batchnr>  (e.g. 'archive_0')
         if batch is None:
-            # sample is not assigned to a batch, this should generate an error
+            # sample is not assigned to a batch, this non-existing file should generate an error
             return ancient(pj(FETCHDIR, wildcards['sample'] + ".finished_samples_not_assigned_to_retrieval_batch"))
         else:
             return ancient(pj(FETCHDIR, os.path.basename(sample['samplefile'])+ f".{batch}.retrieved"))
 
     else:
         return []
+#}}}
 
-def calculate_active_use(wildcards):
+def calculate_active_use(wildcards):#{{{
     """Calculate the amount of active storage that will be used by this sample."""
 
     sample = SAMPLEINFO[wildcards['sample']]
@@ -194,13 +190,15 @@ def calculate_active_use(wildcards):
     else:
         res += 2.0 * active_filesize
     return res
-    
+    #}}}
+
 rule start_sample:
     """Start processing a sample. 
     
     This rule can only start if the batch to which the sample belongs has been retrieved from tape.
     This rule will reserve the space on active storage.
     
+    Rule 'finished_sample' in Snakefile will free the active storage space.
     """
     input:
         retrieve_batch
@@ -227,14 +225,15 @@ rule archive_to_active:
     resources:
         arch_use_remove=lambda wildcards: SAMPLEINFO[wildcards['sample']]['filesize'],
         partition="archive",
-        n="1",
+        n="0.5",
         mem_mb=50
     output:
-        temp(pj(SOURCEDIR, "{sample}.archive_retrieved"))
+        flag=temp(pj(SOURCEDIR, "{sample}.archive_retrieved")),
+        fpath=temp(directory(pj(SOURCEDIR, "{sample}.data")))
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         prefixpath = sample['prefix']
-        destinationpath = os.path.dirname(str(output))
+        destinationpath = str(output.fpath)
         files1 = sample['file1']
         files2 = sample['file2']
         for e in itertools.chain(files1,files2):
@@ -252,12 +251,12 @@ rule archive_to_active:
             """)
                 
         shell("""
-            touch {output}
+            touch {output.flag}
         """)
         
 
 
-def get_cram_ref(wildcards):
+def get_cram_ref(wildcards):#{{{
     """utility function to get cram reference file option for samtools
     the read_samples utility checks that this filename is set if the file type is cram
 
@@ -276,9 +275,9 @@ def get_cram_ref(wildcards):
     else:
         cram_options = ''
     return cram_options
+#}}}
 
-
-def get_source_aligned_file(wildcards): 
+def get_source_aligned_file(wildcards): #{{{
     """utility function to get the path to the source file for a sample.
 
     Takes the wildcard filename and looks up the path to that filename in the sampleinfo dictionary.
@@ -295,8 +294,24 @@ def get_source_aligned_file(wildcards):
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']][0]
 
     return readgroup['file']
+#}}}
 
-def get_mem_mb_split_alignments(wildcards, attempt):
+def ensure_data_folder(wildcards):#{{{
+    """Checks that if the source file is on tape, it has been retrieved, and the data folder exists.
+    Note that we usually do not need the path as it is available in the readgroup dictionary. 
+    However, snakemake only know about the data folder, and therefore would otherwise delete the folder
+    when it determines no job needs it anymore.
+    """
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    
+    if sinfo['from_external']:
+        return [ancient(pj(SOURCEDIR, wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')), 
+                ancient(pj(SOURCEDIR, wildcards['sample'] + '.data'))]
+    else:
+        return []
+#}}}
+
+def get_mem_mb_split_alignments(wildcards, attempt):#{{{
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroups_b = sinfo['readgroups']
     if len(readgroups_b) <= 1:
@@ -304,6 +319,7 @@ def get_mem_mb_split_alignments(wildcards, attempt):
     else:
         res = 3000
     return attempt * res
+#}}}
 
 rule split_alignments_by_readgroup:
     """Split a sample bam/cram file into multiple readgroups.
@@ -313,7 +329,8 @@ rule split_alignments_by_readgroup:
     """
     input:
         get_source_aligned_file,
-        ancient(pj(SOURCEDIR, "{sample}.started"))
+        ancient(pj(SOURCEDIR, "{sample}.started")),
+        ensure_data_folder
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.        
         readgroups=temp(directory(pj(READGROUPS, "{sample}.sourcefile.{filename}")))
@@ -357,7 +374,7 @@ rule split_alignments_by_readgroup:
 
 
 
-def get_aligned_readgroup_folder(wildcards):
+def get_aligned_readgroup_folder(wildcards):#{{{
     """Utility function to get the path to the folder containing the readgroup files for a sample.
     
     This is the READGROUPS/<sample>_<sourcefilename> folder.
@@ -367,15 +384,16 @@ def get_aligned_readgroup_folder(wildcards):
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
     folder = pj(READGROUPS, wildcards['sample'] + '.sourcefile.' + sfile)
     return folder
+#}}}
 
-def get_extension(wildcards):
+def get_extension(wildcards):#{{{
     """Utility function to get the extension of the input file for a sample (bam/cram)."""
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     res =  os.path.splitext(readgroup['file'])[1][1:].lower()
     
     return res
-
+#}}}
 
 
 rule external_alignments_to_fastq:
@@ -431,7 +449,7 @@ rule fastq_bz2togz:
 
 
 
-def get_fastqpaired(wildcards):
+def get_fastqpaired(wildcards):#{{{
     """Utility function to get the path to the fastq files for a sample."""
     
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
@@ -445,11 +463,16 @@ def get_fastqpaired(wildcards):
         file2 = readgroup['file2']
         if file2.endswith('.bz2'):
             file2 = file2[:-4] + '.gz'
-    else:    
+        files = [file1,file2]
+        if sinfo['from_external']: #ensure the data folder is available if this data is retrieved from tape.
+            files = files + [ancient(pj(SOURCEDIR, wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')), 
+                            ancient(pj(SOURCEDIR, wildcards['sample'] + '.data'))]
+           
+    else: #source file is a bam /cram file. We will extract fastq files with the following names: 
         file1 = FQ + f"/{wildcards['sample']}.{wildcards['readgroup']}_R1.fastq.gz"
         file2 = FQ + f"/{wildcards['sample']}.{wildcards['readgroup']}_R2.fastq.gz"
     return [file1, file2]
-
+#}}}
 
 rule adapter_removal:
     """Remove adapters from fastq files."""
@@ -494,7 +517,7 @@ rule adapter_removal_identify:
 		"""
 
 
-def get_readgroup_params(wildcards):
+def get_readgroup_params(wildcards):#{{{
     """Utility function to get the readgroup params for a sample.
        Fills in missing values with 'unknown' to avoid errors in downstream tools.
     """
@@ -505,19 +528,18 @@ def get_readgroup_params(wildcards):
     return {'ID': res['ID'], 'LB': res.get('LB','unknown'), 'PL': res.get('PL','unknown'),
             'PU': res.get('PU','unknown'), \
             'CN': res.get('CN','unknown'), 'DT': res.get('DT','unknown')}
+#}}}
 
-
-
-def get_mem_mb_kmer_reads(wildcards, attempt):
+def get_mem_mb_kmer_reads(wildcards, attempt):#{{{
     """Utility function to get the memory for the align_reads rule.
 
     """
     MEM_DEFAULT_USAGE =36000
     return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
+#}}}
 
-
-def get_all_prepared_fastq(wildcards):
-    """Utility function to get the path to the (adapter-removed) fastq files for a sample."""
+def get_all_prepared_fastq(wildcards):#{{{
+    """Utility function to get the path to all (adapter-removed) fastq files for a sample (for all readgroups)."""
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroups_b = sinfo['readgroups']
     files = []
@@ -525,7 +547,7 @@ def get_all_prepared_fastq(wildcards):
         files.append(pj(FQ, wildcards['sample'] + '.' + readgroup['info']['ID'] + '.fastq.cut_1.fq.gz'))
         files.append(pj(FQ, wildcards['sample'] + '.' + readgroup['info']['ID'] + '.fastq.cut_2.fq.gz'))
     return files
-
+#}}}
 
 rule kmer_reads:
     input:
@@ -533,7 +555,7 @@ rule kmer_reads:
     output:
         out1=temp(pj(KMER,"{sample}.kmc_pre")),
         out2=temp(pj(KMER,"{sample}.kmc_suf")),
-        lst=pj(KMER,"{sample}.lst")
+        lst=temp(pj(KMER,"{sample}.lst"))
     params:
         tmpdir = pj(tmpdir, "kmer_{sample}"),
         kmerdir=KMER
@@ -616,13 +638,13 @@ rule kmer_reads:
 #        shell("kmc_tools complex {output.conf}")
 
 
-def get_mem_mb_validated_sex(wildcards, attempt):
+def get_mem_mb_validated_sex(wildcards, attempt):#{{{
     """Utility function to get the memory for the align_reads rule.
 
     """
     res = 9000 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 4500
     return (attempt - 1) * 0.5 * res + res
-
+#}}}
 rule get_validated_sex:
     input:
        out1=pj(KMER,"{sample}.kmc_pre"),
@@ -672,28 +694,29 @@ rule get_validated_sex:
 # use dragmap aligner
 # samtools fixmate for future step with samtools mark duplicates
 
-def get_mem_mb_align_reads(wildcards, attempt):
+def get_mem_mb_align_reads(wildcards, attempt):#{{{
     """Utility function to get the memory for the align_reads rule.
 
     """
     MEM_DEFAULT_USAGE = 38000
     return (attempt - 1) * 0.25 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
+#}}}
 
-def get_prepared_fastq(wildcards):
+def get_prepared_fastq(wildcards):#{{{
     """Utility function to get the path to the (adapter-removed) fastq files for a sample."""
     file1 = pj(FQ, wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_1.fq.gz')
     file2 = pj(FQ, wildcards['sample'] + '.' + wildcards['readgroup'] + '.fastq.cut_2.fq.gz')
     return [file1,file2]
+#}}}
 
 rule align_reads:
     """Align reads to reference genome."""
     """Align reads to reference genome."""
     input:
         fastq=get_prepared_fastq,
-        rg=ensure_readgroup_info,
         validated_sex=rules.get_validated_sex.output.yaml
     output:
-        bam=pj(BAM,"{sample}.{readgroup}.aligned.bam")
+        bam=temp(pj(BAM,"{sample}.{readgroup}.aligned.bam"))
     params:
         ref_dir=get_refdir_by_validated_sex,
         dragmap=pj(SOFTWARE,dragmap),
@@ -720,7 +743,7 @@ rule merge_bam_alignment:
         bam=rules.align_reads.output.bam,
         stats=rules.adapter_removal_identify.output.stats
     output:
-        bam=pj(BAM,"{sample}.{readgroup}.merged.bam"),
+        bam=temp(pj(BAM,"{sample}.{readgroup}.merged.bam")),
         badmap_fastq1=pj(FQ,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
         badmap_fastq2=pj(FQ,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
         stats=ensure(pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"), non_empty=True)
@@ -732,7 +755,7 @@ rule merge_bam_alignment:
         bam_merge=srcdir(BAMMERGE)
     resources: 
         n = "1.5",
-        mem_mb = lambda wildcards, attempt: attempt * 4500
+        mem_mb = lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else attempt * 4500
     priority: 15
     shell:
         """
@@ -751,7 +774,7 @@ rule dechimer:
         bam=rules.merge_bam_alignment.output.bam,
         stats=rules.merge_bam_alignment.output.stats
     output:
-        bam=pj(BAM,"{sample}.{readgroup}.dechimer.bam"),
+        bam=temp(pj(BAM,"{sample}.{readgroup}.dechimer.bam")),
         stats=pj(STAT,"{sample}.{readgroup}.dechimer_stats.tsv")
     priority: 16
     benchmark:
@@ -759,7 +782,7 @@ rule dechimer:
     params:
         dechimer=srcdir(DECHIMER)
     resources:
-        n="1.4", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
+        n="1.5", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
         mem_mb=275
     conda: CONDA_PYPY        
     run:
@@ -786,8 +809,8 @@ rule sort_bam_alignment:
     input:
         in_bam=rules.dechimer.output.bam
     output:
-        bam = pj(BAM,"{sample}.{readgroup}.sorted.bam"),
-        bai = pj(BAM,"{sample}.{readgroup}.sorted.bam.bai")
+        bam = temp(pj(BAM,"{sample}.{readgroup}.sorted.bam")),
+        bai = temp(pj(BAM,"{sample}.{readgroup}.sorted.bam.bai"))
     conda: CONDA_MAIN
     log:
         samtools_sort=pj(LOG,"{sample}.{readgroup}.samtools_sort.log"),
@@ -800,7 +823,7 @@ rule sort_bam_alignment:
         mem_mb = 13000
     params:
         temp_sort=pj("sort_temporary_{sample}_{readgroup}"),
-        memory_per_core= lambda wildcards, resources: int(((resources['mem_mb'] - 3000) / float(resources['n'])))        
+        memory_per_core= 6000
     shell:
         """
             (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M --write-index -o {output.bam}##idx##{output.bai} {input}) 2> {log.samtools_sort}            
@@ -810,7 +833,7 @@ rule sort_bam_alignment:
 
 # # function to get information about readgroups
 # # needed if sample contain more than 1 fastq files
-def get_readgroups_bam(wildcards):
+def get_readgroups_bam(wildcards):#{{{
     """Get sorted bam files for all readgroups for a given sample."""
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroups_b = sinfo['readgroups']
@@ -819,8 +842,9 @@ def get_readgroups_bam(wildcards):
     for readgroup in readgroups_b:
         files.append(pj(BAM,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam'))
     return files
+#}}}
 
-def get_readgroups_bai(wildcards):
+def get_readgroups_bai(wildcards):#{{{
     """Get sorted bam index files for all readgroups for a given sample."""
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroups_b = sinfo['readgroups']
@@ -828,6 +852,7 @@ def get_readgroups_bai(wildcards):
     for readgroup in readgroups_b:
         files.append(pj(BAM,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.sorted.bam.bai'))
     return files
+#}}}
 
 # merge different readgroups bam files for same sample
 rule merge_rgs:
@@ -837,7 +862,7 @@ rule merge_rgs:
         bam = get_readgroups_bam,
         bai = get_readgroups_bai,
     output:
-        mer_bam=pj(BAM,"{sample}.merged.bam")
+        mer_bam=temp(pj(BAM,"{sample}.merged.bam"))
     log: pj(LOG,"{sample}.mergereadgroups.log")
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     resources:
@@ -854,7 +879,7 @@ rule merge_rgs:
             cmd = "cp {input.bam} {output}"
             shell(cmd)
 
-def get_badmap_fastq(wildcards):
+def get_badmap_fastq(wildcards):#{{{
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
     readgroups_b = sinfo['readgroups']
     files = []
@@ -862,7 +887,7 @@ def get_badmap_fastq(wildcards):
     for readgroup in readgroups_b:
         files.append(pj(FQ,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.badmap_' + wildcards['readid'] + '.fastq.gz'))
     return files
-
+#}}}
 
 
 rule merge_rgs_badmap:
@@ -881,11 +906,11 @@ rule merge_rgs_badmap:
         """
 
 
-def get_mem_mb_markdup(wildcards, attempt):
+def get_mem_mb_markdup(wildcards, attempt):#{{{
     res = 1500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 150
     #large range of memory usage for markdup
     return (attempt -1) * res * 3 + res
-
+#}}}
 
 rule markdup:
     """Mark duplicates using samtools markdup."""
@@ -922,11 +947,11 @@ rule mCRAM:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        cram=pj(CRAM,"{sample}.mapped_hg38.cram"),
-        crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai")
+        cram=temp(pj(CRAM,"{sample}.mapped_hg38.cram")),
+        crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
     resources:
         n="2",
-        mem_mb=1250
+        mem_mb=1000
     benchmark: pj(BENCH,'{sample}.mCRAM.txt')
     priority: 30
     conda: CONDA_MAIN

@@ -106,14 +106,14 @@ if end_point == "gVCF":
                 pj(GVCF, "{sample}.done"),
                 pj(DEEPVARIANT, "{sample}.done"),
                 pj(STAT, "{sample}.done"),
-                pj(KRAKEN, "{sample}.report.tsv")
+                pj(KRAKEN, "{sample}.bracken_report.tsv")
 
             output:
                 pj(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
-                n=1
+                n="1"
             shell: """
                 touch {output}
                 """
@@ -133,13 +133,13 @@ if end_point == "gVCF":
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
                 pj(GVCF, "{sample}.done"),
                 pj(STAT, "{sample}.done"),
-                pj(KRAKEN, "{sample}.report.tsv")
+                pj(KRAKEN, "{sample}.bracken_report.tsv")
             output:
                 pj(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
-                n=1
+                n="1"
             shell: """
                 touch {output}
                 """
@@ -160,13 +160,13 @@ if end_point == "gVCF":
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),                
                 pj(DEEPVARIANT, "{sample}.done"),
                 pj(STAT, "{sample}.done"),
-                pj(KRAKEN, "{sample}.report.tsv")
+                pj(KRAKEN, "{sample}.bracken_report.tsv")
             output:
                 pj(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
-                n=1
+                n="1"
             shell: """
                 touch {output}
                 """

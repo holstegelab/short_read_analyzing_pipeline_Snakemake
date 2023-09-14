@@ -24,10 +24,10 @@ rule DeepVariant_all:
     default_target: True
 
 
-def get_deepvariant_files(wildcards):
+def get_deepvariant_files(wildcards):#{{{
     sample = wildcards['sample']
     regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
-    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.g.vcf.gz') for region in regions if not region.endswith('H')]
+    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.g.vcf.gz') for region in regions if not region.endswith('H')]#}}}
 
 rule deepvariant_sample_done:
     input:
@@ -36,23 +36,23 @@ rule deepvariant_sample_done:
         touch(pj(DEEPVARIANT, "{sample}.done"))
     resources:
         mem_mb = 100,
-        n = 1
+        n = "1.0"
 
 
 
-def get_sequencing_mode(wildcards):
-    return "WGS" if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else "WES"
+def get_sequencing_mode(wildcards):#{{{
+    return "WGS" if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else "WES"#}}}
 
-def get_mem_mb_deepvariant(wildcards, attempt):
+def get_mem_mb_deepvariant(wildcards, attempt):#{{{
     res = 3500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 3000
-    return (attempt - 1) * 0.5 * res + res
+    return (attempt - 1) * 0.5 * res + res#}}}
 
 
-def region_to_bed_file(wildcards):
+def region_to_bed_file(wildcards):#{{{
     """Converts a region to a bed file location (see common.py and Tools.smk)"""
     sample = wildcards['sample']
     region = wildcards['region']
-    return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='bed')
+    return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='bed')#}}}
 
 rule deepvariant:
     input:
@@ -74,7 +74,7 @@ rule deepvariant:
     resources:
         n="1.5", #set in profile using singularity-args. Waiting for rule-specific args. 
         nshards=2,
-        mem_mb=get_mem_mb_deepvariant,
+        mem_mb=get_mem_mb_deepvariant
     log: pj(LOG,"{sample}.{region}.wholedeepvariant.log")
     shell:
         """
@@ -102,7 +102,7 @@ rule DVWhatshapPhasingMerge:
     params:
         merge_script=srcdir(MERGEPHASE)
     resources: 
-        n=1,
+        n="1.0",
         mem_mb = 600
     conda: CONDA_VCF
     shell: """

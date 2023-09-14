@@ -653,8 +653,11 @@ def load_samplefiles(filedir, cache):
                         #check if sample is already retrieved
                         info['need_retrieval'] = True
                         filesize = info['filesize']
-                        
-                        if os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.retrieved')) or \
+
+                        archive_retrieved = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.archive_retrieved'))
+                        dcache_retrieved = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.dcache_retrieved'))
+
+                        if (archive_retrieved or dcache_retrieved) or \
                             os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.finished')):
                             info['need_retrieval'] = False
                             filesize=0

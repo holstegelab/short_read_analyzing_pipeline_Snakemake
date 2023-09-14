@@ -12,7 +12,7 @@ module Aligner:
     config: config
 use rule * from Aligner
 
-def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
+def sampleinfo(SAMPLEINFO, sample, checkpoint=False):#{{{
     """If samples are on tape, we do not have sample readgroup info.
     That is, the 'readgroups' field is empty.
 
@@ -35,9 +35,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):
         sinfo['readgroups'] = xsample['readgroups']
         sinfo['alternative_names'] = sinfo.get('alternative_names',set()).union(xsample['alternative_names'])
         SAMPLEINFO[sample] = sinfo
-    return sinfo
-
-
+    return sinfo#}}}
 
 module Tools:
     snakefile: 'Tools.smk'
@@ -73,7 +71,7 @@ rule stat_sample_done:
     output:
         cram = touch(pj(STAT, "{sample}.done"))    
     resources:
-        n=1,
+        n="0.1",
         mem_mb=50        
 
 
@@ -103,15 +101,15 @@ rule coverage:
             mosdepth  --threads 2 -b {params.bed} --no-per-base {params.prefix} {input.bam}
         """
 
-def get_regions(wildcards):
+def get_regions(wildcards):#{{{
     samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
     samples.sort()
-    return [pj(STAT, 'cov', '{sample}.regions.bed.gz'.format(sample=sample)) for sample in samples]
+    return [pj(STAT, 'cov', '{sample}.regions.bed.gz'.format(sample=sample)) for sample in samples]#}}}
 
-def get_stats_samtools(wildcards):
+def get_stats_samtools(wildcards):#{{{
     samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
     samples.sort()
-    return [pj(STAT, '{sample}.samtools.stat'.format(sample=sample)) for sample in samples]
+    return [pj(STAT, '{sample}.samtools.stat'.format(sample=sample)) for sample in samples]#}}}
 
 rule gather_coverage:
     input:
@@ -120,7 +118,7 @@ rule gather_coverage:
     output:
         hdf5=pj('{samplefile}.coverage.hdf5')
     resources:
-        n=1,
+        n="1.0",
         mem_mb=500 
     run:
         samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
@@ -130,12 +128,10 @@ rule gather_coverage:
         read_stats.write_coverage_to_hdf5(annotation, samples, list(input.mapped), list(input.cov), output.hdf5)
 
 
-def get_svd(wildcards):
+def get_svd(wildcards):#{{{
     """Returns the VerifyBamID SVD file for the sample type of the sample"""
     sinfo = SAMPLEINFO[wildcards['sample']]
-    return VERIFYBAMID_WGS if 'wgs' in sinfo['sample_type'] else VERIFYBAMID_EXOME
-
-
+    return VERIFYBAMID_WGS if 'wgs' in sinfo['sample_type'] else VERIFYBAMID_EXOME#}}}
 
 rule verifybamid:
     """Estimates contamination in a sample using the verifybamid2 tool"""
@@ -154,19 +150,19 @@ rule verifybamid:
         VBID_prefix = pj(STAT, 'contam/{sample}.verifybamid.pca2'),
         SVD = get_svd
     resources:
-        mem_mb=400,
-        n="1.5"
+        mem_mb=300,
+        n="1.4"
     conda: CONDA_VERIFYBAMID
     shell:
         """verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {params.ref} --DisableSanityCheck --NumThread 2 --Output {params.VBID_prefix}"""
 
-def get_capture_kit_interval_list(wildcards):
+def get_capture_kit_interval_list(wildcards):#{{{
     """Returns the capture kit interval list file for the sample type of the sample"""
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         capture_kit = MERGED_CAPTURE_KIT_IVL
     else:
         capture_kit = pj(INTERVALS_DIR, SAMPLEINFO[wildcards['sample']]['capture_kit'] + '.interval_list')
-    return capture_kit
+    return capture_kit#}}}
 
 rule hs_stats:
     """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
@@ -186,9 +182,9 @@ rule hs_stats:
         Q=10,
         #minimum Mapping Quality for a read to contribute cov(default=20)
         MQ=10
-    resources: mem_mb = lambda wildcards, attempt: attempt * 3100,
+    resources: mem_mb = lambda wildcards, attempt: attempt * 2300,
                tmpdir = tmpdir,  
-               n=1            
+               n="1.0"            
     conda: CONDA_VCF               
     shell:
         """gatk  --java-options "-Xmx{resources.mem_mb}M  {DEFAULT_JAVA_OPTIONS}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
@@ -217,9 +213,10 @@ rule Artifact_stats:
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
         out = pj(STAT, "{sample}")
-    resources: mem_mb = lambda wildcards, attempt: attempt * 2750,
-                tmpdir= tmpdir,
-                n=1
+    resources: 
+        mem_mb = lambda wildcards, attempt: attempt * 2750,
+        tmpdir= tmpdir,
+        n="0.9"
     conda: CONDA_VCF
     shell:
         """gatk --java-options "-Xmx{resources.mem_mb}M {DEFAULT_JAVA_OPTIONS}" CollectSequencingArtifactMetrics  --TMP_DIR {resources.tmpdir} -I {input.bam} -O {params.out} \
@@ -242,7 +239,7 @@ rule OXOG_metrics:
     resources:
         mem_mb = lambda wildcards, attempt: attempt * 2500,
         tmpdir= tmpdir,
-        n=1
+        n="1.0"
     conda: CONDA_VCF
     shell:
        """gatk  --java-options "-Xmx{resources.mem_mb}M {DEFAULT_JAVA_OPTIONS}" CollectOxoGMetrics -I {input.bam} -O {output} -R {params.ref} \
@@ -259,17 +256,17 @@ rule samtools_stat:
     benchmark: pj(BENCH, "samtools_stat_{sample}.txt")
     resources:
         mem_mb=130,
-        n=1
+        n="1.0"
     conda: CONDA_MAIN        
     params:
             ref=get_ref_by_validated_sex
     shell:
-        "samtools stat -@ {resources.n} -r {params.ref} {input.bam} > {output}"
+        "samtools stat -@ {resources.n} -r {params.ref} -d -p {input.bam} > {output}"
 
 
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
-def get_capture_kit_bed(wildcards):
+def get_capture_kit_bed(wildcards):#{{{
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         capture_kit = MERGED_CAPTURE_KIT_BED
     elif SAMPLEINFO[wildcards['sample']]['capture_kit'] == '':
@@ -277,7 +274,7 @@ def get_capture_kit_bed(wildcards):
     else:
         capture_kit = SAMPLEINFO[wildcards['sample']]['capture_kit'] + '.bed'
 
-    return pj(INTERVALS_DIR, capture_kit)
+    return pj(INTERVALS_DIR, capture_kit)#}}}
     
 rule samtools_stat_exome:
     input:
@@ -293,10 +290,10 @@ rule samtools_stat_exome:
     benchmark: pj(BENCH,"samtools_stat_exome_{sample}.txt")
     resources:
         mem_mb=130,
-        n=1
+        n="1.0"
     conda: CONDA_MAIN
     shell:
-        "samtools stat -@ {resources.n} -t {params.bed_interval} -r {params.ref} {input.bam} > {output}"
+        "samtools stat -@ {resources.n} -t {params.bed_interval} -d -p -r {params.ref} {input.bam} > {output}"
 
 rule bamstats_all:
     input:
@@ -312,8 +309,8 @@ rule bamstats_all:
     params:
         py_stats = srcdir(BAMSTATS)
     resources:
-        mem_mb=150,
-        n=1        
+        mem_mb=250,
+        n="1.0"      
     conda: CONDA_PYPY
     shell:
         "samtools view -s 0.05 -h {input.bam} --threads {resources.n}  | pypy {params.py_stats} stats > {output}"
@@ -326,8 +323,8 @@ rule bamstats_exome:
         All_exome_stats = ensure(pj(STAT, '{sample}.bam_exome.tsv'),  non_empty=True)
     benchmark: pj(BENCH,"bamstats_exome_{sample}.txt")   
     resources:
-        mem_mb=150,
-        n=1
+        mem_mb=250,
+        n="1.0"
     params:
         py_stats = srcdir(BAMSTATS),
         bed_interval= get_capture_kit_bed,
@@ -336,9 +333,10 @@ rule bamstats_exome:
         "samtools view -s 0.05 -h {input.bam} --threads {resources.n} -L {params.bed_interval} | pypy {params.py_stats} stats > {output}"
 
 
-def get_quality_stats(wildcards):
+def get_quality_stats(wildcards):#{{{
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     return [pj(STAT, f'{sample}.done') for sample in sampleinfo.keys()]
+#}}}
 
 rule gatherstats:
     # keep in mind, that samtools_stat create file even if it it's finished with error or you force to stop it
@@ -350,7 +348,7 @@ rule gatherstats:
     output:
         '{samplefile}.bam_quality.tab'
     resources:
-        n=1,
+        n="1.0",
         mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
@@ -377,7 +375,7 @@ rule gather_rg_stats:
     output:
         '{samplefile}.bam_rg_quality.tab'
     resources:
-        n=1,
+        n="1",
         mem_mb=1000
     run:
         smsinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
@@ -399,10 +397,9 @@ rule gather_rg_stats:
         read_stats.write_tsv(str(output),header,data)
 
 
-def get_oxo_stats(wildcards):
+def get_oxo_stats(wildcards):#{{{
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
-    return [pj(STAT, f'{sample}.done') for sample in sampleinfo.keys()]
-
+    return [pj(STAT, f'{sample}.done') for sample in sampleinfo.keys()]#}}}
 
 rule gatheroxostats:
     input:
@@ -411,7 +408,7 @@ rule gatheroxostats:
         '{samplefile}.oxo_quality.tab'
     benchmark: pj(BENCH,"{samplefile}_gatherOXOstat.txt")
     resources:
-        n=1,
+        n="1",
         mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
@@ -427,9 +424,10 @@ rule gatheroxostats:
         read_stats.write_tsv(str(output),header,data)
 
 
-def get_sex_stats(wildcards):
+def get_sex_stats(wildcards):#{{{
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     return [pj(KMER, f'{sample}.result.yaml') for sample in sampleinfo.keys()]
+#}}}
 
 rule gathersexstats:
     input:
@@ -438,7 +436,7 @@ rule gathersexstats:
     output:
         '{samplefile}.sex_chrom.tab'
     resources:
-        n=1,
+        n="1",
         mem_mb=1000
     run:
         sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]

@@ -26,11 +26,26 @@ rule kraken:
         read_cls=pj(KRAKEN, "{sample}.read_classification.tsv")
     conda: CONDA_KRAKEN
     resources:
-        n="8",
-        mem_mb=80000
+        n="1",
+        mem_mb=65000
     shell: """
-        kraken2 --db {KRAKEN_DB} --threads {resources.n} --report {output.report} --output {output.read_cls} --paired {input.fastq1} {input.fastq2}
+        kraken2 --db {KRAKEN_DB} --threads 8 --report-minimizer-data --report {output.report} --output {output.read_cls} --paired {input.fastq1} {input.fastq2}
     """
+
+
+rule bracken:
+    input:
+        report=pj(KRAKEN, "{sample}.report.tsv")
+    output:
+        report=pj(KRAKEN, "{sample}.bracken_report.tsv")
+    resources:
+        n="1",
+        mem_mb="100"
+    conda: CONDA_KRAKEN
+    shell:
+        """
+            bracken -d {KRAKEN_DB} -i {input.report} -o {output.report}
+        """
 
 rule viralmap:
     input:

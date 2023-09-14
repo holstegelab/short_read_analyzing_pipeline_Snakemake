@@ -3,10 +3,10 @@ import getpass
 
 #parameters
 pj = os.path.join
-RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res/'
+RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res_v2/'
 
 #region files
-INTERVALS_DIR = pj(RESOURCES,'intervals_v2')
+INTERVALS_DIR = pj(RESOURCES,'intervals')
 MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'merged_capture_kits_cds.bed')
 MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'merged_capture_kits_cds.interval_list')
 TARGETS_BED = pj(INTERVALS_DIR,'gencode_43_cds.bed')
@@ -26,12 +26,12 @@ CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
 
-#OUTPUT FOLDERS
-SOURCEDIR= 'source'
-SAMPLEINFODIR= 'sampleinfo'
-FETCHDIR= 'fetch'
-LOG= 'logs'
-BENCH= 'benchmark'
+#OUTPUT FOLDERS 
+SOURCEDIR= 'source' 
+SAMPLEINFODIR= 'sampleinfo' 
+FETCHDIR= 'fetch' 
+LOG= 'logs' 
+BENCH= 'benchmark' 
 BAM= 'bams'
 GVCF= 'gvcf'
 VCF= 'vcfs'
@@ -60,7 +60,7 @@ dragmap= 'dragen-os'
 verifybamid2= 'verifybamid2'
 
 #custom scripts (encapsulate in srcdir())
-BAMMERGE= 'scripts/bam_merge.py'
+BAMMERGE= 'scripts/bam_merge.py' 
 BAMSTATS= 'scripts/bam_stats.py'
 DECHIMER= 'scripts/bam_dechimer.py'
 DECHIMER_THRESHOLD= 0.005
@@ -74,8 +74,8 @@ KMER_CHRM= pj(RESOURCES,'kmer_sex/k32.chrM.diff')
 KMER_AUTO= pj(RESOURCES,'kmer_sex/k32.auto.diff')
 
 #path to ref and add ref files
-REF =  pj(RESOURCES, 'Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa')
-REF_DIR = pj(RESOURCES, 'Ref')
+REF =  pj(RESOURCES, 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.fa')
+REF_DIR = pj(RESOURCES, 'hg38_phix')
 
 SHIFTED_MT= pj(RESOURCES,'MT_ref_shifted')
 SHIFTED_MT_fa= pj(RESOURCES,'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.fasta')
@@ -87,30 +87,27 @@ ORIG_MT_dict= pj(RESOURCES,'MT_ref/chrM_hg38.dict')
 ORIG_MT_fai= pj(RESOURCES,'MT_ref/chrM_hg38.fasta.fai')
 ORIG_MT= pj(RESOURCES,'MT_ref')
 
-mask_bed= 'Ref_PhiX_Male/hg38_alt_mask.male.bed'
-str_ref= 'Ref_PhiX_Male/GRCh38.str.zip'
+str_ref= 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.str.zip'
 
-REF_FEMALE = pj(RESOURCES, 'Ref_PhiX_Female/GRCh38_full_analysis_set_plus_decoy_hla.fa')
-REF_FEMALE_DIR = pj(RESOURCES, 'Ref_PhiX_Female/')
-REF_FEMALE_BED = pj(RESOURCES, 'Ref_PhiX_Female/hg38_alt_mask.female.bed')
-REF_FEMALE_STR = pj(RESOURCES, 'Ref_PhiX_Female/GRCh38_full_analysis_set_plus_decoy_hla.str.zip')
-REF_FEMALE_DICT = pj(RESOURCES, 'Ref_PhiX_Female/GRCh38_full_analysis_set_plus_decoy_hla.dict')
-MASK_FEMALE_BED = pj(RESOURCES, 'Ref_PhiX_Female/hg38_alt_mask.female.bed')
-REF_FEMALE_HASH = pj(RESOURCES, 'Ref_PhiX_Female/hash_table.cfg')
-REF_FEMALE_FAI = pj(RESOURCES, 'Ref_PhiX_Female/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai')
+REF_FEMALE = REF
+REF_FEMALE_DIR = pj(RESOURCES, 'hg38_phix/female/')
+REF_FEMALE_STR = pj(RESOURCES, str_ref)
+REF_FEMALE_DICT = pj(RESOURCES, 'hg38_phix/female/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.dict')
+REF_FEMALE_BED = pj(RESOURCES, 'hg38_phix/female/hg38-ht_mask_bed-v3-female.bed')
+REF_FEMALE_HASH = pj(RESOURCES, 'hg38_phix/female/hash_table.cfg')
+REF_FEMALE_FAI = pj(RESOURCES, 'hg38_phix/female/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.fa.fai')
 
-REF_MALE = pj(RESOURCES, 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.fa')
-REF_MALE_DIR = pj(RESOURCES, 'Ref_PhiX_Male/')
-REF_MALE_BED = pj(RESOURCES, 'Ref_PhiX_Male/hg38_alt_mask.male.bed')
-REF_MALE_DICT = pj(RESOURCES, 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.dict')
-MASK_MALE_BED = pj(RESOURCES, 'Ref_PhiX_Male/hg38_alt_mask.male.bed')
-REF_MALE_HASH = pj(RESOURCES, 'Ref_PhiX_Male/hash_table.cfg')
-REF_MALE_STR = pj(RESOURCES, 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.str.zip')
-REF_MALE_FAI = pj(RESOURCES, 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai')
+REF_MALE = REF
+REF_MALE_DIR = pj(RESOURCES, 'hg38_phix/male/')
+REF_MALE_BED = pj(RESOURCES, 'hg38_phix/male/hg38-ht_mask_bed-v3.bed')
+REF_MALE_DICT = pj(RESOURCES, 'hg38_phix/male/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.dict')
+REF_MALE_HASH = pj(RESOURCES, 'hg38_phix/male/hash_table.cfg')
+REF_MALE_STR = pj(RESOURCES, str_ref)
+REF_MALE_FAI = pj(RESOURCES, 'hg38_phix/male/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.fa.fai')
 
 #verifybamid files
-VERIFYBAMID_EXOME = pj(RESOURCES,'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat')
-VERIFYBAMID_WGS = pj(RESOURCES, 'verifybamid_hg38_res/wgs/1000g.phase3.100k.b38.vcf.gz.dat')
+VERIFYBAMID_EXOME = pj(RESOURCES,'verifybamid/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat')
+VERIFYBAMID_WGS = pj(RESOURCES, 'verifybamid/wgs/1000g.phase3.100k.b38.vcf.gz.dat')
 
 # VQSR DBses
 DBSNP = pj(RESOURCES,'databases/HG38_dbSNP_v155_updatesd.vcf.gz')
