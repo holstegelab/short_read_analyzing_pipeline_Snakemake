@@ -4,7 +4,8 @@ import numpy as np
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    # cohorts = "[\d]"
+    cohorts = "[\d]",
+    index = "(\d+)"
     # readgroup="[\w\d_\-@]+"
 
 module Aligner:
@@ -58,6 +59,9 @@ def get_samples_in_group(cohort, hdf5_files = hdf5_files):
     idx = list(range(len(samples)))
     return samples, idx
 
+
+
+
 def get_n_samples_in_group(cohort, hdf5_files = hdf5_files):
     samples_per_cohort = 0
     for hdf5_file in hdf5_files:
@@ -83,7 +87,7 @@ def input_func(wildcards):
     cohort = wildcards['cohort']
     samples_in_group, index = get_samples_in_group(cohort = cohort)
     return expand(
-        '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_{index}_readcounts.hdf5',
+        '{gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5',
         gatk_gcnv=GATK_gCNV,
         cohort=cohort,
         sample=samples_in_group,
@@ -91,22 +95,22 @@ def input_func(wildcards):
         allow_missing=True
     )
 
-def input_bams(wildcards):
-    cohort = wildcards['cohort']
-    samples_in_group, index = get_samples_in_group(cohort = cohort)
-    return expand(
-        '{bam}/{sample}.markdup.bam',
-        bam=BAM,
-        cohort=cohort,
-        sample=samples_in_group,
-        allow_missing=True
-    )
+# def input_bams(wildcards):
+#     cohort = wildcards['cohort']
+#     samples_in_group, index = get_samples_in_group(cohort = cohort)
+#     return expand(
+#         '{bam}/{sample}.markdup.bam',
+#         bam=BAM,
+#         cohort=cohort,
+#         sample=samples_in_group,
+#         allow_missing=True
+#     )
 
 def sample_list_per_cohort(wildcards):
     cohort = wildcards['cohort']
     samples_in_group, index = get_samples_in_group(cohort)
     return expand(
-        ' -I {gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_{index}_readcounts.hdf5 ',
+        ' -I {gatk_gcnv}/Read_counts_hdf5/{cohort}/{sample}_readcounts.hdf5 ',
         gatk_gcnv=GATK_gCNV,
         cohort=cohort,
         sample=samples_in_group,
@@ -134,16 +138,19 @@ rule gCNV_gatk_all:
 
 
 rule collect_read_counts:
-    input: bam = input_bams,
+    input: bam = rules.markdup.output.mdbams,
             # Merged capture kit for test
             capture_kit = MERGED_CAPTURE_KIT_IVL
-    output: ReadCounts = pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_{index}_readcounts.hdf5')
+    output: ReadCounts = pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5')
     params: java = java_cnv,
             gatk = gatk_cnv,
             ref = REF_MALE
+    # wildcard_constraints:
+    #     sample = "|".join(SAMPLE_TO_INDEX.keys()),
+    #     index = "|".join(str(idx) for idx in SAMPLE_TO_INDEX.values())
     conda: CONDA_GATK_CNV
-    log: pj(LOG, '{sample}.{index}.{cohort}.collectreadcounts_gatkcnv.log')
-    benchmark: pj(BENCH, '{sample}.{index}.{cohort}.collectreadcounts_gatkcnv.txt')
+    log: pj(LOG, '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
+    benchmark: pj(BENCH, '{sample}.{cohort}.collectreadcounts_gatkcnv.txt')
     shell: """
             {params.java} -jar {params.gatk} CollectReadCounts -L {input.capture_kit} -R {params.ref} -imr OVERLAPPING_ONLY -I {input.bam} -O {output.ReadCounts} 2> {log}
             """
@@ -180,11 +187,11 @@ rule DetermineGCP:
 
 
 rule GermlineCNVCaller:
-    input: samples = input_func,
+    input:  samples = input_func,
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}', 'scattered.interval_list'),
             contig_ploudi_calls = (pj(GATK_gCNV,  '{cohort}-calls', 'contig_ploidy_prior.tsv')),
     output: models = pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model', 'calling_config.json'),
-            # sample_files = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt'), scatter = scatter_merged_cature_kit, allow_missing = True),
+            # sample_files = pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt')
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -198,7 +205,9 @@ rule GermlineCNVCaller:
 
 rule PostprocessGermlineCNVCalls:
     input:
-         sample_index = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt'), scatter = scatter_merged_cature_kit, allow_missing = True),
+        samples = input_func,
+        models= expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model','calling_config.json'),scatter = scatter_merged_cature_kit, allow_missing = True),
+         # sample_index = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt'), scatter = scatter_merged_cature_kit, allow_missing = True),
     output:
         genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_intervals_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
         genotyped_segments = pj(GATK_gCNV, 'GENOTYPED_CALLS_segments_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
