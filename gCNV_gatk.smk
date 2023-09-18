@@ -141,7 +141,7 @@ rule collect_read_counts:
     input: bam = rules.markdup.output.mdbams,
             # Merged capture kit for test
             capture_kit = MERGED_CAPTURE_KIT_IVL
-    output: ReadCounts = pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5')
+    output: ReadCounts = ensure(pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5'), non_empty=True)
     params: java = java_cnv,
             gatk = gatk_cnv,
             ref = REF_MALE
