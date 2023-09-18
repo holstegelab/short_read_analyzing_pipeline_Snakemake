@@ -68,7 +68,7 @@ samtools= 'samtools'
 bcftools= 'bcftools'
 dragmap= 'dragen-os'
 verifybamid2= 'verifybamid2'
-java_cnv = pj(SOFTWARE, '/java/jdk-17.0.7/bin/java')
+java_cnv = pj(SOFTWARE, 'java/jdk-17.0.7/bin/java')
 gatk_cnv = pj(SOFTWARE, 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.0.0-27-gabe8148-SNAPSHOT-local.jar')
 
 #custom scripts (encapsulate in srcdir())
