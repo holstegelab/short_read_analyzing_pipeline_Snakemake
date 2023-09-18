@@ -149,6 +149,9 @@ rule collect_read_counts:
     #     sample = "|".join(SAMPLE_TO_INDEX.keys()),
     #     index = "|".join(str(idx) for idx in SAMPLE_TO_INDEX.values())
     conda: CONDA_GATK_CNV
+    resources:
+            n = 2,
+            mem_mb = 5500
     log: pj(LOG, '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
     benchmark: pj(BENCH, '{sample}.{cohort}.collectreadcounts_gatkcnv.txt')
     shell: """
