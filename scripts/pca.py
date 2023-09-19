@@ -14,14 +14,14 @@ import utils
 
 group_name = 'coverage'
 #
-# main_chrs = ['chr1:', 'chr2:', 'chr3:',
-#              'chr4:', 'chr5:', 'chr6:',
-#              'chr7:', 'chr8:', 'chr9:',
-#              'chr10:', 'chr11:', 'chr12:',
-#              'chr13:', 'chr14:', 'chr15:',
-#              'chr16:', 'chr17:', 'chr18:',
-#              'chr19:', 'chr20:', 'chr21:',
-#              'chr22:', 'chrX:', 'chrY:']
+main_chrs = ['chr1:', 'chr2:', 'chr3:',
+             'chr4:', 'chr5:', 'chr6:',
+             'chr7:', 'chr8:', 'chr9:',
+             'chr10:', 'chr11:', 'chr12:',
+             'chr13:', 'chr14:', 'chr15:',
+             'chr16:', 'chr17:', 'chr18:',
+             'chr19:', 'chr20:', 'chr21:',
+             'chr22:', 'chrX:', 'chrY:']
 #
 #
 # def load_hdf5_data(sample_file, df, group_name):
@@ -68,13 +68,24 @@ def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 
                 data_group = f[group_name]
                 samples = [s.decode('utf-8') for s in data_group['samples'][()]]
                 sample_names.extend(samples)
+                chrs = data_group['chrom'][()]
+                start = data_group['start'][()]
+                end = data_group['end'][()]
                 cov = data_group['coverage'][:, i:i + batch_size]
+                index = [f"{chrom.decode('utf-8')}:{s}-{e}" for chrom, s, e in zip(chrs, start, end)]
                 bases_mapped = data_group['bases_mapped'][:][:, np.newaxis] / 1000000000.0
                 corrected_cov = cov / bases_mapped
-                batches.append(corrected_cov)
+                temp_df = pd.DataFrame(
+                            columns=samples,
+                            data=corrected_cov.T,
+                            index=index
+                        )
+                temp_filtred = temp_df[temp_df.index.str.startswith(tuple(main_chrs))]
+                df = pd.concat([df, temp_filtred], axis=1)
+                # batches.append(corrected_cov)
 
-        corrected_cov_combined = np.concatenate(tuple(batches), axis=0)
-        ipca.partial_fit(corrected_cov_combined.T)
+        # corrected_cov_combined = np.concatenate(tuple(batches), axis=0)
+        ipca.partial_fit(df)
         components = ipca.components_
         explained_variance_ratio = ipca.explained_variance_ratio_
         cum_expl_var = np.cumsum(explained_variance_ratio)
