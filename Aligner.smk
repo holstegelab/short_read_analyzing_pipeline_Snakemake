@@ -426,8 +426,8 @@ rule external_alignments_to_fastq:
     shell:
         """
             samtools view -@ 2 -u -h {params.cramref} {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\
-            samtools reset -@ 2 -O BAM --no-PG --no-RG --keep-tag OQ  |\
-            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -n  -m {params.memory_per_core}M | \
+            samtools reset -@ 2 --output-fmt BAM,level=0 --no-PG --no-RG --keep-tag OQ  |\
+            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -u -n  -m {params.memory_per_core}M | \
             samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq}
         """
 
