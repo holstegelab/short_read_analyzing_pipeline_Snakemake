@@ -62,15 +62,16 @@ def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 
     i = 0
     while MAX_DELTA > max_delta:
         batches = []  # Reset batches list for each iteration
+        df = pd.DataFrame()
         sample_names = []
         for file in hdf5_files:
             with h5py.File(file, 'r') as f:
                 data_group = f[group_name]
                 samples = [s.decode('utf-8') for s in data_group['samples'][()]]
                 sample_names.extend(samples)
-                chrs = data_group['chrom'][()][:, i:i + batch_size]
-                start = data_group['start'][()][:, i:i + batch_size]
-                end = data_group['end'][()][:, i:i + batch_size]
+                chrs = data_group['chrom'][i:i + batch_size]
+                start = data_group['start'][i:i + batch_size]
+                end = data_group['end'][i:i + batch_size]
                 cov = data_group['coverage'][:, i:i + batch_size]
                 index = [f"{chrom.decode('utf-8')}:{s}-{e}" for chrom, s, e in zip(chrs, start, end)]
                 bases_mapped = data_group['bases_mapped'][:][:, np.newaxis] / 1000000000.0
