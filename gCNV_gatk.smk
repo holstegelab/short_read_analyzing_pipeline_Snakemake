@@ -187,7 +187,7 @@ rule filterintervals:
 rule DetermineGCP:
     input: samples = input_func,
             intervals = pj(GATK_gCNV, 'filtred_intervals', '{cohort}_filtred.interval_list')
-    output: CPC = pj(GATK_gCNV,  '{cohort}-calls', 'contig_ploidy_prior.tsv'),
+    output: CPC = pj(GATK_gCNV,  '{cohort}-model', 'contig_ploidy_prior.tsv'),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
