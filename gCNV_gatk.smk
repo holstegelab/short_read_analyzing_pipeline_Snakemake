@@ -204,7 +204,7 @@ rule DetermineGCP:
 rule GermlineCNVCaller:
     input:  samples = input_func,
             scatters = pj(INTERVALS_DIR, 'scatter_merged_capture_kits_cds', 'temp_{scatter}', 'scattered.interval_list'),
-            contig_ploudi_calls = (pj(GATK_gCNV,  '{cohort}-calls', 'contig_ploidy_prior.tsv')),
+            contig_ploudi_calls = (pj(GATK_gCNV,  '{cohort}-model', 'contig_ploidy_prior.tsv')),
     output: models = pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model', 'calling_config.json'),
             # sample_files = pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt')
     params: inputs = sample_list_per_cohort,
