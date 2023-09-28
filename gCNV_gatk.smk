@@ -153,7 +153,7 @@ rule extract_bams:
 
 
 rule collect_read_counts:
-    input: bam = rules.extract_bams.output.ex_bam,
+    input: bam=rules.markdup.output.mdbams,
             # Merged capture kit for test
             capture_kit = MERGED_CAPTURE_KIT_IVL_CNV
     output: ReadCounts = ensure(pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5'), non_empty=True)
