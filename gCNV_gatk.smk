@@ -144,7 +144,7 @@ rule extract_bams:
         n = 4
     shell:
         """
-        samtools view -@ 3 -L {params.reg} -o {output} {input}
+        samtools view -@ 3 -L {params.reg} -o {output} {input} && samtools index -@ 3 {output}
         """
 
 
