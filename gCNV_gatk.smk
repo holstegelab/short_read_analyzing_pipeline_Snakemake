@@ -137,14 +137,15 @@ rule gCNV_gatk_all:
 
 rule extract_bams:
     input: bam=rules.markdup.output.mdbams,
-    output: ex_bam = temp(pj(GATK_gCNV, 'extracted_bams','{sample}_extract.bam'))
+    output: ex_bam = temp(pj(GATK_gCNV, 'extracted_bams','{sample}_extract.bam')),
+            ex_bai = temp(ensure(pj(GATK_gCNV, 'extracted_bams','{sample}_extract.bai')), non_empty=True)
     conda: CONDA_MAIN
     params: reg = MAIN_CHRS_BED
     resources:
         n = 4
     shell:
         """
-        samtools view -@ 3 -L {params.reg} -o {output} {input} && samtools index -@ 3 {output}
+        samtools view -@ 3 -L {params.reg} -o {output.ex_bam} {input} && samtools index -@ 3 {output.ex_bam}
         """
 
 
