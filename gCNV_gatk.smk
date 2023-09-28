@@ -155,15 +155,15 @@ rule extract_bams:
 rule collect_read_counts:
     input: bam = rules.extract_bams.output.ex_bam,
             # Merged capture kit for test
-            capture_kit = MERGED_CAPTURE_KIT_IVL
+            capture_kit = MERGED_CAPTURE_KIT_IVL_CNV
     output: ReadCounts = ensure(pj(GATK_gCNV, 'Read_counts_hdf5', '{cohort}', '{sample}_readcounts.hdf5'), non_empty=True)
     params: java = java_cnv,
             gatk = gatk_cnv,
             ref = REF_MALE
     conda: CONDA_GATK_CNV
     resources:
-            n = "1.1",
-            mem_mb = 5500
+            n = 1,
+            mem_mb = 5500 # if tool doesn't have enough RAM it ends without error and create corrupted file. Therefore here pretty big RAM (mean usage much lower)
     log: pj(LOG, '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
     benchmark: pj(BENCH, '{sample}.{cohort}.collectreadcounts_gatkcnv.txt')
     shell: """
