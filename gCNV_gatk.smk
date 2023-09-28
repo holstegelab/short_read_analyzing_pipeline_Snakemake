@@ -141,11 +141,13 @@ rule extract_bams:
             ex_bai = temp(ensure(pj(GATK_gCNV, 'extracted_bams','{sample}_extract.bam.bai'), non_empty=True))
     conda: CONDA_MAIN
     params: reg = MAIN_CHRS_BED
+    benchmark: pj(BENCH, '{sample}.extract_bams.txt')
+    log: pj(LOG, '{sample}.extract_bams.log')
     resources:
-        n = 4
+        n = 2
     shell:
         """
-        samtools view -@ 3 -L {params.reg} -o {output.ex_bam} {input} && samtools index -@ 3 {output.ex_bam}
+        samtools view -@ 2 -L {params.reg} -o {output.ex_bam} {input} 2> {log} && samtools index -@ 2 {output.ex_bam} 2>> {log}
         """
 
 
@@ -158,12 +160,9 @@ rule collect_read_counts:
     params: java = java_cnv,
             gatk = gatk_cnv,
             ref = REF_MALE
-    # wildcard_constraints:
-    #     sample = "|".join(SAMPLE_TO_INDEX.keys()),
-    #     index = "|".join(str(idx) for idx in SAMPLE_TO_INDEX.values())
     conda: CONDA_GATK_CNV
     resources:
-            n = 2,
+            n = "1.1",
             mem_mb = 5500
     log: pj(LOG, '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
     benchmark: pj(BENCH, '{sample}.{cohort}.collectreadcounts_gatkcnv.txt')
@@ -234,6 +233,7 @@ rule PostprocessGermlineCNVCalls:
         calls_shrads = expand(' --calls-shard-path GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-calls ',  scatter = scatter_merged_cature_kit, allow_missing = True),
         CPC = (pj(GATK_gCNV,  '{cohort}-calls')),
         SD = REF_MALE_DICT
+    # benchmark: pj(BENCH, )
     shell:
             """
             {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} 
