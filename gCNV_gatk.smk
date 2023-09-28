@@ -128,7 +128,7 @@ rule gCNV_gatk_all:
     input:
         expand('GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-model/calling_config.json',scatter=scatter_merged_cature_kit,cohort=groups),
         expand('GATK_gCNV/filtred_intervals/{cohort}_filtred.interval_list', cohort=groups),
-        expand('GATK_gCNV/{cohort}-calls/contig_ploidy_prior.tsv', cohort = groups),
+        expand('GATK_gCNV/{cohort}-model/contig_ploidy_prior.tsv', cohort = groups),
         paths_output
         # expand('GATK_gCNV/GENOTYPED_CALLS_intervals_{cohort}/COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz')
         # rules.Stat_all.input
