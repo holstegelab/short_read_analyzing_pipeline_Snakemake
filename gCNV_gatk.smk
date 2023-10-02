@@ -213,8 +213,10 @@ rule GermlineCNVCaller:
             capture_kit= pj(INTERVALS_DIR,'preprocessed_intervals_for_GATK_CNV','merged_capture_kits_cds.interval_list'),
             contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls'))
     conda: CONDA_GATK_CNV
+    resources:
+            mem_mb = 10000
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
-    # benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
+    benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell: """
            {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
     """
