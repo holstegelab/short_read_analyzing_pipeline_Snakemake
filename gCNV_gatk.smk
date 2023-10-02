@@ -211,7 +211,7 @@ rule GermlineCNVCaller:
             java = java_cnv,
             gatk = gatk_cnv,
             capture_kit= pj(INTERVALS_DIR,'preprocessed_intervals_for_GATK_CNV','merged_capture_kits_cds.interval_list'),
-            contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-model'))
+            contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls'))
     conda: CONDA_GATK_CNV
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     # benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
