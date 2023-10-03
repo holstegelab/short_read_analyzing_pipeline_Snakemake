@@ -197,7 +197,7 @@ rule DetermineGCP:
             contig_ploydi_priors = PL_PR_TABLE
     conda: CONDA_GATK_CNV
     # log: pj(LOG, '{cohort}.determinecontigploydi.log')
-    # benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
+    benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     shell: """
             {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {wildcards.cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
             """
