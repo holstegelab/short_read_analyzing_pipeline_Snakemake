@@ -121,6 +121,7 @@ REF_MALE_HASH = pj(RESOURCES, 'Ref_PhiX_Male/hash_table.cfg')
 REF_MALE_STR = pj(RESOURCES, 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.str.zip')
 REF_MALE_FAI = pj(RESOURCES, 'Ref_PhiX_Male/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai')
 
+PAR_and_CENTROMERIC = pj(RESOURCES, 'PAR_and_centromeric_regions_hg38.bed')
 #verifybamid files
 VERIFYBAMID_EXOME = pj(RESOURCES,'verifybamid_hg38_res/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat')
 VERIFYBAMID_WGS = pj(RESOURCES, 'verifybamid_hg38_res/wgs/1000g.phase3.100k.b38.vcf.gz.dat')

@@ -176,12 +176,13 @@ rule filterintervals:
     params: inputs = sample_list_per_cohort,
             java= java_cnv,
             gatk=gatk_cnv,
-            capture_kit = pj(INTERVALS_DIR, 'preprocessed_intervals_for_GATK_CNV', 'merged_capture_kits_cds.interval_list' )
+            capture_kit = pj(INTERVALS_DIR, 'preprocessed_intervals_for_GATK_CNV', 'merged_capture_kits_cds.interval_list' ),
+            PAR_and_CENTROMERIC = PAR_and_CENTROMERIC,
     conda: CONDA_GATK_CNV
     log: pj(LOG, '{cohort}.filterintervals_gatkcnv.log')
     benchmark: pj(BENCH, '{cohort}.filterintervals_gatkcnv.txt')
     shell: """
-            {params.java} -jar {params.gatk} FilterIntervals -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} 2> {log}
+            {params.java} -jar {params.gatk} FilterIntervals -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} -XL {params.PAR_and_CENTROMERIC} --extreme-count-filter-percentage-of-samples 100 --low-count-filter-percentage-of-samples 100  2> {log}
             """
 
 rule DetermineGCP:
