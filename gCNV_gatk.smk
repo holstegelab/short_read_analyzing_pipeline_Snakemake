@@ -239,7 +239,7 @@ rule PostprocessGermlineCNVCalls:
         calls_shrads = expand(' --calls-shard-path GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-calls ',  scatter = scatter_merged_cature_kit, allow_missing = True),
         CPC = (pj(GATK_gCNV,  '{cohort}-calls')),
         SD = REF_MALE_DICT,
-        denoised_copy_ratio= pj(GATK_gCNV,'GENOTYPED_CALLS_denoised_copy_ratio_{cohort}','COHORT_{cohort}_SAMPLE_{sample}_{index}')
+        denoised_copy_ratio= pj(GATK_gCNV,'GENOTYPED_CALLS_denoised_copy_ratio_{cohort}','COHORT_{cohort}_SAMPLE_{sample}_{index}.tsv')
     benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
     shell:
             """
