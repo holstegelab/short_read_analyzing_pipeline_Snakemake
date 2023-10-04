@@ -231,7 +231,7 @@ rule PostprocessGermlineCNVCalls:
     output:
         genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_intervals_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
         genotyped_segments = pj(GATK_gCNV, 'GENOTYPED_CALLS_segments_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
-
+    conda: CONDA_GATK_CNV
     params:
         java= java_cnv,
         gatk= gatk_cnv,
