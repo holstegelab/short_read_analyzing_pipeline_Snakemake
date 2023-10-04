@@ -216,7 +216,7 @@ rule GermlineCNVCaller:
             contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls'))
     conda: CONDA_GATK_CNV
     resources:
-            mem_mb = 10000
+            mem_mb = 15000
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell: """
@@ -231,15 +231,17 @@ rule PostprocessGermlineCNVCalls:
     output:
         genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_intervals_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
         genotyped_segments = pj(GATK_gCNV, 'GENOTYPED_CALLS_segments_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
+
     params:
         java= java_cnv,
         gatk= gatk_cnv,
         model_shrads = expand(' --model-shard-path GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-model ',  scatter = scatter_merged_cature_kit, allow_missing = True),
         calls_shrads = expand(' --calls-shard-path GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-calls ',  scatter = scatter_merged_cature_kit, allow_missing = True),
         CPC = (pj(GATK_gCNV,  '{cohort}-calls')),
-        SD = REF_MALE_DICT
-    # benchmark: pj(BENCH, )
+        SD = REF_MALE_DICT,
+        denoised_copy_ratio= pj(GATK_gCNV,'GENOTYPED_CALLS_denoised_copy_ratio_{cohort}','COHORT_{cohort}_SAMPLE_{sample}_{index}')
+    benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
     shell:
             """
-            {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} 
+            {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {params.denoised_copy_ratio}
             """
