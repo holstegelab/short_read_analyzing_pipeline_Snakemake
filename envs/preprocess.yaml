@@ -5,6 +5,7 @@ channels:
 - defaults
 dependencies:
 - samtools=1.17
+- htslib=1.17
 - adapterremoval=2.3.3
 - pigz=2.6
 - bcftools=1.17
@@ -13,7 +14,6 @@ dependencies:
 - cnvkit=0.9.9
 - r-ggplot2=3.3.6
 - python-crypt4gh=1.6
-- htslib
 - python=3.10
 - h5py
 - numpy

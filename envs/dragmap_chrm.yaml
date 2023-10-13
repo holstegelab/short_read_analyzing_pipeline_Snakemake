@@ -5,5 +5,6 @@ channels:
 - defaults
 dependencies:
 - samtools=1.17
+- htslib=1.17
 - dragmap=1.2.1
 name: dragmap

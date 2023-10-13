@@ -13,4 +13,5 @@ dependencies:
   - pypy3.9=7.3.9
   - python=3.9.12
   - samtools=1.17
+  - htslib=1.17
   - swalign=0.3.6
