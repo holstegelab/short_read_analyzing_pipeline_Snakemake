@@ -238,8 +238,7 @@ rule GermlineCNVCaller:
         """
             mkdir -p {params.theano_complie_dir}
             export OMP_NUM_THREADS={resources.n} 
-            THEANO_FLAGS="base_compiledir={params.theano_complie_dir}" 
-            {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
+            {params.java} -jar THEANO_FLAGS="base_compiledir={params.theano_complie_dir}" {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
         """
 
 rule PostprocessGermlineCNVCalls:
