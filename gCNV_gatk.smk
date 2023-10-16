@@ -209,7 +209,10 @@ rule DetermineGCP:
     conda: CONDA_GATK_CNV
     # log: pj(LOG, '{cohort}.determinecontigploydi.log')
     benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
+    resources:
+            n = 1
     shell: """
+            export OMP_NUM_THREADS={resources.n}
             {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {wildcards.cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
             """
 
@@ -226,11 +229,13 @@ rule GermlineCNVCaller:
             contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls'))
     conda: CONDA_GATK_CNV
     resources:
-            mem_mb = 15000
+            mem_mb = 15000,
+            n = 4
     # log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell:
         """
+            export OMP_NUM_THREADS={resources.n}
            {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
         """
 
