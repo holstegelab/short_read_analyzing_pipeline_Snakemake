@@ -226,7 +226,8 @@ rule GermlineCNVCaller:
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
-            contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls'))
+            contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls')),
+            theano_complie_dir = pj(TMPDIR, '.theano-{cohort}-{scatter}')
     conda: CONDA_GATK_CNV
     resources:
             mem_mb = 15000,
@@ -235,8 +236,10 @@ rule GermlineCNVCaller:
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell:
         """
-            export OMP_NUM_THREADS={resources.n}
-           {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
+            mkdir -p {params.theano_complie_dir}
+            export OMP_NUM_THREADS={resources.n} 
+            THEANO_FLAGS="base_compiledir={params.theano_complie_dir}" 
+            {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter}
         """
 
 rule PostprocessGermlineCNVCalls:
