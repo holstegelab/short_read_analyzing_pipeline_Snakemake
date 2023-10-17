@@ -122,7 +122,7 @@ def generate_scatter_list(start, end):
     string_list = [f"{i:04d}_of_{end}" for i in range(int(start), int(end) + 1)]
     return string_list
 
-scatter_merged_cature_kit = generate_scatter_list('0001', '148')
+scatter_merged_cature_kit = generate_scatter_list('0001', '50')
 
 rule gCNV_gatk_all:
     input:
@@ -175,11 +175,12 @@ rule filterintervals:
             capture_kit = MERGED_CAPTURE_KIT_IVL_CNV,
             PAR_and_CENTROMERIC = PAR_and_CENTROMERIC,
             cut_off_samples = '80',
+            cut_off_count_threshold = '10',
     conda: CONDA_GATK_CNV
     log: pj(LOG, '{cohort}.filterintervals_gatkcnv.log')
     benchmark: pj(BENCH, '{cohort}.filterintervals_gatkcnv.txt')
     shell: """
-            {params.java} -jar {params.gatk} FilterIntervals --annotated-intervals {input.annotation} -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} -XL {params.PAR_and_CENTROMERIC} --low-count-filter-percentage-of-samples {params.cut_off_samples}  2> {log}
+            {params.java} -jar {params.gatk} FilterIntervals --annotated-intervals {input.annotation} -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} -XL {params.PAR_and_CENTROMERIC} --low-count-filter-percentage-of-samples {params.cut_off_samples} --low-count-filter-count-threshold {params.cut_off_count_threshold}  2> {log}
             """
 
 rule make_scatters:
