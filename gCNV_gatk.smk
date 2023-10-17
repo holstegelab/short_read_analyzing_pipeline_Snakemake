@@ -192,10 +192,11 @@ rule make_scatters:
     params:
             java = java_cnv,
             gatk = gatk_cnv,
+            scatter_count = 50
     shell:
         """
         mkdir -p GATK_gCNV/filtred_intervals/cohort-{wildcards.cohort}
-        {params.java} -jar {params.gatk} IntervalListTools -I {input} --OUTPUT GATK_gCNV/filtred_intervals/cohort-{wildcards.cohort} --SUBDIVISION_MODE BALANCING_WITHOUT_INTERVAL_SUBDIVISION --SCATTER_COUNT 148
+        {params.java} -jar {params.gatk} IntervalListTools -I {input} --OUTPUT GATK_gCNV/filtred_intervals/cohort-{wildcards.cohort} --SUBDIVISION_MODE INTERVAL_COUNT --SCATTER_COUNT {params.scatter_count}
         """
 
 
