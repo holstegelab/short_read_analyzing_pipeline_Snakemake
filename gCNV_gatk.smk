@@ -184,6 +184,7 @@ rule DetermineGCP:
 def get_mem_mb_germline_CNV_caller(wildcards, attempt):
     MEM_DEFAULT_USAGE = 25000
     return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
+
 rule GermlineCNVCaller:
     input:  samples = input_func,
             scatters = pj(GATK_gCNV, 'filtred_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'),
