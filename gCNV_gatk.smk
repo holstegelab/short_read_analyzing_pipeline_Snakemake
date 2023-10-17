@@ -122,7 +122,7 @@ def generate_scatter_list(start, end):
     string_list = [f"{i:04d}_of_{end}" for i in range(int(start), int(end) + 1)]
     return string_list
 
-scatter_merged_cature_kit = generate_scatter_list('0001', '50')
+scatter_merged_cature_kit = generate_scatter_list('0001', '25')
 
 rule gCNV_gatk_all:
     input:
@@ -192,7 +192,7 @@ rule make_scatters:
     params:
             java = java_cnv,
             gatk = gatk_cnv,
-            scatter_count = 50
+            scatter_count = 25
     shell:
         """
         mkdir -p GATK_gCNV/filtred_intervals/cohort-{wildcards.cohort}
@@ -232,7 +232,7 @@ rule GermlineCNVCaller:
             theano_complie_dir = pj(TMPDIR, '.theano-{cohort}-{scatter}')
     conda: CONDA_GATK_CNV
     resources:
-            mem_mb = 15000,
+            mem_mb = 25000,
             n = 4
     log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
