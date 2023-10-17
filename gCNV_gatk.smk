@@ -261,9 +261,10 @@ rule PostprocessGermlineCNVCalls:
         CPC = (pj(GATK_gCNV,  '{cohort}-calls')),
         SD = REF_MALE_DICT,
     benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
+    log: pj(LOG, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls')
     resources:
             mem_mb = 6000
     shell:
             """
-            {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio}
+            {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio} 2> {log}
             """
