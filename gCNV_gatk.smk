@@ -208,6 +208,9 @@ rule GermlineCNVCaller:
             export OMP_NUM_THREADS={resources.n} 
             THEANO_FLAGS="base_compiledir={params.theano_complie_dir}"  {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter} 2> {log}
         """
+def get_mem_mb_postprocess(wildcards, attempt):
+    MEM_DEFAULT_USAGE = 5000
+    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
 rule PostprocessGermlineCNVCalls:
     input:
@@ -230,7 +233,7 @@ rule PostprocessGermlineCNVCalls:
     benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
     log: pj(LOG, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls')
     resources:
-            mem_mb = 6000
+            mem_mb = get_mem_mb_postprocess
     shell:
             """
             {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls -R {params.ref} --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio} 2> {log}
