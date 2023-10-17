@@ -24,13 +24,6 @@ module Tools:
     config: config
 # use rule * from Tools
 
-def get_sample_name(sample_index, cohort):
-    # Get the sample name from the "sample_name.txt" file
-    sample_name_file = os.path.join(GATK_gCNV, f'{cohort}_scatter_0001_of_148', f'scatterd_{cohort}_0001_of_148-calls', f'SAMPLE_{sample_index}', 'sample_name.txt')
-    with open(sample_name_file, 'r') as f:
-        sample_name = f.read().strip()
-    return sample_name
-
 
 def get_groups_from_hdf5(hdf5_file):
     unique_groups = set()
@@ -59,21 +52,6 @@ def get_samples_in_group(cohort, hdf5_files = hdf5_files):
     idx = list(range(len(samples)))
     return samples, idx
 
-
-
-
-def get_n_samples_in_group(cohort, hdf5_files = hdf5_files):
-    samples_per_cohort = 0
-    for hdf5_file in hdf5_files:
-        with h5py.File(hdf5_file, 'r') as f:
-            data_group = f['coverage']
-            sample_list_per_hdf5_file = [s.decode('utf-8') for s in data_group['samples'][()]]
-            cohort_mask = np.equal(data_group['cluster_3_cor_cov'], int(cohort))
-            cohort_samples = [sample_list_per_hdf5_file[i] for i, mask in enumerate(cohort_mask) if mask]
-            samples_per_cohort += len(cohort_samples)
-    return samples_per_cohort
-
-
 paths_output = []
 for cohort in groups:
     sample_names, idxs = get_samples_in_group(cohort=cohort)
@@ -95,16 +73,6 @@ def input_func(wildcards):
         allow_missing=True
     )
 
-# def input_bams(wildcards):
-#     cohort = wildcards['cohort']
-#     samples_in_group, index = get_samples_in_group(cohort = cohort)
-#     return expand(
-#         '{bam}/{sample}.markdup.bam',
-#         bam=BAM,
-#         cohort=cohort,
-#         sample=samples_in_group,
-#         allow_missing=True
-#     )
 
 def sample_list_per_cohort(wildcards):
     cohort = wildcards['cohort']
@@ -126,12 +94,7 @@ scatter_merged_cature_kit = generate_scatter_list('0001', '25')
 
 rule gCNV_gatk_all:
     input:
-        # expand('GATK_gCNV/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-model/calling_config.json',scatter=scatter_merged_cature_kit,cohort=groups),
-        # expand('GATK_gCNV/filtred_intervals/{cohort}_filtred.interval_list', cohort=groups),
-        # expand('GATK_gCNV/{cohort}-model/contig_ploidy_prior.tsv', cohort = groups),
         paths_output
-        # expand('GATK_gCNV/GENOTYPED_CALLS_intervals_{cohort}/COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz')
-        # rules.Stat_all.input
     default_target: True
 
 rule collect_read_counts:
@@ -232,8 +195,8 @@ rule GermlineCNVCaller:
             theano_complie_dir = pj(TMPDIR, '.theano-{cohort}-{scatter}')
     conda: CONDA_GATK_CNV
     resources:
-            mem_mb = 25000,
-            n = 4
+            mem_mb = 20000,
+            n = 11
     log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell:
