@@ -182,7 +182,7 @@ rule DetermineGCP:
             """
 
 def get_mem_mb_germline_CNV_caller(wildcards, attempt):
-    MEM_DEFAULT_USAGE = 20000
+    MEM_DEFAULT_USAGE = 25000
     return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 rule GermlineCNVCaller:
     input:  samples = input_func,
@@ -198,7 +198,7 @@ rule GermlineCNVCaller:
     conda: CONDA_GATK_CNV
     resources:
             mem_mb = get_mem_mb_germline_CNV_caller,
-            n = 11
+            n = 14
     log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell:
