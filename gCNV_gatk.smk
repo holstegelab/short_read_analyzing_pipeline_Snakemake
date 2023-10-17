@@ -181,7 +181,9 @@ rule DetermineGCP:
             {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {wildcards.cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
             """
 
-
+def get_mem_mb_germline_CNV_caller(wildcards, attempt):
+    MEM_DEFAULT_USAGE = 20000
+    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 rule GermlineCNVCaller:
     input:  samples = input_func,
             scatters = pj(GATK_gCNV, 'filtred_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'),
@@ -195,7 +197,7 @@ rule GermlineCNVCaller:
             theano_complie_dir = pj(TMPDIR, '.theano-{cohort}-{scatter}')
     conda: CONDA_GATK_CNV
     resources:
-            mem_mb = 20000,
+            mem_mb = get_mem_mb_germline_CNV_caller,
             n = 11
     log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
