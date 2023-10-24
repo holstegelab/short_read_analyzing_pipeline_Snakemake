@@ -1,6 +1,9 @@
 from common import *
 import read_stats
 import utils
+from scripts.pca import *
+import pandas as pd
+from sklearn.preprocessing import scale
 
 
 wildcard_constraints:
@@ -50,7 +53,8 @@ rule Stat_all:
         expand("{samplefile}.bam_rg_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.coverage.hdf5", samplefile = SAMPLE_FILES),
-        expand(pj(STAT, "{sample}.done"), sample = sample_names)
+        expand(pj(STAT, "{sample}.done"), sample = sample_names),
+        pj(STAT, 'PCA_stat.txt')
     default_target: True        
     
 
@@ -128,6 +132,61 @@ rule gather_coverage:
         read_stats.write_coverage_to_hdf5(annotation, samples, list(input.mapped), list(input.cov), output.hdf5)
 
 
+rule clustering_samples:
+    input: expand('{samplefile}.coverage.hdf5',  samplefile = SAMPLE_FILES)
+    output: stat = pj(STAT, 'PCA_stat.txt'),
+            # groups = pj(STAT, 'PCA_groups.tsv')
+    conda: CONDA_PCA
+    run:
+        shell("touch {output.stat}")
+        hdf5_files = input
+        PCA_t, expl_var = perform_ipca(hdf5_files=hdf5_files)
+        # best_dict = get_scores_and_labels(combinations,data=PCA_t)
+        PCA_2 = PCA_t[[0, 1]]
+        data_2 = scale(PCA_2)
+        PCA_3 = PCA_t[[0, 1, 2]]
+        data_3 = scale(PCA_3)
+        PCA_4 = PCA_t[[0, 1, 2, 3]]
+        data_4 = scale(PCA_4)
+        PCA_6 = PCA_t[[0, 1, 2, 3, 4, 5]]
+        data_6 = scale(PCA_6)
+        PCA_10 = PCA_t
+        data_10 = scale(PCA_10)
+        best_dict_2 = get_scores_and_labels(combinations,data=data_2)
+        best_dict_3 = get_scores_and_labels(combinations,data=data_3)
+        best_dict_4 = get_scores_and_labels(combinations,data=data_4)
+        best_dict_6 = get_scores_and_labels(combinations,data=data_6)
+        best_dict_10 = get_scores_and_labels(combinations,data=data_10)
+        PCA_t['cluster_2_cor_cov'] = best_dict_2['best_labels']
+        PCA_t['cluster_3_cor_cov'] = best_dict_3['best_labels']
+        PCA_t['cluster_4_cor_cov'] = best_dict_4['best_labels']
+        PCA_t['cluster_6_cor_cov'] = best_dict_6['best_labels']
+        PCA_t['cluster_10_cor_cov'] = best_dict_10['best_labels']
+        clusters = ['cluster_2_cor_cov', 'cluster_3_cor_cov', 'cluster_4_cor_cov', 'cluster_6_cor_cov',
+                    'cluster_10_cor_cov']
+
+
+# df_with_all_samplefiles = pd.DataFrame()
+        # for SF in SAMPLE_FILES:
+        #     df_with_all_samplefiles, num_samples = load_hdf5_data(f'{SF}.coverage.hdf5', df_with_all_samplefiles, 'coverage' )
+        #     with open(pj(STAT, 'PCA_stat.txt'), 'a') as f:
+        #         print(f'Loaded {num_samples} samples from {SF}', file=f)
+        # PCA_t, cum_exp_var = perform_pca(df_with_all_samplefiles, n_comp= 0.9)
+        # best_dict = get_scores_and_labels(combinations, data=PCA_t)
+        # PCA_t['cluster'] = best_dict['best_labels']
+        with open(pj(STAT,'PCA_stat.txt'),'a') as f:
+            print(f"Cumulative variance = {expl_var}",file=f)
+            print(best_dict_2, file=f)
+            print(best_dict_3,file=f)
+            print(best_dict_4,file=f)
+            print(best_dict_6,file=f)
+            print(best_dict_10,file=f)
+        for cluster in clusters:
+            for SF in SAMPLE_FILES:
+                add_cluster_info_to_hdf5(f'{SF}', clustred_data=PCA_t, cluster=cluster)
+
+
+
 def get_svd(wildcards):#{{{
     """Returns the VerifyBamID SVD file for the sample type of the sample"""
     sinfo = SAMPLEINFO[wildcards['sample']]
@@ -184,7 +243,7 @@ rule hs_stats:
         MQ=10
     resources: mem_mb = lambda wildcards, attempt: attempt * 2300,
                tmpdir = tmpdir,  
-               n="1.0"            
+               n="1.0"
     conda: CONDA_VCF               
     shell:
         """gatk  --java-options "-Xmx{resources.mem_mb}M  {DEFAULT_JAVA_OPTIONS}" CollectHsMetrics  --TMP_DIR {resources.tmpdir} \
@@ -213,7 +272,7 @@ rule Artifact_stats:
         # output define prefix, not full filename
         # params.out define prefix and output define whole outputs' filename
         out = pj(STAT, "{sample}")
-    resources: 
+    resources:
         mem_mb = lambda wildcards, attempt: attempt * 2750,
         tmpdir= tmpdir,
         n="0.9"
@@ -256,7 +315,7 @@ rule samtools_stat:
     benchmark: pj(BENCH, "samtools_stat_{sample}.txt")
     resources:
         mem_mb=130,
-        n="1.0"
+        n=1
     conda: CONDA_MAIN        
     params:
             ref=get_ref_by_validated_sex
@@ -290,7 +349,7 @@ rule samtools_stat_exome:
     benchmark: pj(BENCH,"samtools_stat_exome_{sample}.txt")
     resources:
         mem_mb=130,
-        n="1.0"
+        n=1
     conda: CONDA_MAIN
     shell:
         "samtools stat -@ {resources.n} -t {params.bed_interval} -d -p -r {params.ref} {input.bam} > {output}"
@@ -310,7 +369,7 @@ rule bamstats_all:
         py_stats = srcdir(BAMSTATS)
     resources:
         mem_mb=250,
-        n="1.0"      
+        n=1        
     conda: CONDA_PYPY
     shell:
         "samtools view -s 0.05 -h {input.bam} --threads {resources.n}  | pypy {params.py_stats} stats > {output}"
@@ -324,7 +383,7 @@ rule bamstats_exome:
     benchmark: pj(BENCH,"bamstats_exome_{sample}.txt")   
     resources:
         mem_mb=250,
-        n="1.0"
+        n=1
     params:
         py_stats = srcdir(BAMSTATS),
         bed_interval= get_capture_kit_bed,

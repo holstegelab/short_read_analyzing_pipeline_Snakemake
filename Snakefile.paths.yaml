@@ -5,6 +5,8 @@ RES: '/gpfs/work3/0/qtholstg/hg38_res/'
 
 
 SOFTWARE: 'software'
+JAVA_for_GATK: 'java/jdk-17.0.7/bin/java'
+GATK: 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.0.0-27-gabe8148-SNAPSHOT-local.jar'
 DEFAULT_JAVA_OPTIONS: ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 #path to intervals file with targets
 kit_folder: 'intervals_v2'

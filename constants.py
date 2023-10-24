@@ -9,11 +9,17 @@ RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res_v2/'
 INTERVALS_DIR = pj(RESOURCES,'intervals')
 MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'merged_capture_kits_cds.bed')
 MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'merged_capture_kits_cds.interval_list')
+MERGED_CAPTURE_KIT_IVL_CNV = pj(INTERVALS_DIR, 'preprocessed_intervals_for_GATK_CNV', 'merged_capture_kits_cds.interval_list')
+HARD_MAPPABILITY_TRACK = pj(RESOURCES, 'k24.umap.bed.gz')
 TARGETS_BED = pj(INTERVALS_DIR,'gencode_43_cds.bed')
 TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
-
+PL_PR_TABLE = pj(RESOURCES, 'ploydi_priors_table_hg38.tsv')
+MAIN_CHRS_BED = pj(RESOURCES, 'only_main_chr.bed')
 #resource folder with cram reference fasta files
 CRAMREFS = pj(RESOURCES,'cram_refs')
+
+# dir with this file
+SNAKEMAKE_DIR_PATH = os.path.dirname('')
 
 #conda env's paths
 CONDA_VERIFYBAMID = 'envs/verifybamid.yaml'
@@ -23,15 +29,18 @@ CONDA_PYPY = 'envs/pypy.yaml'
 CONDA_KMC = 'envs/kmc.yaml'
 CONDA_KRAKEN = 'envs/kraken.yaml'
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
+CONDA_PCA = 'envs/PCA.yaml'
+CONDA_GATK_CNV = pj(RESOURCES, 'software', 'gatk_4.4', 'build', 'gatkcondaenv.yml')
+
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
 
-#OUTPUT FOLDERS 
-SOURCEDIR= 'source' 
-SAMPLEINFODIR= 'sampleinfo' 
-FETCHDIR= 'fetch' 
-LOG= 'logs' 
-BENCH= 'benchmark' 
+#OUTPUT FOLDERS
+SOURCEDIR= 'source'
+SAMPLEINFODIR= 'sampleinfo'
+FETCHDIR= 'fetch'
+LOG= 'logs'
+BENCH= 'benchmark'
 BAM= 'bams'
 GVCF= 'gvcf'
 VCF= 'vcfs'
@@ -50,6 +59,8 @@ DELLY= 'SV_delly'
 MULTICOHORT= 'Multicohort'
 DEEPVARIANT= 'deepvariant'
 chrM= 'chrM_analysis'
+GATK_gCNV = 'GATK_gCNV'
+
 
 #programs
 SOFTWARE = pj(RESOURCES, 'software')
@@ -58,9 +69,11 @@ samtools= 'samtools'
 bcftools= 'bcftools'
 dragmap= 'dragen-os'
 verifybamid2= 'verifybamid2'
+java_cnv = pj(SOFTWARE, 'java/jdk-17.0.7/bin/java')
+gatk_cnv = pj(SOFTWARE, 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.0.0-27-gabe8148-SNAPSHOT-local.jar')
 
 #custom scripts (encapsulate in srcdir())
-BAMMERGE= 'scripts/bam_merge.py' 
+BAMMERGE= 'scripts/bam_merge.py'
 BAMSTATS= 'scripts/bam_stats.py'
 DECHIMER= 'scripts/bam_dechimer.py'
 DECHIMER_THRESHOLD= 0.005
@@ -86,7 +99,8 @@ ORIG_MT_fa= pj(RESOURCES,'MT_ref/chrM_hg38.fasta')
 ORIG_MT_dict= pj(RESOURCES,'MT_ref/chrM_hg38.dict')
 ORIG_MT_fai= pj(RESOURCES,'MT_ref/chrM_hg38.fasta.fai')
 ORIG_MT= pj(RESOURCES,'MT_ref')
-
+NUMTs= pj(RESOURCES, 'databases/NUMT_list_hg38.bed')
+mask_bed= 'Ref_PhiX_Male/hg38_alt_mask.male.bed'
 str_ref= 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.str.zip'
 
 REF_FEMALE = REF
@@ -105,6 +119,7 @@ REF_MALE_HASH = pj(RESOURCES, 'hg38_phix/male/hash_table.cfg')
 REF_MALE_STR = pj(RESOURCES, str_ref)
 REF_MALE_FAI = pj(RESOURCES, 'hg38_phix/male/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.fa.fai')
 
+PAR_and_CENTROMERIC = pj(RESOURCES, 'PAR_and_centromeric_regions_hg38.bed')
 #verifybamid files
 VERIFYBAMID_EXOME = pj(RESOURCES,'verifybamid/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat')
 VERIFYBAMID_WGS = pj(RESOURCES, 'verifybamid/wgs/1000g.phase3.100k.b38.vcf.gz.dat')
@@ -116,6 +131,9 @@ OMNI = pj(RESOURCES,'databases/1000G_omni2.5.hg38.vcf.gz')
 KILO_G = pj(RESOURCES,'databases/1000G_phase1.snps.high_confidence.hg38.vcf.gz')
 MILLS = pj(RESOURCES,'databases/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz')
 DBSNP_INDEL = pj(RESOURCES,'databases/Homo_sapiens_assembly38.known_indels.vcf.gz')
+
+#path to file with adapters
+ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')
 
 #windows
 WINDOWS = pj(INTERVALS_DIR, 'windows/all.selected.sorted.3.bed')

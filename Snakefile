@@ -10,6 +10,11 @@ wildcard_constraints:
     # readgroup="[\w\d_\-@]+"
 
 from common import *
+SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
+sample_names = SAMPLEINFO.keys()
+
+# extract all sample names from SAMPLEINFO dict to use it rule all
+sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -43,6 +48,11 @@ module Combine_gVCF:
     snakefile: 'Combine_gVCF.smk'
     config: config
 use rule * from Stat
+
+module chrM_analysis:
+    snakefile: 'chrM_analysis.smk'
+    config: config
+use rule * from chrM_analysis
 
 module Encrypt:
     snakefile: 'Encrypt.smk'
@@ -135,7 +145,7 @@ if end_point == "gVCF":
                 pj(STAT, "{sample}.done"),
                 pj(KRAKEN, "{sample}.bracken_report.tsv")
             output:
-                pj(SOURCEDIR, "{sample}.finished")
+                os.path.join(config['SOURCEDIR'], "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -157,7 +167,7 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),                
+                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
                 pj(DEEPVARIANT, "{sample}.done"),
                 pj(STAT, "{sample}.done"),
                 pj(KRAKEN, "{sample}.bracken_report.tsv")
@@ -314,12 +324,10 @@ else:
 rule all:
     input:
         END_RULE,
-        #rule_all_combine,
-        #VQSR_rule,
-        #rules.Stat_all.input,
+        rules.chrM_analysis_all.input,
         #SV_rule,
         #CNV_rule,
-        #rules.Encrypt_all.input,
+        rules.Encrypt_all.input,
     default_target: True
 
 

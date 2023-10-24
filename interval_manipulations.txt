@@ -1,0 +1,26 @@
+# Prepare merged capture kit for CNV
+- keep only "main" chromosomes
+- keep exons intact:
+bedtools intersect -a gencode_43_cds.bed -b merged_capture_kits_cds_FOR_CNV.bed > bins_for_merged/exons_from_merged.bed
+- extract "not exonic" parts
+bedtools subtract -a merged_capture_kits_cds_FOR_CNV.bed -b bins_for_merged/exons_from_merged.bed > bins_for_merged/parts_outsied_exons_merged.bed
+- divide non-exonic parts into 200bp windows
+bedtools makewindows -b parts_outsied_exons_merged.bed -w 200 > parts_outsied_exons_merged_windows200.bed
+- cat
+- sort
+- create interval list
+gatk BedToIntervalList -I merged_CK_by_bins_sorted.bed -SD ../../Ref_PhiX_Male_v2/GRCh38_full_analysis_set_plus_decoy_hla.dict
+- gatk preprocess intervals
+- gatk annotate interval
+rule annotateintervals:
+    input: interval = '/gpfs/work3/0/qtholstg/hg38_res/intervals_v2/preprocessed_intervals_for_GATK_CNV/Agilent_V4_mainchr.interval_list'
+    output: annotated_tsv = '/gpfs/work3/0/qtholstg/hg38_res/intervals_v2/preprocessed_intervals_for_GATK_CNV/Agilent_V4_mainchr.annotated.tsv'
+    conda: CONDA_GATK_CNV
+    params: java= java_cnv,
+            gatk=gatk_cnv,
+            ref= REF_MALE,
+            hard_mappability_track = '/gpfs/work3/0/qtholstg/hg38_res/k24.umap.bed.gz',
+    shell:
+            """
+            {params.java} -jar {params.gatk} AnnotateIntervals -L {input.interval} -R {params.ref} -imr OVERLAPPING_ONLY -O {output.annotated_tsv} --mappability-track {params.hard_mappability_track}
+            """

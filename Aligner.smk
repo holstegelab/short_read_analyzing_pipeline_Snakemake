@@ -337,9 +337,9 @@ rule split_alignments_by_readgroup:
     resources:
         n="1",
         mem_mb=get_mem_mb_split_alignments
+    conda: CONDA_MAIN
     params:
         cramref=get_cram_ref
-    conda: CONDA_MAIN        
     run:
         sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)        
         readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
@@ -489,13 +489,14 @@ rule adapter_removal:
         pj(BENCH,"{sample}.{readgroup}.adapter_removal.txt")
     priority: 10
     conda: CONDA_MAIN
+    params: adapters = ADAPTERS
     resources: 
         n="3.5",
         mem_mb=200
     ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
     shell:
         """
-		    AdapterRemoval --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 
+		    AdapterRemoval --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 
 		"""
 
 rule adapter_removal_identify:
@@ -511,9 +512,10 @@ rule adapter_removal_identify:
         n="2.8", 
         mem_mb=200
     benchmark: pj(BENCH,"{sample}.{readgroup}.adapter_removal_identify.txt")
+    params: adapters=ADAPTERS
     shell:
         """
-		AdapterRemoval --identify-adapters --adapter1 AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT --file1 {input[0]} --file2 {input[1]}  --threads 4 > {output.stats}
+		AdapterRemoval --identify-adapters --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]}  --threads 4 > {output.stats}
 		"""
 
 
@@ -784,7 +786,7 @@ rule dechimer:
     resources:
         n="1.5", #most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
         mem_mb=275
-    conda: CONDA_PYPY        
+    conda: CONDA_PYPY
     run:
         with open(input['stats'],'r') as f:
             stats = [l for l in f.readlines()]    
@@ -796,8 +798,8 @@ rule dechimer:
                           samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
             shell(cmd)
         else:
+            #switching to copy instead of hard link, as hard link also updates modification time input.bam
             cmd = """
-                    #switching to copy instead of hard link, as hard link also updates modification time input.bam
                     cp {input.bam} {output.bam}
                     touch {output.stats}
                    """
