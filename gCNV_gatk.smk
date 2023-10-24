@@ -182,7 +182,7 @@ rule DetermineGCP:
             """
 
 def get_mem_mb_germline_CNV_caller(wildcards, attempt):
-    MEM_DEFAULT_USAGE = 40000
+    MEM_DEFAULT_USAGE = 35000
     return attempt  * int(MEM_DEFAULT_USAGE)
 
 rule GermlineCNVCaller:
