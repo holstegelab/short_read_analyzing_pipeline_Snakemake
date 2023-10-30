@@ -666,22 +666,22 @@ rule get_validated_sex:
     conda: CONDA_KMC        
     shell:  """
            #intersecting fastq kmers with kmers that are unique to chrY
-           kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_CHRY} -cx1 intersect {output.chry}.tmp  -ocleft
+           kmc_tools -t1 simple {params.kmerdir}/{wildcards.sample} {KMER_CHRY} -cx1 intersect {output.chry}.tmp  -ocleft
            #make sure that all kmers in chrY are present (as chrY is not always present in samples)
-           kmc_tools simple {output.chry}.tmp {KMER_CHRY} union {output.chry}  -ocsum
+           kmc_tools -t1 simple {output.chry}.tmp {KMER_CHRY} union {output.chry}  -ocsum
            
            #intersecting fastq kmers with kmers that are unique to chrX
-           kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_CHRX} -cx1 intersect {output.chrx} -ocleft
+           kmc_tools -t1 simple {params.kmerdir}/{wildcards.sample} {KMER_CHRX} -cx1 intersect {output.chrx} -ocleft
            #intersecting fastq kmers with kmers that are unique to chrM
-           kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_CHRM} -cx1 intersect {output.chrm}  -ocleft
+           kmc_tools -t1 simple {params.kmerdir}/{wildcards.sample} {KMER_CHRM} -cx1 intersect {output.chrm}  -ocleft
            #intersecting fastq kmers with kmers that are unique to autosomes
-           kmc_tools simple {params.kmerdir}/{wildcards.sample} {KMER_AUTO} -cx1 intersect {output.auto} -ocleft
+           kmc_tools -t1 simple {params.kmerdir}/{wildcards.sample} {KMER_AUTO} -cx1 intersect {output.auto} -ocleft
 
            #dumping kmers to tsv files            
-           kmc_tools transform {output.chry} dump {output.chry}
-           kmc_tools transform {output.chrx} dump {output.chrx}
-           kmc_tools transform {output.chrm} dump {output.chrm}
-           kmc_tools transform {output.auto} dump {output.auto}
+           kmc_tools -t1 transform {output.chry} dump {output.chry}
+           kmc_tools -t1 transform {output.chrx} dump {output.chrx}
+           kmc_tools -t1 transform {output.chrm} dump {output.chrm}
+           kmc_tools -t1 transform {output.auto} dump {output.auto}
            
            #removing temporary files (kmer databases)
            rm {output.chry}.*

@@ -40,7 +40,7 @@ rule gvcf_sample_done:
     input:
         get_gvcf_files
     output:
-        touch(pj(GVCF, "{sample}.done"))
+        temp(touch(pj(GVCF, "{sample}.done")))
     resources:
         n="1.0",
         mem_mb=50

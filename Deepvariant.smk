@@ -27,13 +27,13 @@ rule DeepVariant_all:
 def get_deepvariant_files(wildcards):#{{{
     sample = wildcards['sample']
     regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
-    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.g.vcf.gz') for region in regions if not region.endswith('H')]#}}}
+    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in regions if not region.endswith('H')]#}}}
 
 rule deepvariant_sample_done:
     input:
         get_deepvariant_files
     output:
-        touch(pj(DEEPVARIANT, "{sample}.done"))
+        temp(touch(pj(DEEPVARIANT, "{sample}.done")))
     resources:
         mem_mb = 100,
         n = "1.0"
@@ -122,7 +122,47 @@ rule DVWhatshapPhasingMerge:
 # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" /opt/deepvariant/bin/postprocess_variants --ref=/gpfs/work3/0/qtholstg/hg38_res/Ref/GRCh38_full_analysis_set_plus_decoy_hla.fa --infile /gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_step2_out --outfile /gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_step3.vcf --gvcf_outfile /gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_step3.g.vcf --nonvariant_site_tfrecord_path /gpfs/work3/0/qtholstg/Georgii_tests/deepvariant_test/NL_VUMC_KG-01382_deepvariant_call_variant_test.gvcf.tfrecord_chr20@2.gz
 #
 
+#def get_model(wildcards):
+#     mode =  "WGS" if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else "WES"
+#     if mode == 'WES':
+#         model = pj("/opt/models/wes/model.ckpt")
+#     elif mode == 'WGS':
+#         model = pj("/opt/models/wgs/model.ckpt")
+#     return model
 
+
+#rule deepvariant2:
+#    input:
+#        bam = rules.markdup.output.mdbams,
+#        bai = rules.markdup.output.mdbams_bai,
+#        bed = region_to_bed_file
+#    output:
+#        vcf = temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz")),
+#        vcf_tbi = temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi")),
+#        gvcf = temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz")),
+#        gvcf_tbi = temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")),
+#        pregvcf = temp(pj(DEEPVARIANT,'intermediate', "{sample}.{region}.gvcf.trfrecord.gz")),
+#        examples = temp(pj(DEEPVARIANT,'intermediate', "{sample}.{region}.examples.gz")),
+#        precall = temp(pj(DEEPVARIANT,'intermediate', "{sample}.{region}.intermediate_out.gz")),
+#    params: 
+#            model = get_model,
+#            mode=get_sequencing_mode
+#    container: 'docker://google/deepvariant:1.5.0'
+#    benchmark:
+#        pj(BENCH,"{sample}.{region}.wholedeepvariant.txt")
+#    resources:
+#        n="1.5", #set in profile using singularity-args. Waiting for rule-specific args. 
+#        nshards=2,
+#        mem_mb=get_mem_mb_deepvariant
+#    log: pj(LOG,"{sample}.{region}.wholedeepvariant.log")
+#    shell:
+#        """
+#        mkdir -p `dirname {output.pregvcf}`
+#
+#        /opt/deepvariant/bin/make_examples --ref={REF_MALE} --reads={input.bam} --gvcf={output.pregvcf} --mode calling --regions {input.bed} --examples={output.examples} --channels="insert_size" --normalize_reads tru --gvcf_gq_binsize 1
+#        /opt/deepvariant/bin/call_variants --examples {output.examples} --outfile {output.precall} --checkpoint {params.model} --config_string "device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4"
+#        /opt/deepvariant/bin/postprocess_variants --ref={REF_MALE}  --infile {output.precall} --outfile {output.vcf} --gvcf_outfile {output.gvcf} --nonvariant_site_tfrecord_path {output.pregvcf} 
+#        """
 
 
 
@@ -145,16 +185,8 @@ rule DVWhatshapPhasingMerge:
 #     shell:
 #         # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
 #         """
-#         /opt/deepvariant/bin/make_examples --ref={ref} --reads={input.bam} --gvcf={output.pregvcf} --mode calling --regions {input.bed} --examples={output.examples} --channels="insert_size" --gvcf_gq_binsize 1 2> {log}
 #          """
 #
-# def get_model(wildcards):
-#     mode = wildcards.mode
-#     if mode == 'WES':
-#         model = pj("/opt/models/wes/model.ckpt")
-#     elif mode == 'WGS':
-#         model = pj("/opt/models/wgs/model.ckpt")
-#     return model
 #
 # rule call_variants:
 #     input:
