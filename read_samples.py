@@ -482,6 +482,7 @@ def read_fastqfile(filename):
         header = f.readline()
         if not isinstance(header, str):
             header = header.decode('utf-8')
+        
 
         header = header.strip()
         if '#' in header:
@@ -501,7 +502,10 @@ def read_fastqfile(filename):
             machine_info, read_info = header.split(' ')
             machine_fields = machine_info.split(':')
             
-            if len(machine_fields) == 7:
+            if len(machine_fields) == 8:
+                instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y, dummy = machine_fields
+
+            elif len(machine_fields) == 7:
                 instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y = machine_fields
             elif len(machine_fields) == 6:
                 instrument_name, flowcell_id, flowcell_lane, tile_number, x, y = machine_fields
