@@ -4,16 +4,13 @@ channels:
 - default
 - defaults
 dependencies:
-  - h5py=3.7.0
+  - h5py
   - hdf5=1.10.6
   - matplotlib=3.7.1
-  - matplotlib-base=3.7.1
   - numpy=1.23.5
-  - numpy-base=1.23.5
   - pandas=1.5.3
-  - pytables=3.8.0
-  - python=3.10.
-  - readline=8.2
+  - pytables
+  - python
   - scikit-learn=1.2.0
   - scipy=1.9.3
 name: PCA

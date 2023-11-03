@@ -119,7 +119,16 @@ class PairedFastQReader(threading.Thread):
         return self.buffer.popitem()[1]
 
 
+def check_qual(read_name, q1, q2):
+    if q1 == q2:
+        return
 
+    #dragmap sometimes converts ! quality to # quality.  
+    #in that case, results are not entirely lossless, but in practice it has probably no consequences. 
+    if q1.replace('#', '!') == q2.replace('#','!'):
+        return
+    
+    raise RuntimeError(f"Quality score mismatch BAM-FASTQ in fragment {read_name}: \n{q1} != \n{q2}")
 
 
 def derive_missing_sequence_tags(read, seq, qual, stats):
@@ -155,8 +164,8 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
         if read.is_reversed():
             rseq = str(Seq(seq).reverse_complement())
             rqual = qual[::-1]
-            assert rseq[-len(read.seq):] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}"
-            assert rqual[-len(read.qual):] == read.qual, f"Quality score mismatch BAM-FASTQ in fragment {read.qname}"
+            assert rseq[-len(read.seq):] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}: \n{read.seq} vs. \n{rseq[-len(read.seq):]}"
+            check_qual(read.qname, rqual[-len(read.qual):], read.qual)
 
             tag_seq = str(Seq(tag_seq).reverse_complement())
             tag_qual = tag_qual[::-1]
@@ -168,8 +177,8 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
             cigars = [('H', clipping_length)] + cigars #re-add with correct length
             assert not any([x == 'H' for x,y in cigars[1:]]), 'Hard clipping found, but not at end of read'
         else:
-            assert seq[:len(read.seq)] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}"
-            assert qual[:len(read.seq)] == read.qual, f"Quality score mismatch BAM-FASTQ in fragment {read.qname}"
+            assert seq[:len(read.seq)] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}: \n{seq[:len(read.seq)]} != \n{read.seq}"
+            check_qual(read.qname, qual[:len(read.seq)], read.qual)
             while cigars[-1][0] == 'H': #remove all hard clipping cigar elements
                 cigars.pop()
             cigars.append(('H', clipping_length)) #re-add with correct length
@@ -180,7 +189,7 @@ def derive_missing_sequence_tags(read, seq, qual, stats):
     else:
         stats['restored_unaligned_reads'] = stats.get('restored_unaligned_reads',0) + 1
         assert seq[:len(read.seq)] == read.seq, f"Sequence mismatch BAM-FASTQ in fragment {read.qname}"
-        assert qual[:len(read.seq)] == read.qual, f"Quality score mismatch BAM-FASTQ in fragment {read.qname}"
+        check_qual(read.qname, qual[:len(read.seq)],read.qual)
         new_tags = {'ZB': tag_seq, 'ZQ': tag_qual}
         ncigar = '*'
 
