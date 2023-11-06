@@ -26,9 +26,6 @@ module gVCF:
     config: config
 # use rule * from Deepvariant
 
-mode = config.get("computing_mode", "WES")
-
-
 gvcf_caller = config.get("caller", "HaplotypeCaller")
 glnexus_filtration = config.get("glnexus_filtration", "default")
 
