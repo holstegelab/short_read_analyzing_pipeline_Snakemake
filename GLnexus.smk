@@ -37,14 +37,14 @@ if gvcf_caller == "HaplotypeCaller":
 
 elif gvcf_caller == "Deepvariant":
     use rule * from Deepvariant
-    rule_gvcf_all_input = rules.Deepvariant_all.input
+    rule_gvcf_all_input = rules.DeepVariant_all.input
     gvcf_input = expand("{cd}/{DEEPVARIANT}/gVCF/{region}/{sample}.{region}.wg.vcf.gz", cd = current_dir, DEEPVARIANT = DEEPVARIANT, sample = sample_names, allow_missing=True)
     glnexus_dir = ["GLnexus_on_Deepvariant"]
 
 elif gvcf_caller == "BOTH":
     use rule * from gVCF
     use rule * from Deepvariant
-    rule_gvcf_all_input = [rules.gVCF_all.input, rules.Deepvariant_all.input]
+    rule_gvcf_all_input = [rules.gVCF_all.input, rules.DeepVariant_all.input]
     gvcf_input = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.g.vcf.gz",cd=current_dir,GVCF=GVCF,sample=sample_names,allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
 
