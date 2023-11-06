@@ -73,7 +73,7 @@ rule stat_sample_done:
         pj(STAT,'{sample}.bait_bias_detail_metrics'),
         pj(STAT,'cov', '{sample}.regions.bed.gz')
     output:
-        cram = touch(pj(STAT, "{sample}.done"))    
+        cram = temp(touch(pj(STAT, "{sample}.done")))
     resources:
         n="0.1",
         mem_mb=50        
