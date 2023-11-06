@@ -54,16 +54,17 @@ else:
     )
 
 if glnexus_filtration == 'default':
-    # conf_filters = "DeepVariant{{wildcards.mode}}"
     dir_appendix = "default"
 elif glnexus_filtration == 'custom':
-    # conf_filters = "/gpfs/home1/gozhegov/short_read_analyzing_pipeline_Snakemake/Glnexus_preset.yml"
     dir_appendix = "custom"
 
 def conf_filter(wildcards):
     if glnexus_filtration == 'default':
         if gvcf_caller == "Deepvariant":
-            conf_filters = "DeepVariant" + wildcards.mode
+            if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
+                conf_filters = "DeepVariantWGS"
+            else:
+                conf_filters = "DeepVariantWES"
         elif gvcf_caller == "HaplotypeCaller":
             conf_filters = "gatk"
         # dir_appendix = "default"
@@ -89,14 +90,13 @@ def region_to_bed_file(wildcards):#{{{
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}.vcf.gz", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}.vcf.gz.tbi", cur_dir = current_dir, mode = mode, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}.vcf.gz", cur_dir = current_dir, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}.vcf.gz.tbi", cur_dir = current_dir, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
         rule_gvcf_all_input
     default_target: True
 
 rule glnexus:
     input: gvcf_input
-    # input: gvcf = expand("{cd}/{dp}/gVCF/{chr}.{sample}.g.vcf.gz", cd = current_dir, dp = config['DEEPVARIANT'], sample = sample_names, mode = mode, allow_missing=True)
     output: vcf = pj(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}.vcf.gz")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = region_to_bed_file,
