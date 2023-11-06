@@ -90,22 +90,22 @@ def region_to_bed_file(wildcards):#{{{
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}.vcf.gz", cur_dir = current_dir, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{types_of_gl}{appendix}/{chr}/{chr}.vcf.gz.tbi", cur_dir = current_dir, chr = main_chrs, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}.vcf.gz", cur_dir = current_dir, regions = level1_regions, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}.vcf.gz.tbi", cur_dir = current_dir, regions = level1_regions, types_of_gl = glnexus_dir, appendix = dir_appendix),
         rule_gvcf_all_input
     default_target: True
 
 rule glnexus:
     input: gvcf_input
-    output: vcf = pj(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}.vcf.gz")
+    output: vcf = pj(current_dir, glnexus_dir[0] + dir_appendix, "{region}.vcf.gz")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = region_to_bed_file,
             mem_gb = 7,
-            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_glnexus.DB"),
+            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_glnexus.DB"),
             conf_filters = conf_filter
-    log: pj(current_dir,LOG,"{chr}.glnexus.log")
+    log: pj(current_dir,LOG,"{region}.glnexus.log")
     benchmark:
-        pj(current_dir,BENCH,"{chr}.glnexus.txt")
+        pj(current_dir,BENCH,"{region}.glnexus.txt")
     threads: 4
     resources: mem_mb = 7000
     shell:
@@ -114,24 +114,24 @@ rule glnexus:
         """
 rule index_deep:
     input: rules.glnexus.output.vcf
-    output: tbi = pj(current_dir, glnexus_dir[0] + dir_appendix, "{chr}", "{chr}.vcf.gz.tbi")
+    output: tbi = pj(current_dir, glnexus_dir[0] + dir_appendix, "{region}.vcf.gz.tbi")
     conda: "envs/preprocess.yaml"
     shell: "gatk IndexFeatureFile -I {input}"
 
 if gvcf_caller == "BOTH":
     use rule glnexus as glnexus_2 with:
         input: gvcf_input = expand("{cd}/{DEEPVARIANT}/gVCF/{region}/{sample}.{region}.wg.vcf.gz", cd = current_dir, DEEPVARIANT = DEEPVARIANT, sample = sample_names, allow_missing=True)
-        output: vcf=pj(current_dir,glnexus_dir[1] + dir_appendix,"{chr}","{chr}.vcf.gz")
-        params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{chr}_glnexus_2.DB"),
+        output: vcf=pj(current_dir,glnexus_dir[1] + dir_appendix,"{region}.vcf.gz")
+        params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_glnexus_2.DB"),
                 bed= region_to_bed_file,
                 mem_gb= 7,
                 conf_filters= conf_filter
         benchmark:
-            pj(current_dir,BENCH,"{chr}.glnexus_2.txt")
-        log: pj(current_dir,LOG,"{chr}.glnexus_2.log")
+            pj(current_dir,BENCH,"{region}.glnexus_2.txt")
+        log: pj(current_dir,LOG,"{region}.glnexus_2.log")
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
-        output: tbi = pj(current_dir, glnexus_dir[1] + dir_appendix, "{chr}", "{chr}.vcf.gz.tbi")
+        output: tbi = pj(current_dir, glnexus_dir[1] + dir_appendix, "{region}.vcf.gz.tbi")
 
 # rule norma_gln:
 #     input: rules.glnexus.output.vcf
