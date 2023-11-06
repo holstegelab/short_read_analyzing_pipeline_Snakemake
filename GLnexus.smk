@@ -2,17 +2,15 @@ import pandas as pd
 import read_stats
 import os
 import getpass
-
+import read_samples
+from common import *
+import utils
 current_dir = os.getcwd()
-os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     chr = "[\w\d]+",
     # readgroup="[\w\d_\-@]+"
-
-
-from common import *
 
 module Aligner:
     snakefile: 'Aligner.smk'
