@@ -33,7 +33,7 @@ rule gVCF_all:
 def get_gvcf_files(wildcards):#{{{
     sample = wildcards['sample']
     regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions    
-    return [pj(GVCF, "reblock", region, f'{sample}.{region}.wg.vcf.gz') for region in regions]
+    return [pj(GVCF, region, f'{sample}.{region}.wg.vcf.gz') for region in regions]
 #}}}
 
 rule gvcf_sample_done:
