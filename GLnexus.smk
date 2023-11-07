@@ -116,7 +116,7 @@ rule glnexus:
 rule index_deep:
     input: rules.glnexus.output.vcf
     output: tbi = pj(current_dir, glnexus_dir[0] + dir_appendix, "{region}.vcf.gz.tbi")
-    conda: "envs/preprocess.yaml"
+    conda: CONDA_VCF
     shell: "gatk IndexFeatureFile -I {input}"
 
 if gvcf_caller == "BOTH":
