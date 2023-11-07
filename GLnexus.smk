@@ -91,8 +91,8 @@ def region_to_bed_file(wildcards):#{{{
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}{appendix}/{region}.vcf.gz", cur_dir = current_dir, region = level0_regions, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{types_of_gl}{appendix}/{region}.vcf.gz.tbi", cur_dir = current_dir, region = level0_regions, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}.vcf.gz", cur_dir = current_dir, region = "F", types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}.vcf.gz.tbi", cur_dir = current_dir, region = "F", types_of_gl = glnexus_dir, appendix = dir_appendix),
         rule_gvcf_all_input
     default_target: True
 
