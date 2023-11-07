@@ -27,8 +27,8 @@ rule DeepVariant_all:
 def get_deepvariant_files(wildcards):#{{{
     sample = wildcards['sample']
     regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
-    # return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in regions if not region.endswith('H')]#}}}
-    return [pj(DEEPVARIANT,'gVCF',region,f'{sample}.{region}.wg.vcf.gz') for region in regions]  #}}}
+    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in regions if not region.endswith('H')]#}}}
+    # return [pj(DEEPVARIANT,'gVCF',region,f'{sample}.{region}.wg.vcf.gz') for region in regions]  #}}}
 
 rule deepvariant_sample_done:
     input:
