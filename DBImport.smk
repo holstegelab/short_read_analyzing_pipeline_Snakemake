@@ -39,7 +39,7 @@ DBIpath = config.get("DBIpath", "genomicsdb_")
 if DBImethod == "new":
     # if want to
     DBI_method_params = "--genomicsdb-workspace-path "
-    path_to_dbi = "genomicsdb_"
+    path_to_dbi = DBIpath
     labels = []
 elif DBImethod == "update" and len(DBIpath) != 1:
     DBI_method_params = "--genomicsdb-update-workspace-path "
