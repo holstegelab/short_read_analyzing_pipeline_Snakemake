@@ -8,3 +8,5 @@ token_git
 *.bam
 *.vcf
 *.vcf.gz
+zslurm*.out
+slurm-*.out
