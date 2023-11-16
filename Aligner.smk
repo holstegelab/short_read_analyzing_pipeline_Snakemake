@@ -949,8 +949,8 @@ rule mCRAM:
         bam = rules.markdup.output.mdbams,
         bai= rules.markdup.output.mdbams_bai
     output:
-        cram=temp(pj(CRAM,"{sample}.mapped_hg38.cram")),
-        crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
+        cram=(pj(CRAM,"{sample}.mapped_hg38.cram")),
+        crai=(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
     resources:
         n="2",
         mem_mb=1000

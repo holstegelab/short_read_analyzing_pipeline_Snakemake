@@ -64,6 +64,22 @@ level4_range = [('A', 4, x,2) for x in range(0,10000)] + \
                 [('X', 3, x, 1) for x in range(0, 500)] + \
                 [('Y', 3, x,2) for x in range(0,200)] + \
                 [('Y', 3, x, 1) for x in range(0, 200)]
+
+level0_range_diploid_only = [('F', 0,0,2)]
+
+level1_range_diploid_only = [('A', 1,x,2) for x in range(0,10)]
+
+level2_range_diploid_only = [('A', 2,x,2) for x in range(0,100)] + \
+               [('X', 1,x,2) for x in range(0,5)] + \
+               [('Y', 1, x,2) for x in range(0,2)]
+
+level3_range_diploid_only = [('A', 3, x,2) for x in range(0,1000)] + \
+               [('X', 2, x,2) for x in range(0,50)] + \
+               [('Y', 2, x,2) for x in range(0,20)]
+
+level4_range_diploid_only = [('A', 4, x,2) for x in range(0,10000)] + \
+                [('X', 3, x,2) for x in range(0,500)] + \
+                [('Y', 3, x,2) for x in range(0,200)]
               
 
 def get_regions(lrange):
@@ -91,6 +107,10 @@ level2_regions = get_regions(level2_range)
 level3_regions = get_regions(level3_range)
 level4_regions = get_regions(level4_range)
 
+level1_regions_diploid = get_regions(level1_range_diploid_only)
+level2_regions_diploid = get_regions(level2_range_diploid_only)
+level3_regions_diploid = get_regions(level3_range_diploid_only)
+level4_regions_diploid = get_regions(level4_range_diploid_only)
 
 def convert_to_level0(region):
     """Converts a region describer of level >=0 to the corresponding level 0 region.
