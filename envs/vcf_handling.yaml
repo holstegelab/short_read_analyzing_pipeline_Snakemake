@@ -5,7 +5,7 @@ channels:
 - defaults
 dependencies:
 - gatk4=4.4.0.0
-- whatshap=2.0
+- whatshap=2.1
 - cyvcf2=0.30.22
 - python
 - numpy
