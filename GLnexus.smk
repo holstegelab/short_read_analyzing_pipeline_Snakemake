@@ -114,7 +114,7 @@ rule glnexus:
     resources: mem_mb = 7000
     shell:
         """
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} | bcftools view - | bgzip -@ {threads} -c > {output} 2> {log} &&
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log} | bcftools view -  2>> {log}| bgzip -@ {threads} -c > {output} 2>> {log} ||
         rm -rf {params.scratch_dir}
         """
 rule index_deep:
