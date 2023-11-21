@@ -29,7 +29,7 @@ else:
 
 regions = []
 for part in parts:
-    regions.append(convert_to_level0(parts))
+    regions.append(convert_to_level0(part))
 rule DBImport_all:
     input:
         expand(['labels/done_{region}.p{part}.txt'],zip,region = regions, part = parts),
