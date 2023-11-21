@@ -62,7 +62,7 @@ else:
 def region_to_IL_file(wildcards):#{{{
     """Converts a region to a bed file location (see common.py and Tools.smk)"""
     # sample = wildcards['sample']
-    region = wildcards['parts']
+    region = wildcards['part']
     # return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='bed')#}}}
     if sample_types == 'WES':
         return region_to_file(region,extension='interval_list')
