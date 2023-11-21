@@ -84,7 +84,7 @@ rule backup_gdbi:
 
 
 def get_mem_mb_GenomicDBI(wildcrads, attempt):
-    return attempt*3500
+    return attempt*4500
 
 
 rule GenomicDBImport:
@@ -96,7 +96,7 @@ rule GenomicDBImport:
     conda: CONDA_VCF
     output:
         ready=touch(temp('labels/done_{region}.p{part}.txt'))
-    threads: 2
+    threads: 3
     params:
         inputs=expand(" -V {cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
         dbi=os.path.join(path_to_dbi + "{region}.p{part}"),
@@ -108,6 +108,6 @@ rule GenomicDBImport:
     resources: mem_mb = get_mem_mb_GenomicDBI,
             tmpdir= TMPDIR
     shell:
-        """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs} \
+        """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
             --intervals {params.intervals}  -R {params.ref} {params.method} {params.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"""
