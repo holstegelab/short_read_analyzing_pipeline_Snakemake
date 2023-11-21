@@ -130,7 +130,7 @@ def read_contam_w(wildcards):  # {{{
 
 def get_mem_mb_HaplotypeCaller(wildcards, attempt):  # {{{
     """Get memory for HaplotypeCaller."""
-    res = 2400 if "wgs" in SAMPLEINFO[wildcards["sample"]]["sample_type"] else 1400
+    res = 3900 if "wgs" in SAMPLEINFO[wildcards["sample"]]["sample_type"] else 2900
 
     # HaplotypeCaller has exponential memory scaling on some regions. Average is very  low, but on some regions it can scale to 75 GB...
     return res * (3 ** (attempt - 1))  # aggressively reserve more memory
@@ -187,7 +187,7 @@ rule HaplotypeCaller:
     conda:
         CONDA_VCF
     resources:
-        n="0.9",  #average 1.3 cores
+        n="2.9",  #average 1.3 cores
         mem_mb=get_mem_mb_HaplotypeCaller,
         tmpdir=tmpdir_alternative,
     params:
