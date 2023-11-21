@@ -106,7 +106,7 @@ rule GenomicDBImport:
         ref = REF_MALE
     priority: 30
     resources: mem_mb = get_mem_mb_GenomicDBI,
-            tmpdir= config['tmpdir']
+            tmpdir= TMPDIR
     shell:
         """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs} \
             --intervals {params.intervals}  -R {params.ref} {params.method} {params.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} \
