@@ -31,7 +31,7 @@ sample_types = config.get("sample_types","WES")
 if gvcf_caller == "HaplotypeCaller":
     use rule * from gVCF
     rule_gvcf_all_input = rules.gVCF_all.input
-    gvcf_input = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
+    gvcf_input = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller"]
 
 elif gvcf_caller == "Deepvariant":
@@ -44,7 +44,7 @@ elif gvcf_caller == "BOTH":
     use rule * from gVCF
     use rule * from Deepvariant
     rule_gvcf_all_input = [rules.gVCF_all.input, rules.DeepVariant_all.input]
-    gvcf_input = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=current_dir,GVCF=GVCF,sample=sample_names,allow_missing=True),
+    gvcf_input = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=current_dir,GVCF=GVCF,sample=sample_names,allow_missing=True),
     glnexus_dir = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
 
 else:

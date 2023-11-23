@@ -48,7 +48,7 @@ def get_gvcf_files(wildcards):  # {{{
     regions = (
         level1_regions if "wgs" in SAMPLEINFO[sample]["sample_type"] else level0_regions
     )
-    return [pj(GVCF, region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
+    return [pj(GVCF, "reblock", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
 
 
 # }}}
@@ -269,8 +269,8 @@ rule HaplotypeCaller:
 
 rule reblock_gvcf:
     input:
-        gvcf=rules.HaplotypeCaller.output.orig_gvcf,
-        idx=rules.HaplotypeCaller.output.orig_gvcf_tbi,
+        gvcf=rules.HaplotypeCaller.output.gvcf,
+        idx=rules.HaplotypeCaller.output.gvcf_tbi,
         validated_sex=rules.get_validated_sex.output.yaml,
     output:
         gvcf_reblock=ensure(

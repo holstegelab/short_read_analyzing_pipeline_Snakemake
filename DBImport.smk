@@ -90,7 +90,7 @@ def get_mem_mb_GenomicDBI(wildcrads, attempt):
 
 rule GenomicDBImport:
     input:
-        g=expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
+        g=expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
         labels = labels
     log: pj(LOG, "GenomicDBImport.{region}.p{part}.log")
     benchmark: pj(BENCH, "{region}.p{part}_GenomicDBImport.txt")
