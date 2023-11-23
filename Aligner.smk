@@ -653,11 +653,11 @@ rule get_validated_sex:
        out1=pj(KMER,"{sample}.kmc_pre"),
        out2=pj(KMER,"{sample}.kmc_suf")
     output:
-       yaml=pj(KMER,"{sample}.result.yaml"),
-       chry=pj(KMER,"{sample}.chry.tsv"),
-       chrx=pj(KMER,"{sample}.chrx.tsv"),
-       chrm=pj(KMER,"{sample}.chrm.tsv"),
-       auto=pj(KMER,"{sample}.auto.tsv") 
+       yaml=temp(pj(KMER,"{sample}.result.yaml")),
+       chry=temp(pj(KMER,"{sample}.chry.tsv")),
+       chrx=temp(pj(KMER,"{sample}.chrx.tsv")),
+       chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
+       auto=temp(pj(KMER,"{sample}.auto.tsv"))
     resources:
         n="1",
         mem_mb=get_mem_mb_validated_sex   
