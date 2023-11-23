@@ -4,7 +4,7 @@ import utils
 from scripts.pca import *
 import pandas as pd
 from sklearn.preprocessing import scale
-
+onsuccess: shell("rm -fr logs/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+"

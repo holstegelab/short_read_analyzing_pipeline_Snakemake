@@ -1,5 +1,5 @@
 from common import *
-
+onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
@@ -15,8 +15,8 @@ rule Encrypt_all:
     default_target: True
 
 sk = pj(RESOURCES,".c4gh/master_key_for_encryption")
-pk1 = pj(RESOURCES, ".c4gh/recipient1.pub")
-pk2 = pj(RESOURCES, ".c4gh/recipient2.pub")
+pk1 = config.get("path_to_public_key_1",  pj(RESOURCES, ".c4gh/recipient1.pub"))
+pk2 = config.get("path_to_public_key_2", pj(RESOURCES, ".c4gh/recipient2.pub"))
 
 PKs = [pk1, pk2]
 

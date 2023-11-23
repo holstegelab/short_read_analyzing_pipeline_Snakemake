@@ -2,7 +2,7 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     region = "[\w\d]+",
     # readgroup="[\w\d_\-@]+"
-
+onsuccess: shell("rm -fr logs/*")
 from common import *
 
 

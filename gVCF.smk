@@ -1,5 +1,5 @@
 from common import *
-
+onsuccess: shell("rm -fr logs/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",

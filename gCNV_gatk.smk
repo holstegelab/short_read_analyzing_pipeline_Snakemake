@@ -1,7 +1,7 @@
 from common import *
 import h5py
 import numpy as np
-
+onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     cohorts = "[\d]",

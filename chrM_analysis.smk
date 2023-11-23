@@ -4,7 +4,7 @@ import os
 import getpass
 import utils
 from common import *
-
+onsuccess: shell("rm -fr logs/*")
 
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")

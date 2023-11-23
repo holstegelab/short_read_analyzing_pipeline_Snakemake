@@ -6,6 +6,7 @@ import read_samples
 from common import *
 import utils
 current_dir = os.getcwd()
+onsuccess: shell("rm -fr logs/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",

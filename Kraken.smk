@@ -1,7 +1,7 @@
 import read_samples
 from common import *
 import utils
-
+onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     extension='sam|bam|cram',
