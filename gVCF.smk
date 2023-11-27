@@ -1,5 +1,5 @@
 from common import *
-onsuccess: shell("rm -fr logs/*")
+onsuccess: shell("rm -fr logs/gVCF/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -99,7 +99,7 @@ rule CalibrateDragstrModel:
         n="1.0",
         mem_mb=lambda wildcards, attempt: attempt * 1750,
     log:
-        pj(LOG, "{sample}_calibratedragstr.log"),
+        pj(LOG, "gVCF","{sample}_calibratedragstr.log"),
     benchmark:
         pj(BENCH, "{sample}_calibrate_dragstr.txt")
     conda:
@@ -181,7 +181,7 @@ rule HaplotypeCaller:
         gvcf=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz"),
         gvcf_tbi=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     log:
-        HaplotypeCaller=pj(LOG, "{sample}_{region}_haplotypecaller.log"),
+        HaplotypeCaller=pj(LOG,"gVCF", "{sample}_{region}_haplotypecaller.log"),
     benchmark:
         pj(BENCH, "{sample}_{region}_haplotypecaller.txt")
     conda:
@@ -280,7 +280,7 @@ rule reblock_gvcf:
             pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True
         ),
     log:
-        Reblock=pj(LOG, "{sample}_{region}_reblock.log"),
+        Reblock=pj(LOG,"gVCF","{sample}_{region}_reblock.log"),
     benchmark:
         pj(BENCH, "{sample}_{region}_reblock.txt")
     conda:

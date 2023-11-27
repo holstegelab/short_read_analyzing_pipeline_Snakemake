@@ -4,7 +4,7 @@ import os
 import getpass
 import utils
 from common import *
-onsuccess: shell("rm -fr logs/*")
+onsuccess: shell("rm -fr logs/chrM/*")
 
 configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
@@ -56,7 +56,7 @@ rule extract_chrM_reads:
     output: bam = ensure(temp(pj(chrM, '{sample}_chrM.reads.bam')), non_empty = True),
             bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True)
     benchmark: pj(BENCH, '{sample}.printreads_chrM.txt')
-    log: pj(LOG,"{sample}.printreads_chrM.log")
+    log: pj(LOG,"chrM","{sample}.printreads_chrM.log")
     conda: "envs/gatk.yaml"
     shell:
         "gatk PrintReads -I {input} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter 2> {log}"
@@ -65,7 +65,7 @@ rule sort_by_name:
     input: rules.extract_chrM_reads.output.bam
     output: ensure(temp(pj(chrM, '{sample}_chrM_namesorted.reads.bam')), non_empty = True)
     benchmark: pj(BENCH, '{sample}.namesort_chrM.txt')
-    log: pj(LOG,"{sample}.namesort_chrM.log")
+    log: pj(LOG,"chrM","{sample}.namesort_chrM.log")
     conda: "envs/preprocess.yaml"
     shell: "samtools sort -n {input} > {output} 2> {log}"
 
@@ -79,7 +79,7 @@ rule realign_to_orig_ref:
     params:
         ref_dir=pj(ORIG_MT),
         threads_per_task = 4
-    log: pj(LOG,"{sample}.orig_mt_align.log")
+    log: pj(LOG,"chrM","{sample}.orig_mt_align.log")
     benchmark: pj(BENCH, '{sample}.orig_mt_align.txt')
     resources: n = 8,
                 mem_mb = 14000
@@ -103,7 +103,7 @@ rule mutect_orig:
             vcf_shift_back = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz')),non_empty=True),
             tbi_shift_back = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz.tbi')),non_empty=True),
     conda: "envs/gatk.yaml"
-    log: pj(LOG,"{sample}.mutect_orig.log")
+    log: pj(LOG,"chrM","{sample}.mutect_orig.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig.txt')
     params:
             mt_ref = pj(ORIG_MT_fa),
@@ -136,7 +136,7 @@ rule merge_vcfs:
             filtred_tbi=ensure(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz.tbi'),non_empty=True),
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf.gz'),non_empty=True),
     conda: "envs/gatk.yaml"
-    log: pj(LOG,"{sample}.vcf_merge.log")
+    log: pj(LOG,"chrM","{sample}.vcf_merge.log")
     benchmark: pj(BENCH, '{sample}.vcf_merge.txt')
     params: mt_ref=pj(ORIG_MT_fa),
             filtred_norm_vcf= (pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf')),
@@ -169,7 +169,7 @@ rule mutect_orig_bp_resolut:
             merged_vcf_BP_with_anno = ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'),non_empty=True),
             merged_vcf_BP_norm= ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz')),non_empty=True),
     conda: "envs/gatk.yaml"
-    log: pj(LOG,"{sample}.mutect_orig_BP_res.log")
+    log: pj(LOG,"chrM","{sample}.mutect_orig_BP_res.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_BP_res.txt')
     params:
             mt_ref = pj(ORIG_MT_fa),
@@ -200,7 +200,7 @@ rule extract_NUMTs_reads:
     output: bam = ensure(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam'), non_empty = True),
             bai = pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')
     benchmark: pj(BENCH, '{sample}.printreads_NUMTs.txt')
-    log: pj(LOG,"{sample}.printreads_NUMTs.log")
+    log: pj(LOG,"chrM","{sample}.printreads_NUMTs.log")
     conda: "envs/gatk.yaml"
     params: NUMTs_bed = NUMTs
     shell:
@@ -210,7 +210,7 @@ rule sort_by_name_NUMT:
     input: rules.extract_NUMTs_reads.output.bam
     output: ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs_namesorted.reads.bam')), non_empty = True)
     benchmark: pj(BENCH, '{sample}.namesort_NUMTs.txt')
-    log: pj(LOG,"{sample}.namesort_NUMTs.log")
+    log: pj(LOG,"chrM","{sample}.namesort_NUMTs.log")
     conda: "envs/preprocess.yaml"
     shell: "samtools sort -n {input} > {output} 2> {log}"
 
@@ -226,7 +226,7 @@ rule align_NUMT_to_chrM:
         ref_dir=pj(ORIG_MT),
         threads_per_task = 4,
 
-    log: pj(LOG,"{sample}.origchrM_NUMT_align.log")
+    log: pj(LOG,"chrM","{sample}.origchrM_NUMT_align.log")
     benchmark: pj(BENCH, '{sample}.origchrM_NUMT_align.txt')
     resources: n = 8,
                 mem_mb = 14000
@@ -249,7 +249,7 @@ rule mutect_orig_NUMT:
             vcf_shiftback = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')),non_empty=True),
             tbi_shiftback = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')),non_empty=True),
     conda: "envs/gatk.yaml"
-    log: pj(LOG,"{sample}.mutect_orig_NUMT.log")
+    log: pj(LOG,"chrM","{sample}.mutect_orig_NUMT.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_NUMT.txt')
     params: mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),
@@ -278,7 +278,7 @@ rule merge_vcfs_NUMT:
 
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf.gz'),non_empty=True),
     conda: "envs/gatk.yaml"
-    log: pj(LOG,"{sample}.vcf_merge_NUMT.log")
+    log: pj(LOG,"chrM","{sample}.vcf_merge_NUMT.log")
     benchmark: pj(BENCH, '{sample}.vcf_merge_NUMT.txt')
     params: mt_ref= pj(ORIG_MT_fa),
             filtred_norm_vcf= (pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf'))
@@ -309,7 +309,7 @@ rule mutect_orig_NUMT_BP_resolution:
             merged_vcf_with_anno = ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'),non_empty=True),
             merged_vcf_norm= ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')),non_empty=True),
     conda: "envs/gatk.yaml"
-    log: pj(LOG,"{sample}.mutect_orig_NUMT_BP_res.log")
+    log: pj(LOG,"chrM","{sample}.mutect_orig_NUMT_BP_res.log")
     benchmark: pj(BENCH, '{sample}.mutect_orig_NUMT_BP_res.txt')
     params: mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),

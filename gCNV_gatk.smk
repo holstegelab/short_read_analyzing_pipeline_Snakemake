@@ -1,7 +1,7 @@
 from common import *
 import h5py
 import numpy as np
-onsuccess: shell("rm -fr logs/*")
+onsuccess: shell("rm -fr logs/gCNV_gatk/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     cohorts = "[\d]",
@@ -109,7 +109,7 @@ rule collect_read_counts:
     resources:
             n = 1,
             mem_mb = 5500 # if tool doesn't have enough RAM it ends without error and create corrupted file. Therefore here pretty big RAM (mean usage much lower)
-    log: pj(LOG, '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
+    log: pj(LOG,"gCNV_gatk", '{sample}.{cohort}.collectreadcounts_gatkcnv.log')
     benchmark: pj(BENCH, '{sample}.{cohort}.collectreadcounts_gatkcnv.txt')
     shell: """
             {params.java} -jar {params.gatk} CollectReadCounts -L {input.capture_kit} -R {params.ref} -imr OVERLAPPING_ONLY -I {input.bam} -O {output.ReadCounts} 2> {log}
@@ -140,7 +140,7 @@ rule filterintervals:
             cut_off_samples = '80',
             cut_off_count_threshold = '10',
     conda: CONDA_GATK_CNV
-    log: pj(LOG, '{cohort}.filterintervals_gatkcnv.log')
+    log: pj(LOG,"gCNV_gatk", '{cohort}.filterintervals_gatkcnv.log')
     benchmark: pj(BENCH, '{cohort}.filterintervals_gatkcnv.txt')
     shell: """
             {params.java} -jar {params.gatk} FilterIntervals --annotated-intervals {input.annotation} -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} -XL {params.PAR_and_CENTROMERIC} --low-count-filter-percentage-of-samples {params.cut_off_samples} --low-count-filter-count-threshold {params.cut_off_count_threshold}  2> {log}
@@ -150,7 +150,7 @@ rule make_scatters:
     input: rules.filterintervals.output.filtered_intervals
     output: scatterd = expand(pj(GATK_gCNV, 'filtred_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'), scatter = scatter_merged_cature_kit, allow_missing = True)
     conda: CONDA_GATK_CNV
-    log: pj(LOG,'{cohort}.make_scatters.log')
+    log: pj(LOG,"gCNV_gatk",'{cohort}.make_scatters.log')
     benchmark: pj(BENCH,'{cohort}.make_scatters.txt')
     params:
             java = java_cnv,
@@ -172,7 +172,7 @@ rule DetermineGCP:
             gatk = gatk_cnv,
             contig_ploydi_priors = PL_PR_TABLE
     conda: CONDA_GATK_CNV
-    # log: pj(LOG, '{cohort}.determinecontigploydi.log')
+    # log: pj(LOG,"gCNV_gatk", '{cohort}.determinecontigploydi.log')
     benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     resources:
             n = 1
@@ -200,7 +200,7 @@ rule GermlineCNVCaller:
     resources:
             mem_mb = get_mem_mb_germline_CNV_caller,
             n = 17
-    log: pj(LOG, '{cohort}.{scatter}.germlinecnvcalling.log')
+    log: pj(LOG,"gCNV_gatk", '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
     shell:
         """
@@ -231,7 +231,7 @@ rule PostprocessGermlineCNVCalls:
         SD = REF_MALE_DICT,
         ref = REF_MALE
     benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
-    log: pj(LOG, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls')
+    log: pj(LOG,"gCNV_gatk", '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls')
     resources:
             mem_mb = get_mem_mb_postprocess
     shell:

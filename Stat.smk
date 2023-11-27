@@ -4,7 +4,7 @@ import utils
 from scripts.pca import *
 import pandas as pd
 from sklearn.preprocessing import scale
-onsuccess: shell("rm -fr logs/*")
+onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+"
@@ -264,7 +264,7 @@ rule Artifact_stats:
         Bait_bias_det = pj(STAT,'{sample}.bait_bias_detail_metrics'),
         Pre_adapter_det = pj(STAT, '{sample}.pre_adapter_detail_metrics'),
     priority: 99
-    log: pj(LOG, "Artifact_stats_{sample}.log")
+    log: pj(LOG,"Stats", "Artifact_stats_{sample}.log")
     benchmark: pj(BENCH, "Artifact_stats_{sample}.txt")
     params:
         ref=get_ref_by_validated_sex,
@@ -291,7 +291,7 @@ rule OXOG_metrics:
     output:
         Artifact_matrics = pj(STAT, "{sample}.OXOG")
     priority: 99
-    log: pj(LOG, "OXOG_stats_{sample}.log")
+    log: pj(LOG,"Stats", "OXOG_stats_{sample}.log")
     benchmark: pj(BENCH, "OxoG_{sample}.txt")
     params:
         ref=get_ref_by_validated_sex,
@@ -311,7 +311,7 @@ rule samtools_stat:
         validated_sex = rules.get_validated_sex.output.yaml
     output: samtools_stat = ensure(pj(STAT, "{sample}.samtools.stat"), non_empty=True)
     priority: 99
-    log: pj(LOG, "samtools_{sample}.log")
+    log: pj(LOG,"Stats", "samtools_{sample}.log")
     benchmark: pj(BENCH, "samtools_stat_{sample}.txt")
     resources:
         mem_mb=130,
@@ -345,7 +345,7 @@ rule samtools_stat_exome:
     params:
         ref=get_ref_by_validated_sex,
         bed_interval = get_capture_kit_bed
-    log: pj(LOG, "samtools_exome_{sample}.log")
+    log: pj(LOG,"Stats", "samtools_exome_{sample}.log")
     benchmark: pj(BENCH,"samtools_stat_exome_{sample}.txt")
     resources:
         mem_mb=130,

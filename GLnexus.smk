@@ -6,7 +6,7 @@ import read_samples
 from common import *
 import utils
 current_dir = os.getcwd()
-onsuccess: shell("rm -fr logs/*")
+onsuccess: shell("rm -fr logs/GLnexus/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     chr = "[\w\d]+",
@@ -107,7 +107,7 @@ rule glnexus:
             mem_gb = 7,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_{parts}_glnexus.DB"),
             conf_filters = conf_filter
-    log: pj(current_dir,LOG,"{region}.{parts}.glnexus.log")
+    log: pj(current_dir,LOG,"GLnexus","{region}.{parts}.glnexus.log")
     benchmark:
         pj(current_dir,BENCH,"{region}.{parts}.glnexus.txt")
     threads: 4
@@ -134,7 +134,7 @@ if gvcf_caller == "BOTH":
                 conf_filters= conf_filter
         benchmark:
             pj(current_dir,BENCH,"{region}.{parts}.glnexus_2.txt")
-        log: pj(current_dir,LOG,"{region}.{parts}.glnexus_2.log")
+        log: pj(current_dir,LOG,"GLnexus","{region}.{parts}.glnexus_2.log")
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
         output: tbi = pj(current_dir, glnexus_dir[1] + dir_appendix, "{region}","{parts}.vcf.gz.tbi")

@@ -2,7 +2,7 @@
 import read_samples
 from common import *
 import utils
-onsuccess: shell("rm -fr logs/*")
+onsuccess: shell("rm -fr logs/Aligner/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -411,7 +411,7 @@ rule external_alignments_to_fastq:
         mem_mb = lambda wildcards, attempt: (attempt-1) * 13000 * 0.5 + 13000,
         tmpdir=tmpdir
     log:
-        fastq=pj(LOG,"{sample}.{readgroup}.align2fq.log"),
+        fastq=pj(LOG,"Aligner","{sample}.{readgroup}.align2fq.log"),
     benchmark:
         pj(BENCH,"{sample}.{readgroup}.align2fq.txt")
     params:
@@ -564,7 +564,7 @@ rule kmer_reads:
         kmerdir=KMER
     conda: CONDA_KMC
     log:
-        kmer_log=pj(LOG,"{sample}.kmer.log"),
+        kmer_log=pj(LOG, "Aligner", "{sample}.kmer.log"),
     benchmark:
         pj(BENCH,"{sample}.kmer.txt")
     priority: 15
@@ -753,7 +753,7 @@ rule merge_bam_alignment:
     conda: CONDA_PYPY
     benchmark:
         pj(BENCH,"{sample}.{readgroup}.mergebam.txt")
-    log: pj(LOG,"{sample}.{readgroup}.mergebamaligment.log")
+    log: pj(LOG, "Aligner", "{sample}.{readgroup}.mergebamaligment.log")
     params:
         bam_merge=srcdir(BAMMERGE)
     resources: 
@@ -816,7 +816,7 @@ rule sort_bam_alignment:
         bai = temp(pj(BAM,"{sample}.{readgroup}.sorted.bam.bai"))
     conda: CONDA_MAIN
     log:
-        samtools_sort=pj(LOG,"{sample}.{readgroup}.samtools_sort.log"),
+        samtools_sort=pj(LOG,"Aligner","{sample}.{readgroup}.samtools_sort.log"),
     benchmark:
         pj(BENCH,"{sample}.{readgroup}.sort.txt")
     priority: 17
@@ -866,7 +866,7 @@ rule merge_rgs:
         bai = get_readgroups_bai,
     output:
         mer_bam=temp(pj(BAM,"{sample}.merged.bam"))
-    log: pj(LOG,"{sample}.mergereadgroups.log")
+    log: pj(LOG,"Aligner","{sample}.mergereadgroups.log")
     benchmark: "benchmark/{sample}.merge_rgs.txt"
     resources:
         n="1",
@@ -931,7 +931,7 @@ rule markdup:
     # if fastq header not in known machines?
     # if not Illumina?
     log:
-        samtools_markdup=pj(LOG,"{sample}.markdup.log")
+        samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log")
     resources:
         n="1",
         mem_mb=get_mem_mb_markdup,
@@ -959,7 +959,7 @@ rule mCRAM:
     priority: 30
     conda: CONDA_MAIN
     log:
-        pj(LOG,"{sample}.mCRAM.log")
+        pj(LOG,"Aligner","{sample}.mCRAM.log")
     shell:
         "samtools view --output-fmt cram,version=3.1,archive --reference {REF} -@ {resources.n} --write-index -o {output.cram}##idx##{output.crai} {input.bam} 2> {log}"
 

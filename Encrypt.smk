@@ -1,5 +1,4 @@
 from common import *
-onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
