@@ -2,19 +2,12 @@ import pandas as pd
 import read_stats
 import itertools
 import os
-configfile: srcdir("Snakefile.cluster.json")
-configfile: srcdir("Snakefile.paths.yaml")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
 
 from common import *
-SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',config)
-sample_names = SAMPLEINFO.keys()
-
-# extract all sample names from SAMPLEINFO dict to use it rule all
-sample_names = SAMPLEINFO.keys()
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -197,9 +190,9 @@ elif end_point == "Genotype" or end_point == "Genotyper":
         if gVCF_combine_method == "DBIMPORT" or gVCF_combine_method == "COMBINE_GVCF":
             use rule * from Genotype
             END_RULE = rules.gVCF_all.input
-            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GenomicDBimport and Genotyping with GATK Genotype "
-                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
-                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=COMBINE_GVCF'"
+            print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs with GenomicDBimport and Genotyping with GATK Genotype \n"
+                  "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant' \n"
+                  "* To change combining method to GATK-s Combinbegvcf pass '--config Combine_gVCF_method=COMBINE_GVCF' \n"
                   "* To change jointgenotyping method to GLnexus pass --config Combine_gVCF_method=GLnexus")
         elif gVCF_combine_method == "GLnexus":
             use rule * from GLnexus

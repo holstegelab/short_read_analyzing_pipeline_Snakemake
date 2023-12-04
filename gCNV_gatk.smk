@@ -1,6 +1,7 @@
 from common import *
 import h5py
 import numpy as np
+
 onsuccess: shell("rm -fr logs/gCNV_gatk/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -17,6 +18,11 @@ module Stat:
     snakefile: 'Stat.smk'
     config: config
 use rule * from Stat
+
+module PCA:
+    snakefile: 'PCA.smk'
+    config: config
+use rule * from PCA
 
 
 module Tools:

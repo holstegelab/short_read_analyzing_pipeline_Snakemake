@@ -1,9 +1,6 @@
 from common import *
 import read_stats
 import utils
-from scripts.pca import *
-import pandas as pd
-from sklearn.preprocessing import scale
 onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
@@ -53,8 +50,7 @@ rule Stat_all:
         expand("{samplefile}.bam_rg_quality.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
         expand("{samplefile}.coverage.hdf5", samplefile = SAMPLE_FILES),
-        expand(pj(STAT, "{sample}.done"), sample = sample_names),
-        pj(STAT, 'PCA_stat.txt')
+        expand(pj(STAT, "{sample}.stats.tar.gz"), sample = sample_names),
     default_target: True        
     
 
@@ -73,10 +69,39 @@ rule stat_sample_done:
         pj(STAT,'{sample}.bait_bias_detail_metrics'),
         pj(STAT,'cov', '{sample}.regions.bed.gz')
     output:
-        cram = temp(touch(pj(STAT, "{sample}.done")))
+        done = temp(touch(pj(STAT, "{sample}.done")))
     resources:
         n="0.1",
         mem_mb=50        
+
+rule tar_stats_per_sample:
+    input:
+        samples = pj(STAT, "{sample}.done"),
+        hs = pj(STAT, "{sample}.hs_metrics"),
+        samtools = pj(STAT, "{sample}.samtools.stat"),
+        exome = pj(STAT, '{sample}.samtools.exome.stat'),
+        contam = pj(STAT, 'contam', '{sample}.verifybamid.pca2.selfSM'),
+        bam_all = pj(STAT, '{sample}.bam_all.tsv'),
+        bam_exome = pj(STAT, '{sample}.bam_exome.tsv'),
+        pread = pj(STAT, '{sample}.pre_adapter_summary_metrics'),
+        biat_bias = pj(STAT, '{sample}.bait_bias_summary_metrics'),
+        pread_det = pj(STAT, '{sample}.pre_adapter_detail_metrics'),
+        biat_bias_det = pj(STAT, '{sample}.bait_bias_detail_metrics'),
+        cov = pj(STAT, 'cov', '{sample}.regions.bed.gz'),
+        oxo_sf = "{samplefile}.oxo_quality.tab",
+        bam_qual_sf = "{samplefile}.bam_quality.tab",
+        bam_rg_qual_sf = "{samplefile}.bam_rg_quality.tab",
+        sex_chrom_sf = "{samplefile}.sex_chrom.tab",
+        cov_sf = "{samplefile}.coverage.hdf5",
+    output:
+        tar = pj(STAT, "{sample}.stats.tar.gz")
+    resources:
+            n = "1",
+            mem_mb = 1000
+    shell: """
+            tar -czvf {output.tar} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} 
+            rm -rf {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} 
+            """
 
 
 
@@ -130,61 +155,6 @@ rule gather_coverage:
         annotation = WINDOWS_ANNOTATED
 
         read_stats.write_coverage_to_hdf5(annotation, samples, list(input.mapped), list(input.cov), output.hdf5)
-
-
-rule clustering_samples:
-    input: expand('{samplefile}.coverage.hdf5',  samplefile = SAMPLE_FILES)
-    output: stat = pj(STAT, 'PCA_stat.txt'),
-            # groups = pj(STAT, 'PCA_groups.tsv')
-    conda: CONDA_PCA
-    run:
-        shell("touch {output.stat}")
-        hdf5_files = input
-        PCA_t, expl_var = perform_ipca(hdf5_files=hdf5_files)
-        # best_dict = get_scores_and_labels(combinations,data=PCA_t)
-        PCA_2 = PCA_t[[0, 1]]
-        data_2 = scale(PCA_2)
-        PCA_3 = PCA_t[[0, 1, 2]]
-        data_3 = scale(PCA_3)
-        PCA_4 = PCA_t[[0, 1, 2, 3]]
-        data_4 = scale(PCA_4)
-        PCA_6 = PCA_t[[0, 1, 2, 3, 4, 5]]
-        data_6 = scale(PCA_6)
-        PCA_10 = PCA_t
-        data_10 = scale(PCA_10)
-        best_dict_2 = get_scores_and_labels(combinations,data=data_2)
-        best_dict_3 = get_scores_and_labels(combinations,data=data_3)
-        best_dict_4 = get_scores_and_labels(combinations,data=data_4)
-        best_dict_6 = get_scores_and_labels(combinations,data=data_6)
-        best_dict_10 = get_scores_and_labels(combinations,data=data_10)
-        PCA_t['cluster_2_cor_cov'] = best_dict_2['best_labels']
-        PCA_t['cluster_3_cor_cov'] = best_dict_3['best_labels']
-        PCA_t['cluster_4_cor_cov'] = best_dict_4['best_labels']
-        PCA_t['cluster_6_cor_cov'] = best_dict_6['best_labels']
-        PCA_t['cluster_10_cor_cov'] = best_dict_10['best_labels']
-        clusters = ['cluster_2_cor_cov', 'cluster_3_cor_cov', 'cluster_4_cor_cov', 'cluster_6_cor_cov',
-                    'cluster_10_cor_cov']
-
-
-# df_with_all_samplefiles = pd.DataFrame()
-        # for SF in SAMPLE_FILES:
-        #     df_with_all_samplefiles, num_samples = load_hdf5_data(f'{SF}.coverage.hdf5', df_with_all_samplefiles, 'coverage' )
-        #     with open(pj(STAT, 'PCA_stat.txt'), 'a') as f:
-        #         print(f'Loaded {num_samples} samples from {SF}', file=f)
-        # PCA_t, cum_exp_var = perform_pca(df_with_all_samplefiles, n_comp= 0.9)
-        # best_dict = get_scores_and_labels(combinations, data=PCA_t)
-        # PCA_t['cluster'] = best_dict['best_labels']
-        with open(pj(STAT,'PCA_stat.txt'),'a') as f:
-            print(f"Cumulative variance = {expl_var}",file=f)
-            print(best_dict_2, file=f)
-            print(best_dict_3,file=f)
-            print(best_dict_4,file=f)
-            print(best_dict_6,file=f)
-            print(best_dict_10,file=f)
-        for cluster in clusters:
-            for SF in SAMPLE_FILES:
-                add_cluster_info_to_hdf5(f'{SF}', clustred_data=PCA_t, cluster=cluster)
-
 
 
 def get_svd(wildcards):#{{{

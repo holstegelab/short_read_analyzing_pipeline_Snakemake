@@ -23,10 +23,7 @@ module gVCF:
 use rule * from gVCF
 
 sample_types = config.get("sample_types","WES")
-if sample_types == 'WES':
-    parts = level2_regions
-else:
-    parts = level3_regions
+parts = level2_regions
 
 regions = []
 for part in parts:
@@ -65,10 +62,8 @@ def region_to_IL_file(wildcards):#{{{
     # sample = wildcards['sample']
     region = wildcards['part']
     # return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='bed')#}}}
-    if sample_types == 'WES':
-        return region_to_file(region,extension='interval_list')
-    elif sample_types == 'WGS':
-        return region_to_file(region, wgs=True, extension='interval_list')#}}}
+    # WGS files have less regions so DBI works faster and could use multiple cores
+    return region_to_file(region, wgs=True, extension='interval_list')#}}}
 
 
 
@@ -85,7 +80,7 @@ rule backup_gdbi:
 
 
 def get_mem_mb_GenomicDBI(wildcrads, attempt):
-    return attempt*4500
+    return attempt*6500
 
 
 rule GenomicDBImport:
