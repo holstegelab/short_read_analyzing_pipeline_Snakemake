@@ -10,8 +10,8 @@ configfile: srcdir("Snakefile.cluster.json")
 configfile: srcdir("Snakefile.paths.yaml")
 
 
-tmpdir = pj(config['TMPDIR'],getpass.getuser())
-tmpdir_alternative = pj(config['tmpdir'],getpass.getuser())
+tmpdir = pj(TMPDIR,getpass.getuser())
+tmpdir_alternative = pj(TMPDIR_ALT,getpass.getuser())
 
 os.makedirs(tmpdir,mode=0o700,exist_ok=True)
 
@@ -58,6 +58,8 @@ rule extract_chrM_reads:
     benchmark: pj(BENCH, '{sample}.printreads_chrM.txt')
     log: pj(LOG,"chrM","{sample}.printreads_chrM.log")
     conda: "envs/gatk.yaml"
+    resources:
+        mem_reserved_mb=1000
     shell:
         "gatk PrintReads -I {input} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter 2> {log}"
 
@@ -110,7 +112,10 @@ rule mutect_orig:
             mt_ref_shift= pj(SHIFTED_MT_fa),
             chain= pj(MT_CHAIN),
             variants_dir = pj(chrM, 'variants')
-    resources: n = 2
+    resources: 
+            n = 2,
+            mem_reserved_mb=1500
+
     shell:
             """
                 mkdir -p {params.variants_dir}
@@ -176,7 +181,9 @@ rule mutect_orig_bp_resolut:
             mt_ref_shift= pj(SHIFTED_MT_fa),
             chain= pj(MT_CHAIN),
             variants_dir = pj(chrM, 'variants')
-    resources: n = 2
+    resources: 
+            n = 2,
+            mem_reserved_mb=1500
     shell:
             """
                 mkdir -p {params.variants_dir}
@@ -203,6 +210,8 @@ rule extract_NUMTs_reads:
     log: pj(LOG,"chrM","{sample}.printreads_NUMTs.log")
     conda: "envs/gatk.yaml"
     params: NUMTs_bed = NUMTs
+    resources:
+        mem_reserved_mb=1000
     shell:
         "gatk PrintReads -I {input} -L {params.NUMTs_bed} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter 2> {log}"
 
@@ -255,6 +264,9 @@ rule mutect_orig_NUMT:
             mt_ref_shift= pj(SHIFTED_MT_fa),
             chain= pj(MT_CHAIN),
             results_dir = pj(chrM, 'variants' , 'NUMTs')
+    resources:
+            n=2,
+            mem_reserved_mb=1500
     shell:
             """
              mkdir -p {params.results_dir}
@@ -315,6 +327,9 @@ rule mutect_orig_NUMT_BP_resolution:
             mt_ref_shift= pj(SHIFTED_MT_fa),
             chain= pj(MT_CHAIN),
             results_dir = pj(chrM, 'variants' , 'NUMTs')
+    resources:
+            n=2,
+            mem_reserved_mb=1500
     shell:
             """
              mkdir -p {params.results_dir}

@@ -197,9 +197,7 @@ rule HaplotypeCaller:
         ploidy=lambda wildcards: 1 if wildcards["region"].endswith("H") else 2,
         java_options=DEFAULT_JAVA_OPTIONS,
         ref=get_ref_by_validated_sex,
-        dragen_mode=lambda wildcards: "--dragen-mode true"
-        if not "H" in wildcards["region"]
-        else "",
+        dragen_mode=lambda wildcards: "--dragen-mode true" if not "H" in wildcards["region"]  else "",
         merge_script=srcdir(MERGEPHASE),
     priority: 28
     # Overview of available annotations (GATK version 4.4)

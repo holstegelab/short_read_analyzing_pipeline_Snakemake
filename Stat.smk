@@ -88,11 +88,6 @@ rule tar_stats_per_sample:
         pread_det = pj(STAT, '{sample}.pre_adapter_detail_metrics'),
         biat_bias_det = pj(STAT, '{sample}.bait_bias_detail_metrics'),
         cov = pj(STAT, 'cov', '{sample}.regions.bed.gz'),
-        oxo_sf = "{samplefile}.oxo_quality.tab",
-        bam_qual_sf = "{samplefile}.bam_quality.tab",
-        bam_rg_qual_sf = "{samplefile}.bam_rg_quality.tab",
-        sex_chrom_sf = "{samplefile}.sex_chrom.tab",
-        cov_sf = "{samplefile}.coverage.hdf5",
     output:
         tar = pj(STAT, "{sample}.stats.tar.gz")
     resources:

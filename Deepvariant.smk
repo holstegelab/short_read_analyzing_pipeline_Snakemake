@@ -27,7 +27,7 @@ rule DeepVariant_all:
 def get_deepvariant_files(wildcards):#{{{
     sample = wildcards['sample']
     regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
-    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in regions if not region.endswith('H')]#}}}
+    return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in regions]#}}}
     # return [pj(DEEPVARIANT,'gVCF',region,f'{sample}.{region}.wg.vcf.gz') for region in regions]  #}}}
 
 rule deepvariant_sample_done:
@@ -68,8 +68,9 @@ rule deepvariant:
         inter_dir = temp(directory(pj(DEEPVARIANT,'DV_intermediate', "{sample}.{region}")))
     params: 
             cd = current_dir + '/',
-            mode=get_sequencing_mode
-    container: 'docker://google/deepvariant:1.5.0'
+            mode=get_sequencing_mode,
+            haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE'
+    container: 'docker://google/deepvariant:1.6.0'
     benchmark:
         pj(BENCH,"{sample}.{region}.wholedeepvariant.txt")
     resources:
@@ -79,7 +80,8 @@ rule deepvariant:
     log: pj(LOG,"Deepvariant","{sample}.{region}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --intermediate_results_dir "{output.inter_dir}"  2> {log}
+        /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{output.inter_dir}" --postprocess_cpus 2   2> {log}
+        rm "{output.inter_dir}/*"
         """
 
 
@@ -101,17 +103,29 @@ rule DVWhatshapPhasingMerge:
         gvcf= pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"), 
         gvcf_tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"), 
     params:
-        merge_script=srcdir(MERGEPHASE)
+        merge_script=srcdir(MERGEPHASE),
+        ploidy=lambda wildcards: 1 if wildcards["region"].endswith("H") else 2,
     resources: 
         n="1.0",
-        mem_mb = 600
+        mem_mb = 900
     conda: CONDA_VCF
     shell: """
         mkdir -p `dirname {output.wstats}`
-        whatshap phase  --ignore-read-groups --reference {REF} {input.vcf} {input.bams} -o {output.vcf}        
-        whatshap stats {output.vcf} > {output.wstats}
-        python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
-        bcftools view {output.tmp_gvcf} -o {output.gvcf}
+        if [ {params.ploidy} -eq 2 ]
+        then 
+            whatshap phase  --ignore-read-groups --reference {REF} {input.vcf} {input.bams} -o {output.vcf}        
+            whatshap stats {output.vcf} > {output.wstats}
+            python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
+            bcftools view {output.tmp_gvcf} -o {output.gvcf}
+        else
+            touch {output.tmp_gvcf}
+            touch {output.vcf}
+            touch {output.vcf}.tbi
+            touch {output.wstats}
+            touch {output.mwstats}
+            touch {output.tmp_gvcf}
+            bcftools view {input.gvcf} -o {output.gvcf}
+        fi
         bcftools index --tbi {output.gvcf}
         """        
 
