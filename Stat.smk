@@ -4,13 +4,13 @@ import utils
 onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+"
 
 
-module Aligner:
+
+Cmodule Aligner:
     snakefile: 'Aligner.smk'
     config: config
-use rule * from Aligner
+uCse rule * from Aligner
 
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):#{{{
     """If samples are on tape, we do not have sample readgroup info.
@@ -88,6 +88,11 @@ rule tar_stats_per_sample:
         pread_det = pj(STAT, '{sample}.pre_adapter_detail_metrics'),
         biat_bias_det = pj(STAT, '{sample}.bait_bias_detail_metrics'),
         cov = pj(STAT, 'cov', '{sample}.regions.bed.gz'),
+        o=expand("{samplefile}.oxo_quality.tab", samplefile = SAMPLE_FILES),
+        b=expand("{samplefile}.bam_quality.tab", samplefile = SAMPLE_FILES),
+        br=expand("{samplefile}.bam_rg_quality.tab", samplefile = SAMPLE_FILES),
+        s=expand("{samplefile}.sex_chrom.tab", samplefile = SAMPLE_FILES),
+        c=expand("{samplefile}.coverage.hdf5", samplefile = SAMPLE_FILES),
     output:
         tar = pj(STAT, "{sample}.stats.tar.gz")
     resources:

@@ -65,11 +65,11 @@ rule deepvariant:
         vcf_tbi = temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi")),
         gvcf = temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz")),
         gvcf_tbi = temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")),
-        inter_dir = temp(directory(pj(DEEPVARIANT,'DV_intermediate', "{sample}.{region}")))
     params: 
             cd = current_dir + '/',
             mode=get_sequencing_mode,
-            haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE'
+            haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
+            inter_dir = pj(DEEPVARIANT,'DV_intermediate')
     container: 'docker://google/deepvariant:1.6.0'
     benchmark:
         pj(BENCH,"{sample}.{region}.wholedeepvariant.txt")
@@ -80,8 +80,9 @@ rule deepvariant:
     log: pj(LOG,"Deepvariant","{sample}.{region}.wholedeepvariant.log")
     shell:
         """
-        /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{output.inter_dir}" --postprocess_cpus 2   2> {log}
-        rm "{output.inter_dir}/*"
+        mkdir -p "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
+        /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{params.inter_dir}/{wildcards.sample}.{wildcards.region}" --postprocess_cpus 2   2> {log}
+        rm -rf "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
         """
 
 
