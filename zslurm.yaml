@@ -40,3 +40,4 @@ rerun-incomplete: True
 printshellcmds: True
 scheduler: greedy
 restart-times: 3
+drop-metadata: True
