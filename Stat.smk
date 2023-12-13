@@ -10,7 +10,7 @@ wildcard_constraints:
 Cmodule Aligner:
     snakefile: 'Aligner.smk'
     config: config
-uCse rule * from Aligner
+use rule * from Aligner
 
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):#{{{
     """If samples are on tape, we do not have sample readgroup info.
