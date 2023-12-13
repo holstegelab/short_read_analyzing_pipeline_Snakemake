@@ -4,10 +4,10 @@ import utils
 onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
+    sample="[\w\d_\-@]+"
 
 
-
-Cmodule Aligner:
+module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 use rule * from Aligner
