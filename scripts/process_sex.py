@@ -56,5 +56,13 @@ result['dist_chry_ratio'] = [float(e) for e in (numpy.array(result['dist_chry'])
 
 
 result['sex'] = 'F' if result['yyratio'] < 0.05 else 'M'
+print(result)
+
 with open(result_file, 'w') as f:
     yaml.dump(result, f, default_flow_style=False)
+
+#try to open it again, as we have some weird byte-filled yaml files sometimes
+with open(result_file) as f:
+    xsample = yaml.load(f,Loader=yaml.FullLoader)
+
+

@@ -653,7 +653,7 @@ rule get_validated_sex:
        out1=pj(KMER,"{sample}.kmc_pre"),
        out2=pj(KMER,"{sample}.kmc_suf")
     output:
-       yaml=temp(pj(KMER,"{sample}.result.yaml")),
+       yaml=ensure(pj(KMER,"{sample}.result.yaml"),non_empty=True),
        chry=temp(pj(KMER,"{sample}.chry.tsv")),
        chrx=temp(pj(KMER,"{sample}.chrx.tsv")),
        chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
