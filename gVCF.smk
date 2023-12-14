@@ -254,9 +254,9 @@ rule reblock_gvcf:
         validated_sex=rules.get_validated_sex.output.yaml,
     output:
         gvcf_reblock=ensure(
-            pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+            pj(current_dir, GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi=ensure(
-            pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
+            pj(current_dir, GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     log:
         Reblock=pj(LOG,"gVCF","{sample}_{region}_reblock.log"),
     conda:
