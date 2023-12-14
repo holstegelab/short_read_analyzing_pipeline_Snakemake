@@ -84,7 +84,7 @@ module Reference_preparation:
 gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
 gvcf_caller = config.get("caller","both")
-glnexus_filtration = config.get("glnexus_filtration","default")
+glnexus_filtration = config.get("glnexus_filtration","custom")
 
 rule_all_combine = []
 VQSR_rule = []
@@ -108,7 +108,7 @@ if end_point == "gVCF":
             """
             input:
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
-                pj(GVCF,"{sample}.done"),
+                pj(current_dir,GVCF,"{sample}.done"),
                 pj(DEEPVARIANT,"{sample}.done"),
                 pj(STAT,"{sample}.done"),
                 pj(KRAKEN,"{sample}.bracken_report.tsv")
