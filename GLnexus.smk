@@ -23,7 +23,7 @@ module gVCF:
     snakefile: 'gVCF.smk'
     config: config
 
-gvcf_caller = config.get("caller", "HaplotypeCaller")
+gvcf_caller = config.get("caller", "BOTH")
 glnexus_filtration = config.get("glnexus_filtration", "custom")
 sample_types = config.get("sample_types","WES")
 
