@@ -112,8 +112,7 @@ checkpoint get_readgroups:
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         if sample['from_external']:
-            prefixpath = pj(SOURCEDIR,wildcards[
-                                          'sample'] + '.data')  # location where the data is downloaded from the external data repository
+            prefixpath = pj(SOURCEDIR,wildcards['sample'] + '.data')  # location where the data is downloaded from the external data repository
         else:
             prefixpath = sample['prefix']
         sample, warnings = read_samples.get_readgroups(sample,prefixpath)

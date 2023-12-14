@@ -1,21 +1,19 @@
 from common import *
 
 
-
 rule BedToIntervalList:
     input:
-        bed_file = "{path}.bed"
+        bed_file="{path}.bed"
     output:
-        interval_list = "{path}.interval_list"    
+        interval_list="{path}.interval_list"
     params:
-        seq_dict = REF_MALE_DICT
+        seq_dict=REF_MALE_DICT
     conda: CONDA_VCF
-    resources: 
-        n = "1.0",
-        mem_mb = 1000       
+    resources:
+        n="1.0",
+        mem_mb=1000
     shell:
         """{gatk} BedToIntervalList  --java-options "-Xmx{resources.mem_mb}m {DEFAULT_JAVA_OPTIONS}"  -I {input.bed_file} -O {output.interval_list} -SD {params.seq_dict} --UNIQUE"""
-
 
 
 rule CreateBinsFullGenome:
@@ -30,22 +28,22 @@ rule CreateBinsFullGenome:
     8. Create level 2 bins by merging level 3 bins (bin 00 = 000-0099, etc.)
     9. Create level 1 bins by merging level 2 bins (bin 0 = 0000-0999, etc.)
     10. Create full genome bin by merging level 1 bins (bin 0 = 0000-9999, etc.)
-    
+
     The 1070 level 3 bins are used for genotyping over all samples.
     The 12 level 1 bins (10 auto + x + y) are used for variant calling per sample.
 
     """
     input: fai=ancient(REF_MALE_FAI),
-           mask=ancient(REF_MALE_BED),
-           merged_kit=ancient(MERGED_CAPTURE_KIT_BED)
-    output: directory(pj(INTERVALS_DIR, 'wgs_bins'))
+        mask=ancient(REF_MALE_BED),
+        merged_kit=ancient(MERGED_CAPTURE_KIT_BED)
+    output: directory(pj(INTERVALS_DIR,'wgs_bins'))
     params:
-        nsplit = 1000
+        nsplit=1000
     conda: CONDA_MAIN
     resources:
         n="1.0",
         mem_mb=250
-    shell:"""
+    shell: """
         mkdir -p {output}
         cd {output}
         bedtools sort -i {input.merged_kit} > {input.merged_kit}.sorted.bed
@@ -86,7 +84,7 @@ rule CreateBinsFullGenome:
             counter=$(printf "%02d" $j)
             cat genome.Ysplit3.$counter?.bed | bedtools merge > genome.Ysplit2.$counter.bed
         done
-        
+
 
         #level 2
         for j in $(seq 0 99); do
@@ -112,10 +110,6 @@ rule CreateBinsFullGenome:
                 """
 
 
-        
-
-
-
 rule CreateBinsExome:
     """Create bins for the exome. Separate bins for X and Y.
     1. Determine merged kit padding regions (300bp)
@@ -123,16 +117,16 @@ rule CreateBinsExome:
 
     """
     input: merged_kit=ancient(MERGED_CAPTURE_KIT_BED),
-           wgs_folder=pj(INTERVALS_DIR, 'wgs_bins'),
-           fai=ancient(REF_MALE_FAI),
-    output: directory(pj(INTERVALS_DIR, 'wes_bins'))
+        wgs_folder=pj(INTERVALS_DIR,'wgs_bins'),
+        fai=ancient(REF_MALE_FAI),
+    output: directory(pj(INTERVALS_DIR,'wes_bins'))
     params:
-        nsplit = 1000     
+        nsplit=1000
     conda: CONDA_MAIN
     resources:
         n="1.0",
         mem_mb=250
-    shell:"""
+    shell: """
         mkdir -p {output}
         cd {output}
         bedtools slop -i {input.merged_kit} -g {input.fai} -b 300 | bedtools merge | bedtools sort > {input.merged_kit}.padded.bed
@@ -151,8 +145,8 @@ rule CreateBinsExome:
             counter=$(printf "%02d" $j)
             bedtools intersect -a {input.wgs_folder}/genome.Ysplit2.$counter.bed -b {input.merged_kit}.padded.bed > merged.Ysplit2.$counter.bed
         done
-        
-        
+
+
 
         #level 2
         for j in $(seq 0 99); do
@@ -170,7 +164,7 @@ rule CreateBinsExome:
         for i in $(seq 0 9); do
             bedtools intersect -a {input.wgs_folder}/genome.autosplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.autosplit1.$i.bed
         done
-        
+
         bedtools intersect -a {input.wgs_folder}/genome.autosplit0.bed -b {input.merged_kit}.padded.bed > merged.autosplit0.bed
         bedtools intersect -a {input.wgs_folder}/genome.fullsplit0.bed -b {input.merged_kit}.padded.bed > merged.fullsplit0.bed
         bedtools intersect -a {input.wgs_folder}/genome.Xsplit0.bed -b {input.merged_kit}.padded.bed > merged.Xsplit0.bed
@@ -180,12 +174,12 @@ rule CreateBinsExome:
 
 rule select_bed_chrom:
     input:
-        interval_list = "{folder}/{capture_kit}.bed"
+        interval_list="{folder}/{capture_kit}.bed"
     output:
-        interval_list_chrom = "{folder}/{capture_kit}/{capture_kit}_chrom_{chrom}.bed" 
+        interval_list_chrom="{folder}/{capture_kit}/{capture_kit}_chrom_{chrom}.bed"
     resources:
         n="1.0",
-        mem_mb=1000        
-    shell:"""
+        mem_mb=1000
+    shell: """
             grep -P '^{wildcards.chrom}\t' {input} > {output}
           """  

@@ -5,13 +5,11 @@ import getpass
 import read_samples
 from common import *
 import utils
-current_dir = os.getcwd()
 onsuccess: shell("rm -fr logs/DBImport/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     mode = "WES|WGS"
-    # readgroup="[\w\d_\-@]+",
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -50,7 +48,7 @@ elif DBImethod == "update" and len(DBIpath) != 1:
     labels = expand(["labels/done_backup_{samplefile}_{region}.p{part}"],zip, region = regions, part = parts,samplefile=SAMPLE_FILES * number_of_splits)
 elif DBImethod == "update" and len(DBIpath) == 1:
     raise ValueError(
-        "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_'"
+        "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_' \n"
         "Don't provide {chr}.p{chr_p} part of path!"
     )
 else:
@@ -58,14 +56,10 @@ else:
         "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
     )
 def region_to_IL_file(wildcards):#{{{
-    """Converts a region to a bed file location (see common.py and Tools.smk)"""
-    # sample = wildcards['sample']
+    """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['part']
-    # return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='bed')#}}}
-    # WGS files have less regions so DBI works faster and could use multiple cores
+    # WGS files have fewer regions so DBI works faster and could use multiple cores
     return region_to_file(region, wgs=True, extension='interval_list')#}}}
-
-
 
 
 rule backup_gdbi:
@@ -79,16 +73,11 @@ rule backup_gdbi:
             """
 
 
-def get_mem_mb_GenomicDBI(wildcrads, attempt):
-    return attempt*6500
-
-
 rule GenomicDBImport:
     input:
         g=expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
         labels = labels
     log: pj(LOG,"DBImport", "GenomicDBImport.{region}.p{part}.log")
-    benchmark: pj(BENCH, "{region}.p{part}_GenomicDBImport.txt")
     conda: CONDA_VCF
     output:
         ready=touch(temp('labels/done_{region}.p{part}.txt'))
@@ -101,7 +90,7 @@ rule GenomicDBImport:
         intervals = region_to_IL_file,
         ref = REF_MALE
     priority: 30
-    resources: mem_mb = get_mem_mb_GenomicDBI,
+    resources: mem_mb = lambda wildcards, attempt: attempt*6500,
             tmpdir= TMPDIR
     shell:
         """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \

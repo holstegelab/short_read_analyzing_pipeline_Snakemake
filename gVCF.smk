@@ -3,8 +3,6 @@ onsuccess: shell("rm -fr logs/gVCF/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
-    # readgroup="[\w\d_\-@]+"
-
 
 module Aligner:
     snakefile:
@@ -12,26 +10,20 @@ module Aligner:
     config:
         config
 
-
 use rule * from Aligner
-
 
 module Stat:
     snakefile:
         "Stat.smk"
     config:
         config
-
-
 use rule verifybamid from Stat
-
 
 module Tools:
     snakefile:
         "Tools.smk"
     config:
         config
-
 
 use rule * from Tools
 
@@ -49,8 +41,6 @@ def get_gvcf_files(wildcards):  # {{{
         level1_regions if "wgs" in SAMPLEINFO[sample]["sample_type"] else level0_regions
     )
     return [pj(GVCF, "reblock", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
-
-
 # }}}
 
 
@@ -100,8 +90,6 @@ rule CalibrateDragstrModel:
         mem_mb=lambda wildcards, attempt: attempt * 1750,
     log:
         pj(LOG, "gVCF","{sample}_calibratedragstr.log"),
-    benchmark:
-        pj(BENCH, "{sample}_calibrate_dragstr.txt")
     conda:
         CONDA_VCF
     shell:
@@ -123,8 +111,6 @@ def read_contam_w(wildcards):  # {{{
     if freemix < 0.01:  # only remove contamination if it is more than 1%
         freemix = 0.0
     return freemix
-
-
 # }}}
 
 
@@ -134,8 +120,6 @@ def get_mem_mb_HaplotypeCaller(wildcards, attempt):  # {{{
 
     # HaplotypeCaller has exponential memory scaling on some regions. Average is very  low, but on some regions it can scale to 75 GB...
     return res * (3 ** (attempt - 1))  # aggressively reserve more memory
-
-
 # }}}
 
 
@@ -148,8 +132,6 @@ def region_to_interval_file(wildcards):  # {{{
         wgs="wgs" in SAMPLEINFO[sample]["sample_type"],
         extension="interval_list",
     )
-
-
 # }}}
 
 
@@ -178,8 +160,8 @@ rule HaplotypeCaller:
         wstats=pj(STAT, "whatshap_phasing/{sample}.{region}.stats"),
         mwstats=pj(STAT, "whatshap_phasing/{sample}.{region}.merge_stats"),
         tmp_gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf")),
-        gvcf=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz"),
-        gvcf_tbi=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz")),
+        gvcf_tbi=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi")),
     log:
         HaplotypeCaller=pj(LOG,"gVCF", "{sample}_{region}_haplotypecaller.log"),
     benchmark:
@@ -197,7 +179,7 @@ rule HaplotypeCaller:
         ploidy=lambda wildcards: 1 if wildcards["region"].endswith("H") else 2,
         java_options=DEFAULT_JAVA_OPTIONS,
         ref=get_ref_by_validated_sex,
-        dragen_mode=lambda wildcards: "--dragen-mode true" if not "H" in wildcards["region"]  else "",
+        dragen_mode=lambda wildcards: "--dragen-mode true " if not "H" in wildcards["region"] else "",
         merge_script=srcdir(MERGEPHASE),
     priority: 28
     # Overview of available annotations (GATK version 4.4)
@@ -272,15 +254,11 @@ rule reblock_gvcf:
         validated_sex=rules.get_validated_sex.output.yaml,
     output:
         gvcf_reblock=ensure(
-            pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True
-        ),
+            pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi=ensure(
-            pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True
-        ),
+            pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     log:
         Reblock=pj(LOG,"gVCF","{sample}_{region}_reblock.log"),
-    benchmark:
-        pj(BENCH, "{sample}_{region}_reblock.txt")
     conda:
         CONDA_VCF
     priority: 29

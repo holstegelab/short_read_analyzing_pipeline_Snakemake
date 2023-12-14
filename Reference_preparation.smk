@@ -3,14 +3,6 @@ import read_stats
 import os
 import getpass
 
-configfile: srcdir("Snakefile.cluster.json")
-configfile: srcdir("Snakefile.paths.yaml")
-
-ref = os.path.join(config['RES'],config['ref'])
-tmpdir = os.path.join(config['TMPDIR'],getpass.getuser())
-
-os.makedirs(tmpdir,mode=0o700,exist_ok=True)
-
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     extension='sam|bam|cram',
@@ -24,72 +16,68 @@ wildcard_constraints:
 from read_samples import *
 import utils
 from common import *
-
-sex_ref = ['ref_male', 'ref_female']
-sex_ref_hash = ['ref_male_hash', 'ref_female_hash']
-sex_ref_str = ['ref_male_str', 'ref_female_str']
-RES = config['RES']
+import constants
 
 rule Reference_preparation_all:
     input:
-        expand('{RES}/{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_male_hash']),
-        expand('{RES}/{sex_ref_str}', RES=RES, sex_ref_str=config['ref_male_str']),
-        expand('{RES}/{sex_ref_hash}', RES=RES, sex_ref_hash=config['ref_female_hash']),
-        expand('{RES}/{sex_ref_str}', RES=RES, sex_ref_str=config['ref_female_str']),
-        os.path.join(config['RES'],config['SHIFTED_MT_fai']),
-        os.path.join(config['RES'],config['ORIG_MT_fai']),
-        os.path.join(config['RES'],config['SHIFTED_MT_dict']),
-        os.path.join(config['RES'],config['ORIG_MT_dict'])
+        expand('{RES}/{sex_ref_hash}', RES=RESOURCES, sex_ref_hash=REF_MALE_HASH),
+        expand('{RES}/{sex_ref_str}', RES=RESOURCES, sex_ref_str=REF_MALE_STR),
+        expand('{RES}/{sex_ref_hash}', RES=RESOURCES, sex_ref_hash=REF_FEMALE_HASH),
+        expand('{RES}/{sex_ref_str}', RES=RESOURCES, sex_ref_str=REF_FEMALE_STR),
+        SHIFTED_MT_fai,
+        ORIG_MT_fai,
+        SHIFTED_MT_dict,
+        ORIG_MT_dict,
     default_target: True
 
 
 rule create_fai:
-    input: fasta=ancient(os.path.join(config['RES'], config['ref_male']))
-    output: fai = os.path.join(config['RES'], config['ref_male_fai'])
+    input: fasta=ancient(REF_MALE),
+    output: fai = REF_MALE_FAI,
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
 rule create_fai_1:
-    input: fasta=ancient(os.path.join(config['RES'], config['ref_female']))
-    output: fai = os.path.join(config['RES'], config['ref_female_fai'])
+    input: fasta=ancient(REF_FEMALE),
+    output: fai = REF_FEMALE_FAI
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
 rule create_fai_chrM_shifted:
-    input: mt_ref_shift = ancient(os.path.join(config['RES'], config['SHIFTED_MT_fa']))
-    output: fai = os.path.join(config['RES'], config['SHIFTED_MT_fai'])
+    input: mt_ref_shift = ancient(SHIFTED_MT_fa)
+    output: fai = SHIFTED_MT_fai
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
 rule create_dict_for_chrM_orig_reference:
-    input: mt_ref_shift = ancient(os.path.join(config['RES'], config['ORIG_MT_fa']))
-    output: fai = os.path.join(config['RES'], config['ORIG_MT_fai'])
+    input: mt_ref_shift = ancient(ORIG_MT_fa)
+    output: fai = ORIG_MT_fai
     conda: "envs/preprocess.yaml"
     shell: "samtools faidx {input}"
 
 rule create_dict:
-    input: fasta=ancient(os.path.join(config['RES'], config['ref_male'])),
-    output: dict = os.path.join(config['RES'], config['ref_male_dict'])
+    input: fasta=ancient(REF_MALE),
+    output: dict = REF_MALE_DICT
     conda: "envs/gatk.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_1:
-    input: fasta= ancient(os.path.join(config['RES'], config['ref_female'])),
-    output: dict =os.path.join(config['RES'], config['ref_female_dict'])
+    input: fasta = ancient(REF_FEMALE),
+    output: dict = REF_FEMALE_DICT
     conda: "envs/gatk.yaml"
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_for_chrM_shifted_reference:
-    input: mt_ref_shift = ancient(os.path.join(config['RES'], config['SHIFTED_MT_fa']))
-    output: dict = os.path.join(config['RES'], config['SHIFTED_MT_dict'])
+    input: mt_ref_shift = ancient(SHIFTED_MT_fa)
+    output: dict = SHIFTED_MT_dict
     conda: "envs/gatk.yaml"
     shell:  """
             gatk CreateSequenceDictionary -R {input}
             """
 
 rule create_dict_for_chrM_reference:
-    input: mt_ref_shift = ancient(os.path.join(config['RES'], config['ORIG_MT_fa']))
-    output: dict = os.path.join(config['RES'], config['ORIG_MT_dict'])
+    input: mt_ref_shift = ancient(ORIG_MT_fa)
+    output: dict = ORIG_MT_dict
     conda: "envs/gatk.yaml"
     shell:  """
             gatk CreateSequenceDictionary -R {input}
@@ -97,14 +85,14 @@ rule create_dict_for_chrM_reference:
 
 rule create_hash:
     input:
-        fasta=ancient(os.path.join(config['RES'], config['ref_male'])),
-        dir=ancient(os.path.join(config['RES'], config['ref_male_dir'])),
-        bed=ancient(os.path.join(config['RES'], config['ref_male_bed'])),
-        dict = ancient(os.path.join(config['RES'], config['ref_male_dict'] ))
+        fasta=ancient(REF_MALE),
+        dir=ancient(REF_MALE_DIR),
+        bed=ancient(REF_MALE_BED),
+        dict = ancient(REF_MALE_DICT)
     conda: "envs/preprocess.yaml"
-    output: hash = os.path.join(config['RES'], config[sex_ref_hash[0]])
+    output: hash = REF_MALE_HASH
     params:
-        dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
+        dragmap = dragmap
     resources:
         mem_mb=50000,
         n=64
@@ -114,10 +102,10 @@ rule create_hash:
 
 rule ComposeSTRTableFile:
     input:
-        fasta=ancient(os.path.join(config['RES'], config['ref_male'])),
-        dict= ancient(os.path.join(config['RES'],config['ref_male_dict']))
+        fasta=ancient(REF_MALE),
+        dict= ancient(REF_MALE_DICT)
     output:
-        str_file=os.path.join(config['RES'], config['ref_male_str'])
+        str_file=REF_MALE_STR
     conda: "envs/vcf_handling.yaml"
     resources:
         mem_mb=12000,
@@ -128,14 +116,14 @@ rule ComposeSTRTableFile:
 
 rule create_hash_1:
     input:
-        fasta=ancient(os.path.join(config['RES'], config['ref_female'])),
-        dir=ancient(os.path.join(config['RES'], config['ref_female_dir'])),
-        bed=ancient(os.path.join(config['RES'], config['ref_female_bed'])),
-        dict= ancient(os.path.join(config['RES'],config['ref_female_dict']))
+        fasta=ancient(REF_FEMALE),
+        dir=ancient(REF_FEMALE_DIR),
+        bed=ancient(REF_FEMALE_BED),
+        dict= ancient(REF_FEMALE_DICT)
     conda: "envs/preprocess.yaml"
-    output: hash = os.path.join(config['RES'], config['ref_female_hash'])
+    output: hash = REF_FEMALE_HASH
     params:
-        dragmap = os.path.join(config['RES'],config['SOFTWARE'],'dragen-os')
+        dragmap = dragmap
     resources:
         mem_mb=50000,
         n=64
@@ -145,10 +133,10 @@ rule create_hash_1:
 
 rule ComposeSTRTableFile_1:
     input:
-        fasta=ancient(os.path.join(config['RES'], config['ref_female'])),
-        dict= ancient(os.path.join(config['RES'],config['ref_female_dict']))
+        fasta=ancient(REF_FEMALE),
+        dict= ancient(REF_FEMALE_DICT)
     output:
-        str_file = os.path.join(config['RES'], config['ref_female_str'])
+        str_file = REF_FEMALE_STR
     conda: "envs/vcf_handling.yaml"
     resources:
         mem_mb=12000,

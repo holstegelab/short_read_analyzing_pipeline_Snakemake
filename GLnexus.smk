@@ -78,9 +78,7 @@ def conf_filter(wildcards):
 
 def region_to_bed_file(wildcards):#{{{
     """Converts a region to a bed file location (see common.py and Tools.smk)"""
-    # sample = wildcards['sample']
     region = wildcards['parts']
-    # return region_to_file(region, wgs='wgs' in SAMPLEINFO[sample]['sample_type'], extension='bed')#}}}
     if sample_types == 'WES':
         return region_to_file(region,extension='bed')
     elif sample_types == 'WGS':
@@ -108,8 +106,6 @@ rule glnexus:
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_{parts}_glnexus.DB"),
             conf_filters = conf_filter
     log: pj(current_dir,LOG,"GLnexus","{region}.{parts}.glnexus.log")
-    benchmark:
-        pj(current_dir,BENCH,"{region}.{parts}.glnexus.txt")
     threads: 4
     resources: mem_mb = 7000
     shell:
@@ -132,18 +128,7 @@ if gvcf_caller == "BOTH":
                 bed= region_to_bed_file,
                 mem_gb= 7,
                 conf_filters= conf_filter
-        benchmark:
-            pj(current_dir,BENCH,"{region}.{parts}.glnexus_2.txt")
         log: pj(current_dir,LOG,"GLnexus","{region}.{parts}.glnexus_2.log")
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
         output: tbi = pj(current_dir, glnexus_dir[1] + dir_appendix, "{region}","{parts}.vcf.gz.tbi")
-
-# rule norma_gln:
-#     input: rules.glnexus.output.vcf
-#     output: normVCF = pj(current_dir, "glnexus_norm", "{chr}", "{chr}.vcf.gz")
-#     log: pj(current_dir,config['LOG'],"{chr}.norma_gln.log")
-#     conda: "envs/preprocess.yaml"
-#     benchmark:
-#         pj(current_dir,config['BENCH'],"{chr}.norma_gln.txt")
-#     shell: "bcftools norm -f {ref} {input} -m -both -O v | bcftools norm --check-ref ws -d exact -f {ref} -O z > {output.normVCF} 2> {log}"

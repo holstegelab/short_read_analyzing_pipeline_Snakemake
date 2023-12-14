@@ -7,7 +7,6 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     cohorts = "[\d]",
     index = "(\d+)"
-    # readgroup="[\w\d_\-@]+"
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -147,7 +146,6 @@ rule filterintervals:
             cut_off_count_threshold = '10',
     conda: CONDA_GATK_CNV
     log: pj(LOG,"gCNV_gatk", '{cohort}.filterintervals_gatkcnv.log')
-    benchmark: pj(BENCH, '{cohort}.filterintervals_gatkcnv.txt')
     shell: """
             {params.java} -jar {params.gatk} FilterIntervals --annotated-intervals {input.annotation} -L {params.capture_kit} {params.inputs} -imr OVERLAPPING_ONLY -O {output.filtered_intervals} -XL {params.PAR_and_CENTROMERIC} --low-count-filter-percentage-of-samples {params.cut_off_samples} --low-count-filter-count-threshold {params.cut_off_count_threshold}  2> {log}
             """
@@ -157,7 +155,6 @@ rule make_scatters:
     output: scatterd = expand(pj(GATK_gCNV, 'filtred_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'), scatter = scatter_merged_cature_kit, allow_missing = True)
     conda: CONDA_GATK_CNV
     log: pj(LOG,"gCNV_gatk",'{cohort}.make_scatters.log')
-    benchmark: pj(BENCH,'{cohort}.make_scatters.txt')
     params:
             java = java_cnv,
             gatk = gatk_cnv,
@@ -178,8 +175,6 @@ rule DetermineGCP:
             gatk = gatk_cnv,
             contig_ploydi_priors = PL_PR_TABLE
     conda: CONDA_GATK_CNV
-    # log: pj(LOG,"gCNV_gatk", '{cohort}.determinecontigploydi.log')
-    benchmark: pj(BENCH, '{cohort}.determinecontigploydi.txt')
     resources:
             n = 1
     shell: """
@@ -187,16 +182,11 @@ rule DetermineGCP:
             {params.java} -jar {params.gatk} DetermineGermlineContigPloidy  --output-prefix {wildcards.cohort} --output GATK_gCNV/ {params.inputs} -L {input.intervals} -imr OVERLAPPING_ONLY --contig-ploidy-priors {params.contig_ploydi_priors}
             """
 
-def get_mem_mb_germline_CNV_caller(wildcards, attempt):
-    MEM_DEFAULT_USAGE = 35000
-    return attempt  * int(MEM_DEFAULT_USAGE)
-
 rule GermlineCNVCaller:
     input:  samples = input_func,
             scatters = pj(GATK_gCNV, 'filtred_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'),
             contig_ploudi_calls = (pj(GATK_gCNV,  '{cohort}-model', 'contig_ploidy_prior.tsv')),
     output: models = pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model', 'calling_config.json'),
-            # sample_files = pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt')
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -204,7 +194,7 @@ rule GermlineCNVCaller:
             theano_complie_dir = pj(TMPDIR, '.theano-{cohort}-{scatter}')
     conda: CONDA_GATK_CNV
     resources:
-            mem_mb = get_mem_mb_germline_CNV_caller,
+            mem_mb = lambda wildcards, attempt: attempt* 35000,
             n = 17
     log: pj(LOG,"gCNV_gatk", '{cohort}.{scatter}.germlinecnvcalling.log')
     benchmark: pj(BENCH, '{cohort}.{scatter}.germlinecnvcalling.txt')
@@ -214,9 +204,6 @@ rule GermlineCNVCaller:
             export OMP_NUM_THREADS={resources.n} 
             THEANO_FLAGS="base_compiledir={params.theano_complie_dir}"  {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output GATK_gCNV/{wildcards.cohort}_scatter_{wildcards.scatter} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter} 2> {log}
         """
-def get_mem_mb_postprocess(wildcards, attempt):
-    MEM_DEFAULT_USAGE = 5000
-    return (attempt - 1) * 0.5 * int(MEM_DEFAULT_USAGE) + int(MEM_DEFAULT_USAGE)
 
 rule PostprocessGermlineCNVCalls:
     input:
@@ -239,7 +226,7 @@ rule PostprocessGermlineCNVCalls:
     benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
     log: pj(LOG,"gCNV_gatk", '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls')
     resources:
-            mem_mb = get_mem_mb_postprocess
+            mem_mb = lambda wildcards, attempt: (attempt - 1) * 0.5 * 5000 + 5000
     shell:
             """
             {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls -R {params.ref} --sequence-dictionary {params.SD}  {params.model_shrads} {params.calls_shrads} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio} 2> {log}
