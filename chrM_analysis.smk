@@ -37,7 +37,7 @@ rule extract_chrM_reads:
     output: bam = ensure(temp(pj(chrM, '{sample}_chrM.reads.bam')), non_empty = True),
             bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True)
     log: pj(LOG,"chrM","{sample}.printreads_chrM.log")
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     resources:
         mem_reserved_mb=1000
     shell:
@@ -82,7 +82,7 @@ rule mutect_orig:
             stat_shift = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted.vcf.gz.stats')),non_empty=True),
             vcf_shift_back = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz')),non_empty=True),
             tbi_shift_back = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz.tbi')),non_empty=True),
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     log: pj(LOG,"chrM","{sample}.mutect_orig.log")
     params:
             mt_ref = pj(ORIG_MT_fa),
@@ -114,7 +114,7 @@ rule merge_vcfs:
             filtred_vcf= ensure(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz'),non_empty=True),
             filtred_tbi=ensure(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz.tbi'),non_empty=True),
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf.gz'),non_empty=True),
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     log: pj(LOG,"chrM","{sample}.vcf_merge.log")
     params: mt_ref=pj(ORIG_MT_fa),
             filtred_norm_vcf= (pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf')),
@@ -146,7 +146,7 @@ rule mutect_orig_bp_resolut:
             merged_tbi_BP = ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz.tbi')),non_empty=True),
             merged_vcf_BP_with_anno = ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'),non_empty=True),
             merged_vcf_BP_norm= ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz')),non_empty=True),
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     log: pj(LOG,"chrM","{sample}.mutect_orig_BP_res.log")
     params:
             mt_ref = pj(ORIG_MT_fa),
@@ -176,7 +176,7 @@ rule extract_NUMTs_reads:
     output: bam = ensure(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam'), non_empty = True),
             bai = pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')
     log: pj(LOG,"chrM","{sample}.printreads_NUMTs.log")
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     params: NUMTs_bed = NUMTs
     resources:
         mem_mb=1000
@@ -223,7 +223,7 @@ rule mutect_orig_NUMT:
             stat_shifted = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted.vcf.gz.stats')),non_empty=True),
             vcf_shiftback = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')),non_empty=True),
             tbi_shiftback = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')),non_empty=True),
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     log: pj(LOG,"chrM","{sample}.mutect_orig_NUMT.log")
     params: mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),
@@ -254,7 +254,7 @@ rule merge_vcfs_NUMT:
             filtred_tbi = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred.vcf.gz.tbi')),non_empty=True),
 
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf.gz'),non_empty=True),
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     log: pj(LOG,"chrM","{sample}.vcf_merge_NUMT.log")
     params: mt_ref= pj(ORIG_MT_fa),
             filtred_norm_vcf= (pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf'))
@@ -284,7 +284,7 @@ rule mutect_orig_NUMT_BP_resolution:
             merged_vcf = ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz')),non_empty=True),
             merged_vcf_with_anno = ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'),non_empty=True),
             merged_vcf_norm= ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')),non_empty=True),
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     log: pj(LOG,"chrM","{sample}.mutect_orig_NUMT_BP_res.log")
     params: mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),

@@ -71,19 +71,16 @@ rule deepvariant:
             skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
             inter_dir = pj(DEEPVARIANT,'DV_intermediate')
     container: 'docker://google/deepvariant:1.6.0'
-    benchmark:
-        pj(BENCH,"{sample}.{region}.wholedeepvariant.txt")
     resources:
-        n="1.5", #set in profile using singularity-args. Waiting for rule-specific args.
-        nshards=2,
-        mem_mb= lambda wildcards, attempt: (attempt - 1) * 0.5 * 3500 + 3500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else (attempt - 1) * 0.5 * 3000 + 3000
-    log: pj(LOG,"Deepvariant","{sample}.{region}.wholedeepvariant.log")
+        n="3.0",
+        nshards=4,
+        mem_mb=get_mem_mb_deepvariant
     shell:
         """
         if [ {params.skipsex} -eq 0 ]
         then
             mkdir -p "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
-            /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{params.inter_dir}/{wildcards.sample}.{wildcards.region}" --postprocess_cpus 2   2> {log}
+            /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{params.inter_dir}/{wildcards.sample}.{wildcards.region}" --postprocess_cpus 4
             rm -rf "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
         else
             touch {output.vcf}
@@ -217,6 +214,8 @@ rule DVWhatshapPhasingMerge:
 #     shell:
 #         # singularity run -B /usr/lib/locale/:/usr/lib/locale/ docker://google/deepvariant:"1.4.0" \
 #         """
+#        mkdir -p `dirname {output.pregvcf}`A
+#        /opt/deepvariant/bin/make_examples --ref={REF_MALE} --reads={input.bam} --gvcf={output.pregvcf} --mode calling --regions {input.bed} --examples={output.examples} --channels="insert_size" --normalize_reads tru --gvcf_gq_binsize 1
 #          """
 #
 #

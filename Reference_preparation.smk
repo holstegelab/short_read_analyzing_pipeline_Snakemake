@@ -58,19 +58,19 @@ rule create_dict_for_chrM_orig_reference:
 rule create_dict:
     input: fasta=ancient(REF_MALE),
     output: dict = REF_MALE_DICT
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_1:
     input: fasta = ancient(REF_FEMALE),
     output: dict = REF_FEMALE_DICT
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     shell: "gatk CreateSequenceDictionary -R {input}"
 
 rule create_dict_for_chrM_shifted_reference:
     input: mt_ref_shift = ancient(SHIFTED_MT_fa)
     output: dict = SHIFTED_MT_dict
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     shell:  """
             gatk CreateSequenceDictionary -R {input}
             """
@@ -78,7 +78,7 @@ rule create_dict_for_chrM_shifted_reference:
 rule create_dict_for_chrM_reference:
     input: mt_ref_shift = ancient(ORIG_MT_fa)
     output: dict = ORIG_MT_dict
-    conda: "envs/gatk.yaml"
+    conda: CONDA_VCF
     shell:  """
             gatk CreateSequenceDictionary -R {input}
             """
