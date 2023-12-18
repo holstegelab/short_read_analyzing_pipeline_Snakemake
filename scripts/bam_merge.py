@@ -395,30 +395,48 @@ if __name__ == '__main__':
         out_unmapped_1.close()
         out_unmapped_2.close()
 
-        #process size stats
-        size_stats = numpy.zeros((max(max(stats['size_r1'].keys()), max(stats['size_r2'].keys()))+ 1,2),dtype=int)
-        for key,value in stats['size_r1'].items():
-            size_stats[key,0] = value
-        for key,value in stats['size_r2'].items():
-            size_stats[key,1] = value
-        del stats['size_r1']
-        del stats['size_r2']
+    #process size stats
+    size_stats = numpy.zeros((max(max(stats['size_r1'].keys()), max(stats['size_r2'].keys()))+ 1,2),dtype=int)
+    for key,value in stats['size_r1'].items():
+        size_stats[key,0] = value
+    for key,value in stats['size_r2'].items():
+        size_stats[key,1] = value
+    del stats['size_r1']
+    del stats['size_r2']
 
-        stats['primary_soft_clipped_bp_ratio'] = float(stats.get('primary_soft_clipped_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('primary_soft_clipped_bp',0.0))
-        stats['supplementary_bp_ratio'] = float(stats.get('supplementary_aligned_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('supplementary_aligned_bp',0.0))
-        with open(args.s,'wt') as f:            
-            for key, value in stats.items():
-                sys.stderr.write('%s\t%s\n' % (key,str(value)))
-                sys.stderr.flush()
-                if isinstance(value, float):
-                    f.write('%s\t %.5f\n' % (key,value))
-                else:
-                    f.write('%s\t %d\n' % (key,value))
-            f.write('\nadapter_length\tcount_read1\tcount_read2\n')
-            for pos in range(1,size_stats.shape[0]):
-                f.write('%d\t%d\t%d\n' % (pos,size_stats[pos,0], size_stats[pos,1]))
-            f.flush()
-            sys.stderr.write('done\n')
+    stats['primary_soft_clipped_bp_ratio'] = float(stats.get('primary_soft_clipped_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('primary_soft_clipped_bp',0.0))
+    stats['supplementary_bp_ratio'] = float(stats.get('supplementary_aligned_bp',0.0)) / float(stats['primary_aligned_bp'] + stats.get('supplementary_aligned_bp',0.0))
+    sys.stderr.write(f'Storing statistics in file {args.s}\n')
+    with open(args.s,'wt') as fx:            
+        for key, value in stats.items():
+            sys.stderr.write('%s\t%s\n' % (key,str(value)))
             sys.stderr.flush()
-        
+            if isinstance(value, float):
+                fx.write('%s\t %.5f\n' % (key,value))
+            else:
+                fx.write('%s\t %d\n' % (key,value))
+        fx.write('\nadapter_length\tcount_read1\tcount_read2\n')
+        for pos in range(1,size_stats.shape[0]):
+            fx.write('%d\t%d\t%d\n' % (pos,size_stats[pos,0], size_stats[pos,1]))
+        fx.flush()
+    sys.stderr.write('done\n')
+    sys.stderr.flush()
+    time.sleep(3)    
+   
+    import os
 
+
+    if os.stat(args.s).st_size == 0:
+        sys.stderr.write('Stat file is empty\n')
+        sys.stderr.flush()
+        sys.exit(1)
+
+    if os.stat(args.ua).st_size == 0:
+        sys.stderr.write('Badmap FQ1 file is empty\n')
+        sys.stderr.flush()
+        sys.exit(1)
+
+    if os.stat(args.ub).st_size == 0:
+        sys.stderr.write('Badmap FQ2 file is empty\n')
+        sys.stderr.flush()
+        sys.exit(1)       

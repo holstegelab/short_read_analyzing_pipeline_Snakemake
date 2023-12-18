@@ -353,6 +353,7 @@ def read_dragmap_stats(filename):
         rows = f.readlines()
     
     mappingrows = [e.split(',')[2:] for e in rows if 'MAPPING' in e]
+    print(filename)
     for row in mappingrows:
         key = 'dm_' + valid_name(row[0].strip())
         value = float(row[1].strip())

@@ -116,7 +116,7 @@ def read_contam_w(wildcards):  # {{{
 
 def get_mem_mb_HaplotypeCaller(wildcards, attempt):  # {{{
     """Get memory for HaplotypeCaller."""
-    res = 2900 if "wgs" in SAMPLEINFO[wildcards["sample"]]["sample_type"] else 2000
+    res = 3500 if "wgs" in SAMPLEINFO[wildcards["sample"]]["sample_type"] else 2500
 
     # HaplotypeCaller has exponential memory scaling on some regions. Average is very  low, but on some regions it can scale to 75 GB...
     return res * (3 ** (attempt - 1))  # aggressively reserve more memory
@@ -160,12 +160,8 @@ rule HaplotypeCaller:
         wstats=pj(STAT, "whatshap_phasing/{sample}.{region}.stats"),
         mwstats=pj(STAT, "whatshap_phasing/{sample}.{region}.merge_stats"),
         tmp_gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf")),
-        gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz")),
-        gvcf_tbi=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi")),
-    log:
-        HaplotypeCaller=pj(LOG,"gVCF", "{sample}_{region}_haplotypecaller.log"),
-    benchmark:
-        pj(BENCH, "{sample}_{region}_haplotypecaller.txt")
+        gvcf=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz"),
+        gvcf_tbi=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     conda:
         CONDA_VCF
     resources:
@@ -217,7 +213,7 @@ rule HaplotypeCaller:
             -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
             -I {input.bams} -O {output.orig_gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true \
             --seconds-between-progress-updates 120 \
-            {params.dragen_mode} --dragstr-params-path {input.model} 2> {log.HaplotypeCaller}
+            {params.dragen_mode} --dragstr-params-path {input.model}
 
         {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" GenotypeGVCFs \
                 -R {params.ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} \
@@ -253,12 +249,8 @@ rule reblock_gvcf:
         idx=rules.HaplotypeCaller.output.gvcf_tbi,
         validated_sex=rules.get_validated_sex.output.yaml,
     output:
-        gvcf_reblock=ensure(
-            pj(current_dir, GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
-        tbi=ensure(
-            pj(current_dir, GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
-    log:
-        Reblock=pj(LOG,"gVCF","{sample}_{region}_reblock.log"),
+        gvcf_reblock=ensure( pj(current_dir, GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        tbi=ensure( pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     conda:
         CONDA_VCF
     priority: 29
@@ -275,5 +267,5 @@ rule reblock_gvcf:
         --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {params.ref} \
          -V {input.gvcf} -O {output.gvcf_reblock}  --seconds-between-progress-updates 120 \
         -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 \
-        -G StandardAnnotation -G AS_StandardAnnotation 2> {log}
+        -G StandardAnnotation -G AS_StandardAnnotation
     """

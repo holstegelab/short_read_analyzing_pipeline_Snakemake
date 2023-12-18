@@ -59,6 +59,22 @@ rule Stat_all:
     default_target: True
 
 
+def get_rg_files(wildcards):
+    """Get sorted bam index files for all readgroups for a given sample."""
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    files = []
+    for readgroup in readgroups_b:
+        files.append(pj(STAT, f"{wildcards['sample']}.{readgroup['info']['ID']}.dragmap.log"))
+        files.append(pj(STAT, f"{wildcards['sample']}.{readgroup['info']['ID']}.adapter_removal.log"))
+        files.append(pj(STAT, f"{wildcards['sample']}.{readgroup['info']['ID']}.fastq.adapters"))
+        files.append(pj(STAT, f"{wildcards['sample']}.{readgroup['info']['ID']}.merge_stats.tsv"))
+        files.append(pj(STAT, f"{wildcards['sample']}.{readgroup['info']['ID']}.dechimer_stats.tsv"))
+       
+    return files
+
+
+
 rule stat_sample_done:
     input:
         pj(STAT,"{sample}.hs_metrics"),
@@ -72,6 +88,7 @@ rule stat_sample_done:
         pj(STAT,'{sample}.pre_adapter_detail_metrics'),
         pj(STAT,'{sample}.bait_bias_detail_metrics'),
         pj(STAT,'cov','{sample}.regions.bed.gz')
+        get_rg_files
     output:
         done=temp(touch(pj(STAT,"{sample}.done")))
     resources:
@@ -80,6 +97,7 @@ rule stat_sample_done:
 
 rule tar_stats_per_sample:
     input:
+        finished = pj(SOURCEDIR, "{sample}.finished"),
         samples=pj(STAT,"{sample}.done"),
         hs=pj(STAT,"{sample}.hs_metrics"),
         samtools=pj(STAT,"{sample}.samtools.stat"),
@@ -113,7 +131,7 @@ rule tar_stats_per_sample:
         n="1",
         mem_mb=1000
     shell: """
-            tar --remove-files -czvf {output.tar} {params.error_summ} {params.adapter} {params.fastq_adapter} {params.dechimer} {params.drag} {params.merge_stats} {params.mosdepth} {params.ancestary} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov}* 
+            tar --remove-files -czvf {output.tar} {params.error_summ} {params.adapter} {params.fastq_adapter} {params.dechimer} {params.drag} {params.merge_stats} {params.mosdepth} {params.ancestary} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} 
             """
 
 
@@ -244,10 +262,10 @@ rule Artifact_stats:
         interval=get_capture_kit_interval_list,
         validated_sex=rules.get_validated_sex.output.yaml
     output:
-        Bait_bias=pj(STAT,'{sample}.bait_bias_summary_metrics'),
-        Pre_adapter=pj(STAT,'{sample}.pre_adapter_summary_metrics'),
-        Bait_bias_det=pj(STAT,'{sample}.bait_bias_detail_metrics'),
-        Pre_adapter_det=pj(STAT,'{sample}.pre_adapter_detail_metrics'),
+        Bait_bias = pj(STAT, '{sample}.bait_bias_summary_metrics'),
+        Pre_adapter = ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'),non_empty=True),
+        Bait_bias_det = ensure(pj(STAT,'{sample}.bait_bias_detail_metrics'),non_empty=True),
+        Pre_adapter_det = ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'),non_empty=True),
     priority: 99
     log: pj(LOG,"Stats","Artifact_stats_{sample}.log")
     params:

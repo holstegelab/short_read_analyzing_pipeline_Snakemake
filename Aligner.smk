@@ -658,22 +658,20 @@ rule align_reads:
         fastq=get_prepared_fastq,
         validated_sex=rules.get_validated_sex.output.yaml
     output:
-        bam=temp(pj(BAM,"{sample}.{readgroup}.aligned.bam"))
+        bam=temp(pj(BAM,"{sample}.{readgroup}.aligned.bam")),
+        dragmap_log=pj(STAT,"{sample}.{readgroup}.dragmap.log")
     params:
         ref_dir=get_refdir_by_validated_sex,
         dragmap=pj(SOFTWARE,dragmap),
         rg_params=get_readgroup_params
-    conda: CONDA_MAIN
-    log:
-        dragmap_log=pj(STAT,"{sample}.{readgroup}.dragmap.log"),
+    conda:  CONDA_MAIN
     priority: 15
     resources:
         n="22.75",#reducing thread count, as first part of dragmap is single threaded
         use_threads=24,
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.25 * int(38000) + int(38000),
     shell:
-        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ 2 -o {output.bam}) 2> {log.dragmap_log} "
-
+        "({params.dragmap} -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ 2 -o {output.bam}) 2> {output.dragmap_log} "
 # --enable-sampling true used for (unmapped) bam input. It prevents bugs when in output bam information about whicj read is 1st or 2nd in pair.
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
@@ -845,7 +843,7 @@ rule merge_rgs_badmap:
         mem_mb=150
     shell:
         """
-        zcat {input.fastq} | bgzip > {output.fastq}
+        zcat {input.fastq} | bgzip > {output.fastq} 
         """
 
 

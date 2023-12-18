@@ -143,7 +143,7 @@ if end_point == "gVCF":
                 pj(STAT,"{sample}.done"),
                 pj(KRAKEN,"{sample}.bracken_report.tsv")
             output:
-                os.path.join(config['SOURCEDIR'],"{sample}.finished")
+                os.path.join(SOURCEDIR, "{sample}.finished")
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
