@@ -87,7 +87,7 @@ rule stat_sample_done:
         pj(STAT,'{sample}.bait_bias_summary_metrics'),
         pj(STAT,'{sample}.pre_adapter_detail_metrics'),
         pj(STAT,'{sample}.bait_bias_detail_metrics'),
-        pj(STAT,'cov','{sample}.regions.bed.gz')
+        pj(STAT,'cov','{sample}.regions.bed.gz'),
         get_rg_files
     output:
         done=temp(touch(pj(STAT,"{sample}.done")))
