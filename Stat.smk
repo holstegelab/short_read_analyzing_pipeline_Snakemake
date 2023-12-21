@@ -111,6 +111,7 @@ rule tar_stats_per_sample:
         biat_bias_det=pj(STAT,'{sample}.bait_bias_detail_metrics'),
         cov=pj(STAT,'cov','{sample}.regions.bed.gz'),
         markdup=pj(STAT,"{sample}.markdup.stat"),
+        sex_y=pj(KMER,"{sample}.result.yaml"),
         oxo_sf=expand("{samplefile}.oxo_quality.tab",samplefile=SAMPLE_FILES),
         bam_qual_sf=expand("{samplefile}.bam_quality.tab",samplefile=SAMPLE_FILES),
         bam_rg_qual_sf=expand("{samplefile}.bam_rg_quality.tab",samplefile=SAMPLE_FILES),
@@ -129,9 +130,9 @@ rule tar_stats_per_sample:
         ancestary=pj(STAT,"contam","{sample}.verifybamid.pca2.Ancestry"),
     resources:
         n="1",
-        mem_mb=1000
+        mem_mb=100
     shell: """
-            tar --remove-files -czvf {output.tar} {params.error_summ} {params.adapter} {params.fastq_adapter} {params.dechimer} {params.drag} {params.merge_stats} {params.mosdepth} {params.ancestary} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} 
+            tar --remove-files -czvf {output.tar} {params.error_summ} {params.adapter} {params.fastq_adapter} {params.dechimer} {params.drag} {params.merge_stats} {params.mosdepth} {params.ancestary} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} {input.sex_y}
             """
 
 
@@ -180,7 +181,7 @@ rule gather_coverage:
         hdf5=pj('{samplefile}.coverage.hdf5')
     resources:
         n="1.0",
-        mem_mb=500
+        mem_mb=5000
     run:
         samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
         samples.sort()
@@ -275,7 +276,7 @@ rule Artifact_stats:
         # params.out define prefix and output define whole outputs' filename
         out=pj(STAT,"{sample}")
     resources:
-        mem_mb=lambda wildcards, attempt: attempt * 2750,
+        mem_mb=lambda wildcards, attempt: attempt * 2000,
         tmpdir=tmpdir,
         n="0.9"
     conda: CONDA_VCF

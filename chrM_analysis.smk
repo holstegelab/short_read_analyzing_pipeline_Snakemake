@@ -36,19 +36,17 @@ rule extract_chrM_reads:
     input: rules.markdup.output.mdbams
     output: bam = ensure(temp(pj(chrM, '{sample}_chrM.reads.bam')), non_empty = True),
             bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True)
-    log: pj(LOG,"chrM","{sample}.printreads_chrM.log")
     conda: CONDA_VCF
     resources:
-        mem_reserved_mb=1000
+        mem_mb=1000
     shell:
-        "gatk PrintReads -I {input} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter 2> {log}"
+        "gatk PrintReads -I {input} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter"
 
 rule sort_by_name:
     input: rules.extract_chrM_reads.output.bam
     output: ensure(temp(pj(chrM, '{sample}_chrM_namesorted.reads.bam')), non_empty = True)
-    log: pj(LOG,"chrM","{sample}.namesort_chrM.log")
     conda: "envs/preprocess.yaml"
-    shell: "samtools sort -n {input} > {output} 2> {log}"
+    shell: "samtools sort -n {input} > {output}"
 
 rule realign_to_orig_ref:
     input: rules.sort_by_name.output
@@ -83,7 +81,6 @@ rule mutect_orig:
             vcf_shift_back = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz')),non_empty=True),
             tbi_shift_back = ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz.tbi')),non_empty=True),
     conda: CONDA_VCF
-    log: pj(LOG,"chrM","{sample}.mutect_orig.log")
     params:
             mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),
@@ -96,9 +93,9 @@ rule mutect_orig:
     shell:
             """
                 mkdir -p {params.variants_dir}
-             ((gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}  2> {log})   
-             gatk Mutect2 -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift} 2>> {log}) &&
-             gatk LiftoverVcf -I {output.vcf_shift} -O {output.vcf_shift_back} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} 
+             ((gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}) 
+             gatk Mutect2 -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift}) &&
+             gatk LiftoverVcf -I {output.vcf_shift} -O {output.vcf_shift_back} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 
             """
 
 rule merge_vcfs:
@@ -115,16 +112,15 @@ rule merge_vcfs:
             filtred_tbi=ensure(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz.tbi'),non_empty=True),
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf.gz'),non_empty=True),
     conda: CONDA_VCF
-    log: pj(LOG,"chrM","{sample}.vcf_merge.log")
     params: mt_ref=pj(ORIG_MT_fa),
             filtred_norm_vcf= (pj(chrM,'variants','{sample}.chrM_filtred_NORM.vcf')),
     resources: n = 2
     shell:
             """
-                 gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat} 2> {log}
-               gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 2>> {log} && 
-               gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} && 
-               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
+                 gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat} 
+               gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf}  && 
+               gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} && 
+               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} &&
                bgzip {params.filtred_norm_vcf} && 
                tabix {output.filtred_norm_vcf_gz}
             """
@@ -147,7 +143,6 @@ rule mutect_orig_bp_resolut:
             merged_vcf_BP_with_anno = ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'),non_empty=True),
             merged_vcf_BP_norm= ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz')),non_empty=True),
     conda: CONDA_VCF
-    log: pj(LOG,"chrM","{sample}.mutect_orig_BP_res.log")
     params:
             mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),
@@ -159,12 +154,12 @@ rule mutect_orig_bp_resolut:
     shell:
             """
                 mkdir -p {params.variants_dir}
-             ((gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf_BP}  2> {log})   
-              gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift_BP} 2>> {log}) &&
-              gatk LiftoverVcf -I {output.vcf_shift_BP} -O {output.vcf_shift_back_BP} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} && 
-              gatk MergeVcfs -I {output.vcf_shift_back_BP} -I {output.vcf_BP} -O {output.merged_vcf_BP} 2>> {log} && 
+             ((gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf_BP})   
+              gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift_BP}) &&
+              gatk LiftoverVcf -I {output.vcf_shift_BP} -O {output.vcf_shift_back_BP} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null && 
+              gatk MergeVcfs -I {output.vcf_shift_back_BP} -I {output.vcf_BP} -O {output.merged_vcf_BP} && 
               bcftools norm -d exact -o {output.merged_vcf_BP_norm} -O z {output.merged_vcf_BP} && tabix {output.merged_vcf_BP_norm} &&
-            bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_BP_with_anno}  {output} 2>> {log}
+            bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_BP_with_anno}  {output}
             """
 
 ######################################
@@ -175,20 +170,18 @@ rule extract_NUMTs_reads:
     input: rules.markdup.output.mdbams
     output: bam = ensure(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam'), non_empty = True),
             bai = pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')
-    log: pj(LOG,"chrM","{sample}.printreads_NUMTs.log")
     conda: CONDA_VCF
     params: NUMTs_bed = NUMTs
     resources:
         mem_mb=1000
     shell:
-        "gatk PrintReads -I {input} -L {params.NUMTs_bed} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter 2> {log}"
+        "gatk PrintReads -I {input} -L {params.NUMTs_bed} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter"
 
 rule sort_by_name_NUMT:
     input: rules.extract_NUMTs_reads.output.bam
     output: ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs_namesorted.reads.bam')), non_empty = True)
-    log: pj(LOG,"chrM","{sample}.namesort_NUMTs.log")
     conda: "envs/preprocess.yaml"
-    shell: "samtools sort -n {input} > {output} 2> {log}"
+    shell: "samtools sort -n {input} > {output}"
 
 
 rule align_NUMT_to_chrM:
@@ -224,20 +217,19 @@ rule mutect_orig_NUMT:
             vcf_shiftback = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')),non_empty=True),
             tbi_shiftback = ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')),non_empty=True),
     conda: CONDA_VCF
-    log: pj(LOG,"chrM","{sample}.mutect_orig_NUMT.log")
     params: mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),
             chain= pj(MT_CHAIN),
             results_dir = pj(chrM, 'variants' , 'NUMTs')
     resources:
             n=2,
-            mem_reserved_mb=1500
+            mem_mb=1500
     shell:
             """
              mkdir -p {params.results_dir}
-             gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf} 2> {log}   
-             gatk Mutect2 -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shifted} 2>>{log} &&
-             gatk LiftoverVcf -I {output.vcf_shifted} -O {output.vcf_shiftback} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log}
+             gatk Mutect2 -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf}   
+             gatk Mutect2 -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shifted}  &&
+             gatk LiftoverVcf -I {output.vcf_shifted} -O {output.vcf_shiftback} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null
             """
 
 rule merge_vcfs_NUMT:
@@ -255,15 +247,14 @@ rule merge_vcfs_NUMT:
 
             filtred_norm_vcf_gz = ensure(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf.gz'),non_empty=True),
     conda: CONDA_VCF
-    log: pj(LOG,"chrM","{sample}.vcf_merge_NUMT.log")
     params: mt_ref= pj(ORIG_MT_fa),
             filtred_norm_vcf= (pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred_NORM.vcf'))
     shell:
             """
-            gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 2> {log} 
-             gatk MergeMutectStats --stats {input.stats} --stats {input.stats_shifted} -O {output.merged_stat} 2>> {log} &&
-             gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} 2>> {log} &&
-               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} 2>> {log} &&
+            gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf} 
+             gatk MergeMutectStats --stats {input.stats} --stats {input.stats_shifted} -O {output.merged_stat} &&
+             gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} &&
+               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} &&
                bgzip {params.filtred_norm_vcf} && tabix {output.filtred_norm_vcf_gz}
             """
 
@@ -285,21 +276,20 @@ rule mutect_orig_NUMT_BP_resolution:
             merged_vcf_with_anno = ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'),non_empty=True),
             merged_vcf_norm= ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')),non_empty=True),
     conda: CONDA_VCF
-    log: pj(LOG,"chrM","{sample}.mutect_orig_NUMT_BP_res.log")
     params: mt_ref = pj(ORIG_MT_fa),
             mt_ref_shift= pj(SHIFTED_MT_fa),
             chain= pj(MT_CHAIN),
             results_dir = pj(chrM, 'variants' , 'NUMTs')
     resources:
             n=2,
-            mem_reserved_mb=1500
+            mem_mb=1500
     shell:
             """
              mkdir -p {params.results_dir}
-             gatk Mutect2  -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf} 2> {log}   
-             gatk Mutect2  -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shifted} 2>>{log} &&
-             gatk LiftoverVcf -I {output.vcf_shifted} -O {output.vcf_shiftback} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null 2>> {log} && 
-              gatk MergeVcfs -I {output.vcf_shiftback} -I {output.vcf} -O {output.merged_vcf} 2>> {log} && 
+             gatk Mutect2  -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM --mitochondria-mode -I {input.bam} -O {output.vcf} 
+             gatk Mutect2  -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shifted} &&
+             gatk LiftoverVcf -I {output.vcf_shifted} -O {output.vcf_shiftback} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null && 
+              gatk MergeVcfs -I {output.vcf_shiftback} -I {output.vcf} -O {output.merged_vcf} && 
               bcftools norm -d exact -o {output.merged_vcf_norm} -O z {output.merged_vcf} && tabix {output.merged_vcf_norm}
-               bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  {output.merged_vcf_norm} 2>> {log}
+               bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  {output.merged_vcf_norm} 
             """

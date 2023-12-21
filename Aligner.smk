@@ -499,10 +499,9 @@ rule adapter_removal:
         ancient(pj(SOURCEDIR,"{sample}.started"))
     output:
         for_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_1.fq.gz")),
-        rev_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_2.fq.gz"))
-    # log file in this case contain some stats about removed seqs
-    log:
+        rev_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_2.fq.gz")),
         adapter_removal=pj(STAT,"{sample}.{readgroup}.adapter_removal.log"),
+    # log file in this case contain some stats about removed seqs
     priority: 10
     conda: CONDA_MAIN
     params: adapters=ADAPTERS
@@ -512,7 +511,7 @@ rule adapter_removal:
     ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
     shell:
         """
-		    AdapterRemoval --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {log.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 --qualitymax 42 
+		    AdapterRemoval --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {output.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 --qualitymax 42 
 		"""
 
 rule adapter_removal_identify:
@@ -577,7 +576,7 @@ rule kmer_reads:
         kmer_log=pj(LOG,"Aligner","{sample}.kmer.log"),
     priority: 15
     resources:
-        n="8",
+        n="2",
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * int(36000) + int(36000)
     run:
         with open(output.lst,'w') as f:
@@ -595,7 +594,7 @@ rule get_validated_sex:
         out1=pj(KMER,"{sample}.kmc_pre"),
         out2=pj(KMER,"{sample}.kmc_suf")
     output:
-        yaml=temp(pj(KMER,"{sample}.result.yaml")),
+        yaml=pj(KMER,"{sample}.result.yaml"),
         chry=temp(pj(KMER,"{sample}.chry.tsv")),
         chrx=temp(pj(KMER,"{sample}.chrx.tsv")),
         chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
@@ -887,8 +886,8 @@ rule mCRAM:
         bam=rules.markdup.output.mdbams,
         bai=rules.markdup.output.mdbams_bai
     output:
-        cram=(pj(CRAM,"{sample}.mapped_hg38.cram")),
-        crai=(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
+        cram=temp(pj(CRAM,"{sample}.mapped_hg38.cram")),
+        crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
     resources:
         n="2",
         mem_mb=1000

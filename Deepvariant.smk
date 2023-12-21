@@ -72,7 +72,7 @@ rule deepvariant:
             inter_dir = pj(DEEPVARIANT,'DV_intermediate')
     container: 'docker://google/deepvariant:1.6.0'
     resources:
-        n="3.0",
+        n="2.5",
         nshards=4,
         mem_mb=get_mem_mb_deepvariant
     shell:

@@ -1,66 +1,66 @@
-import pandas as pd
-import read_stats
 import os
-import getpass
-import read_samples
 from common import *
-import utils
-onsuccess: shell("rm -fr logs/DBImport/*")
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     mode = "WES|WGS"
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
+gvcf_caller = config.get("caller", "HaplotypeCaller")
+sample_types = config.get("sample_types","WGS")
+DBImethod = config.get("DBI_method", "new")
+DBIpath = config.get("DBIpath", "genomicsdb_")
 
-module gVCF:
-    snakefile: 'gVCF.smk'
-    config: config
-use rule * from gVCF
-
-sample_types = config.get("sample_types","WES")
 parts = level2_regions
+
+
+
+print(f"Caller: {gvcf_caller}")
+print(f"Sample type: {sample_types}")
+print(f"DBImethod: {DBImethod}, DBIpath: {DBIpath}")
 
 regions = []
 for part in parts:
     regions.append(convert_to_level0(part))
-rule DBImport_all:
-    input:
-        expand(['labels/done_{region}.p{part}.txt'],zip,region = regions, part = parts),
-        rules.gVCF_all.input,
-        # expand("{chr}_gvcfs.list", chr = main_chrs)
-    default_target: True
 
-DBImethod = config.get("DBI_method", "new")
-DBIpath = config.get("DBIpath", "genomicsdb_")
+print(parts, regions)
 
 if DBImethod == "new":
     # if want to
     DBI_method_params = "--genomicsdb-workspace-path "
     path_to_dbi = DBIpath
     labels = []
+
 elif DBImethod == "update" and len(DBIpath) != 1:
+    
     DBI_method_params = "--genomicsdb-update-workspace-path "
     path_to_dbi = DBIpath
     number_of_splits = len(regions)
     labels = expand(["labels/done_backup_{samplefile}_{region}.p{part}"],zip, region = regions, part = parts,samplefile=SAMPLE_FILES * number_of_splits)
+
 elif DBImethod == "update" and len(DBIpath) == 1:
     raise ValueError(
         "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_' \n"
         "Don't provide {chr}.p{chr_p} part of path!"
     )
+
 else:
     raise ValueError(
         "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
     )
+
+
 def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['part']
     # WGS files have fewer regions so DBI works faster and could use multiple cores
-    return region_to_file(region, wgs=True, extension='interval_list')#}}}
+    return region_to_file(region, wgs=sample_types=='WGS', extension='interval_list')#}}}
 
+
+rule DBImport_all:
+    input:
+        expand(['labels/done_{region}.p{part}.txt'],zip,region = regions, part = parts),
+        # expand("{chr}_gvcfs.list", chr = main_chrs)
+    default_target: True
 
 rule backup_gdbi:
     input: gdbi = path_to_dbi + '{region}.p{part}'
@@ -71,28 +71,39 @@ rule backup_gdbi:
             find . -maxdepth 2 -name '*_gdbi_{region}.p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
             tar -czv -f BACKUPS/{params.tar} {input}
             """
+def generate_gvcf_input(gvcf_folder):
+    res = []
+    for samplefile in SAMPLE_FILES:
+        sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
+        samplefile_folder = get_samplefile_folder(samplefile)
+        gvcf_input = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = samplefile_folder, GVCF = gvcf_folder, sample=sample_names,allow_missing=True)
+        res.extend(gvcf_input)
+    return res
 
+gvcf_input = generate_gvcf_input(GVCF + "/reblock")
 
 rule GenomicDBImport:
     input:
-        g=expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
+        g=gvcf_input,
         labels = labels
-    log: pj(LOG,"DBImport", "GenomicDBImport.{region}.p{part}.log")
     conda: CONDA_VCF
     output:
         ready=touch(temp('labels/done_{region}.p{part}.txt'))
     threads: 3
     params:
-        inputs=expand(" -V {cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
+        inputs=lambda wildcards,input: ' '.join([f'-V {gvcf}' for gvcf in input.g]),
         dbi=os.path.join(path_to_dbi + "{region}.p{part}"),
         method=DBI_method_params,
         batches='75',
         intervals = region_to_IL_file,
         ref = REF_MALE
     priority: 30
-    resources: mem_mb = lambda wildcards, attempt: attempt*6500,
-            tmpdir= TMPDIR
+    resources: 
+        n="3",
+        mem_mb = lambda wildcards, attempt: attempt*8500,
+        mem_mb_reduced = lambda wildcards, attempt: attempt * 6500, #tile db is not included in java memory
+        tmpdir= TMPDIR
     shell:
-        """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
-            --intervals {params.intervals}  -R {params.ref} {params.method} {params.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} \
-         --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader 2> {log}"""
+        """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb_reduced}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
+            --intervals {params.intervals}  -R {params.ref} {params.method} {params.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} --merge-input-intervals \
+         --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader"""

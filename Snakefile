@@ -108,7 +108,7 @@ if end_point == "gVCF":
             """
             input:
                 pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
-                pj(current_dir,GVCF,"{sample}.done"),
+                pj(GVCF,"{sample}.done"),
                 pj(DEEPVARIANT,"{sample}.done"),
                 pj(STAT,"{sample}.done"),
                 pj(KRAKEN,"{sample}.bracken_report.tsv")

@@ -1,50 +1,41 @@
-import pandas as pd
-import read_stats
 import os
-import getpass
-import read_samples
 from common import *
-import utils
 current_dir = os.getcwd()
-onsuccess: shell("rm -fr logs/GLnexus/*")
+
+
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     chr = "[\w\d]+",
     # readgroup="[\w\d_\-@]+"
-
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-use rule * from Aligner
-module Deepvariant:
-    snakefile: 'Deepvariant.smk'
-    config: config
-module gVCF:
-    snakefile: 'gVCF.smk'
-    config: config
 
 gvcf_caller = config.get("caller", "BOTH")
 glnexus_filtration = config.get("glnexus_filtration", "custom")
 sample_types = config.get("sample_types","WES")
 
 
+print(f"Caller: {gvcf_caller}")
+print(f"Sample type: {sample_types}")
+print(f"Filtration setting: {glnexus_filtration}")
+
+def generate_gvcf_input(gvcf_folder):
+    res = []
+    for samplefile in SAMPLE_FILES:
+        sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
+        samplefile_folder = get_samplefile_folder(samplefile)
+        gvcf_input = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = samplefile_folder, GVCF = gvcf_folder, sample=sample_names,allow_missing=True)
+        res.extend(gvcf_input)
+    return res
+
 if gvcf_caller == "HaplotypeCaller":
-    use rule * from gVCF
-    rule_gvcf_all_input = rules.gVCF_all.input
-    gvcf_input = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd = current_dir, GVCF = GVCF, sample=sample_names,allow_missing=True),
+    gvcf_input = generate_gvcf_input(GVCF + '/reblock')
     glnexus_dir = ["GLnexus_on_Haplotypecaller"]
 
 elif gvcf_caller == "Deepvariant":
-    use rule * from Deepvariant
-    rule_gvcf_all_input = rules.DeepVariant_all.input
-    gvcf_input = expand("{cd}/{DEEPVARIANT}/gVCF/{region}/{sample}.{region}.wg.vcf.gz", cd = current_dir, DEEPVARIANT = DEEPVARIANT, sample = sample_names, allow_missing=True)
+    gvcf_input = generate_gvcf_input(DEEPVARIANT + '/gVCF')
     glnexus_dir = ["GLnexus_on_Deepvariant"]
 
 elif gvcf_caller == "BOTH":
-    use rule * from gVCF
-    use rule * from Deepvariant
-    rule_gvcf_all_input = [rules.gVCF_all.input, rules.DeepVariant_all.input]
-    gvcf_input = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=current_dir,GVCF=GVCF,sample=sample_names,allow_missing=True),
+    gvcf_input = generate_gvcf_input(GVCF + '/reblock')
     glnexus_dir = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
 
 else:
@@ -79,10 +70,7 @@ def conf_filter(wildcards):
 def region_to_bed_file(wildcards):#{{{
     """Converts a region to a bed file location (see common.py and Tools.smk)"""
     region = wildcards['parts']
-    if sample_types == 'WES':
-        return region_to_file(region,extension='bed')
-    elif sample_types == 'WGS':
-        return region_to_file(region, wgs=True, extension='bed')#}}}
+    return region_to_file(region,wgs=sample_types == 'WGS',extension='bed')
 
 if sample_types == 'WES':
     parts = level2_regions_diploid
@@ -92,9 +80,8 @@ else:
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{parts}.vcf.gz", cur_dir = current_dir, region = "F", parts = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{parts}.vcf.gz.tbi", cur_dir = current_dir, region = "F", parts = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        rule_gvcf_all_input
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{parts}.vcf.gz", cur_dir = current_dir, region = ["F"], parts = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{parts}.vcf.gz.tbi", cur_dir = current_dir, region = ["F"], parts = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
     default_target: True
 
 rule glnexus:
@@ -105,13 +92,14 @@ rule glnexus:
             mem_gb = 7,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_{parts}_glnexus.DB"),
             conf_filters = conf_filter
-    log: pj(current_dir,LOG,"GLnexus","{region}.{parts}.glnexus.log")
     threads: 4
-    resources: mem_mb = 7000
+    resources: 
+        n = "5",
+        mem_mb = 7000
     shell:
         """
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log} | bcftools view -  2>> {log}| bgzip -@ {threads} -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input}  | bcftools view -  | bgzip -@ {threads} -c > {output} 
         """
 rule index_deep:
     input: rules.glnexus.output.vcf
@@ -122,13 +110,12 @@ rule index_deep:
 
 if gvcf_caller == "BOTH":
     use rule glnexus as glnexus_2 with:
-        input: gvcf_input = expand("{cd}/{DEEPVARIANT}/gVCF/{region}/{sample}.{region}.wg.vcf.gz", cd = current_dir, DEEPVARIANT = DEEPVARIANT, sample = sample_names, allow_missing=True)
+        input: gvcf_input = generate_gvcf_input(DEEPVARIANT + '/gVCF')
         output: vcf=pj(current_dir,glnexus_dir[1] + dir_appendix,"{region}", "{parts}.vcf.gz")
         params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_{parts}_glnexus_2.DB"),
                 bed= region_to_bed_file,
                 mem_gb= 7,
                 conf_filters= conf_filter
-        log: pj(current_dir,LOG,"GLnexus","{region}.{parts}.glnexus_2.log")
     use rule index_deep as index_deep_2 with:
         input: rules.glnexus_2.output.vcf
         output: tbi = pj(current_dir, glnexus_dir[1] + dir_appendix, "{region}","{parts}.vcf.gz.tbi")

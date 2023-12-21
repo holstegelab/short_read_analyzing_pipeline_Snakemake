@@ -40,7 +40,7 @@ def get_gvcf_files(wildcards):  # {{{
     regions = (
         level1_regions if "wgs" in SAMPLEINFO[sample]["sample_type"] else level0_regions
     )
-    return [pj(current_dir ,GVCF, "reblock", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
+    return [pj(GVCF, "reblock", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
 # }}}
 
 
@@ -48,7 +48,7 @@ rule gvcf_sample_done:
     input:
         get_gvcf_files,
     output:
-        temp(touch(pj(current_dir, GVCF, "{sample}.done"))),
+        temp(touch(pj(GVCF, "{sample}.done"))),
     resources:
         n="1.0",
         mem_mb=50,
@@ -116,7 +116,7 @@ def read_contam_w(wildcards):  # {{{
 
 def get_mem_mb_HaplotypeCaller(wildcards, attempt):  # {{{
     """Get memory for HaplotypeCaller."""
-    res = 3500 if "wgs" in SAMPLEINFO[wildcards["sample"]]["sample_type"] else 2500
+    res = 2800 if "wgs" in SAMPLEINFO[wildcards["sample"]]["sample_type"] else 1800
 
     # HaplotypeCaller has exponential memory scaling on some regions. Average is very  low, but on some regions it can scale to 75 GB...
     return res * (3 ** (attempt - 1))  # aggressively reserve more memory
@@ -165,7 +165,7 @@ rule HaplotypeCaller:
     conda:
         CONDA_VCF
     resources:
-        n="1.5",  #average 1.3 cores
+        n="1.1",  #average 1.3 cores
         mem_mb=get_mem_mb_HaplotypeCaller,
         tmpdir=tmpdir_alternative,
     params:
@@ -249,7 +249,7 @@ rule reblock_gvcf:
         idx=rules.HaplotypeCaller.output.gvcf_tbi,
         validated_sex=rules.get_validated_sex.output.yaml,
     output:
-        gvcf_reblock=ensure( pj(current_dir, GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        gvcf_reblock=ensure( pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi=ensure( pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     conda:
         CONDA_VCF
@@ -259,8 +259,8 @@ rule reblock_gvcf:
         java_options=DEFAULT_JAVA_OPTIONS,
         ref=get_ref_by_validated_sex,
     resources:
-        n="2.0",
-        mem_mb=lambda wildcards, attempt: attempt * 2500,
+        n="1.0",
+        mem_mb=lambda wildcards, attempt: attempt * 1250,
     shell:
         """
     {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF  \

@@ -238,6 +238,9 @@ def get_strref_by_validated_sex(wildcards, input):
     sex = get_validated_sex_file(input)
     return REF_FEMALE_STR if sex == 'female' else REF_MALE_STR
 
+def get_samplefile_folder(samplefile):
+    return os.path.dirname(os.path.realpath(samplefile + '.tsv'))
+
 cache = {}
 SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',cache)
 
