@@ -273,7 +273,7 @@ rule reblock_gvcf:
     shell:
         """
     {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF  \
-        --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {params.ref} \
+        --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {params.ref} --do-qual-score-approximation \
          -V {input.gvcf} -O {output.gvcf_reblock}  --seconds-between-progress-updates 120 \
         -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 \
         -G StandardAnnotation -G AS_StandardAnnotation
