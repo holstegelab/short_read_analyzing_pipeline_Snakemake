@@ -27,7 +27,7 @@ def generate_gvcf_input(gvcf_folder):
     return res
 
 if gvcf_caller == "HaplotypeCaller":
-    gvcf_input = generate_gvcf_input(GVCF + '/reblock')
+    gvcf_input = generate_gvcf_input(GVCF + '/exome_gatk')
     glnexus_dir = ["GLnexus_on_Haplotypecaller"]
 
 elif gvcf_caller == "Deepvariant":
@@ -35,7 +35,7 @@ elif gvcf_caller == "Deepvariant":
     glnexus_dir = ["GLnexus_on_Deepvariant"]
 
 elif gvcf_caller == "BOTH":
-    gvcf_input = generate_gvcf_input(GVCF + '/reblock')
+    gvcf_input = generate_gvcf_input(GVCF + '/exome_gatk')
     glnexus_dir = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
 
 else:
@@ -72,11 +72,7 @@ def region_to_bed_file(wildcards):#{{{
     region = wildcards['parts']
     return region_to_file(region,wgs=sample_types == 'WGS',extension='bed')
 
-if sample_types == 'WES':
-    parts = level2_regions_diploid
-else:
-    parts = level3_regions_diploid
-
+parts = level2_regions_diploid
 
 rule GLnexus_all:
     input:

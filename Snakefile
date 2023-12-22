@@ -83,7 +83,7 @@ module Reference_preparation:
 
 gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
-gvcf_caller = config.get("caller","both")
+gvcf_caller = config.get("caller","BOTH")
 glnexus_filtration = config.get("glnexus_filtration","custom")
 
 rule_all_combine = []

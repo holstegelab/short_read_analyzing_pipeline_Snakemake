@@ -40,7 +40,7 @@ def get_gvcf_files(wildcards):  # {{{
     regions = (
         level1_regions if "wgs" in SAMPLEINFO[sample]["sample_type"] else level0_regions
     )
-    return [pj(GVCF, "reblock", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
+    return [pj(GVCF, "exome_gatk", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
 # }}}
 
 
@@ -133,6 +133,15 @@ def region_to_interval_file(wildcards):  # {{{
         extension="interval_list",
     )
 # }}}
+
+def region_to_exome_file(wildcards):  # {{{
+    """Converts a region to a interval file location (see common.py and Tools.smk)"""
+    sample = wildcards["sample"]
+    region = wildcards["region"]
+    return region_to_file(
+        region,
+        extension="interval_list",
+    )
 
 
 rule HaplotypeCaller:
@@ -269,3 +278,32 @@ rule reblock_gvcf:
         -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 \
         -G StandardAnnotation -G AS_StandardAnnotation
     """
+
+rule extract_exomes:
+    input:
+        gvcf_reblocked = rules.reblock_gvcf.output.gvcf_wgs,
+        tbi_reblocked = rules.reblock_gvcf.output.tbi,
+    output:
+        gvcf_exome = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        tbi = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
+    conda: CONDA_VCF
+    params: java_options=DEFAULT_JAVA_OPTIONS,
+            interval = region_to_exome_file,
+            padding = 500,
+    resources: n= "1.0",
+               mem_mb= 1500,
+    run:
+        if SAMPLEINFO[sample]["sample_type"] == "wgs":
+            shell(
+                """
+                    gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
+                    -V {input.gvcf_reblocked} -O {output.gvcf_exome} \
+                    -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120 \
+                    -G StandardAnnotation -G AS_StandardAnnotation
+                """),
+        else:
+            shell(
+                """
+                    cp {input.gvcf_reblocked} {output.gvcf_exome}
+                    cp {input.tbi_reblocked} {output.tbi}
+                """)
