@@ -97,7 +97,7 @@ rule stat_sample_done:
 
 rule tar_stats_per_sample:
     input:
-        finished = pj(SOURCEDIR, "{sample}.finished"),
+        # finished = pj(SOURCEDIR, "{sample}.finished"),
         samples=pj(STAT,"{sample}.done"),
         hs=pj(STAT,"{sample}.hs_metrics"),
         samtools=pj(STAT,"{sample}.samtools.stat"),

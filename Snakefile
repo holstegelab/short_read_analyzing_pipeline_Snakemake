@@ -80,7 +80,7 @@ module GLnexus:
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
-
+END_RULE = []
 gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
 gvcf_caller = config.get("caller","BOTH")
@@ -272,7 +272,7 @@ elif end_point == "Combine":
 
             use rule * from GLnexus
 
-            END_RULE = END_RULE = rules.GLnexus_all.input
+            END_RULE = rules.GLnexus_all.input
             print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs and Genotyping with GLnexus \n"
                   "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant' \n "
                   "* To To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
@@ -371,7 +371,7 @@ elif end_point == "VQSR" or end_point == "VCF":
 
             use rule * from GLnexus
 
-            END_RULE = END_RULE = rules.GLnexus_all.input
+            END_RULE = rules.GLnexus_all.input
             print("You will run following steps: Aligning with dragen, gVCF calling with HaplotypeCaller (default), merging gVCFs and Genotyping with GLnexus "
                   "* To change gVCF caller to deepvariant pass '--config caller=Deepvariant'"
                   "* To To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
