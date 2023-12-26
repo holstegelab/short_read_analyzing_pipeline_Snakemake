@@ -52,7 +52,7 @@ rule copy_to_dcache:
         target = sample['target']
 
         if target is None:
-            target = sample['study'] + '/' + sample['samplefile'] + '/' + crams
+            target = sample['study'] + '/' + sample['samplefile'] + '/' + input.cram
         if target.endswith('/'):
             target = target[:-1]
 
