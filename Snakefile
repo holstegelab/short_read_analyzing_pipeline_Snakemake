@@ -123,6 +123,7 @@ if end_point == "gVCF":
                 touch {output}
                 """
 
+        END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller and Deepvariant (both=default). \n"
               "To change gVCF caller selection pass '--config caller=Deepvariant' or '--config caller=HaplotypeCaller'")
     elif gvcf_caller == "HaplotypeCaller":
@@ -152,6 +153,7 @@ if end_point == "gVCF":
                 touch {output}
                 """
 
+        END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
@@ -179,11 +181,12 @@ if end_point == "gVCF":
                 n="1"
             shell: """
                 touch {output}
-                """
+            """
 
+        END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. \n"
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
-    END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
+
 elif end_point == 'PrepareRef':
     use rule * from Reference_preparation
 
