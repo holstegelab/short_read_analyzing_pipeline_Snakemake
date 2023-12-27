@@ -87,7 +87,7 @@ rule GenotypeDBI:
         mem_mb=40000
     priority: 40
     shell:"""
-        {gatk} GenotypeGVCFs --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{params.dir} -O {output} -D {DBSNP} --intervals {params.intervals} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy}
+        {gatk} GenotypeGVCFs --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{params.dir} -O {output} -D {DBSNP} --intervals {params.intervals} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --keep-combined-raw-annotations --bypass-feature-reader --only-output-calls-starting-in-intervals
         """
 
 
