@@ -281,7 +281,7 @@ rule reblock_gvcf:
 
 rule extract_exomes:
     input:
-        gvcf_reblocked = rules.reblock_gvcf.output.gvcf_wgs,
+        gvcf_reblocked = rules.reblock_gvcf.output.gvcf_reblock,
         tbi_reblocked = rules.reblock_gvcf.output.tbi,
     output:
         gvcf_exome = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
