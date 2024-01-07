@@ -293,7 +293,7 @@ rule extract_exomes:
     resources: n= "1.0",
                mem_mb= 1500,
     run:
-        if SAMPLEINFO[sample]["sample_type"] == "wgs":
+        if SAMPLEINFO[wildcards.sample]["sample_type"] == "wgs":
             shell(
                 """
                     gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
