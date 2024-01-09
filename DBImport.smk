@@ -84,13 +84,13 @@ def generate_gvcf_input(gvcf_folder, part):
                 if sex == "M" or not part.startswith('Y'):
                     region = convert_to_level1(part)
                 else:
-                    region = []
+                    continue
             else: #wes
                 sex = SAMPLEINFO[sample]["sex"]
                 if sex == "M" or not part.startswith('Y'):
                     region = convert_to_level0(part)
                 else:
-                    region = []
+                    continue
             filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
             gvcf_input.append(filename)
         res.extend(gvcf_input)
