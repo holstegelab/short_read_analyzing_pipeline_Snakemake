@@ -1,5 +1,6 @@
 import os
 from common import *
+import yaml
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -81,21 +82,24 @@ def generate_gvcf_input(gvcf_folder):
             # Determine if it is WGS or WES
             if SAMPLEINFO[sample]["sample_type"] == "WGS":
                 # Check the sex of the sample
-                sex = SAMPLEINFO[sample]["sex"]
-                if sex == "M" or not part.startswith('Y'):
-                    region = convert_to_level1(part)
-                else:
-                    continue
+                sex_file = pj(samplefile_folder, KMER, SAMPLEINFO[sample]["sample"] + ".result.yaml")
+                with open(sex_file) as f:
+                    xsample = yaml.load(f,Loader=yaml.FullLoader)
+                    if  xsample['sex'] == 'M' or not part.startswith('Y'):
+                        region = convert_to_level1(part)
+                    else:
+                        continue
             else:  # WES
-                sex = SAMPLEINFO[sample]["sex"]
-                if sex == "M" or not part.startswith('Y'):
-                    region = convert_to_level0(part)
-                else:
-                    continue
-            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",
-                cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
+                sex_file = pj(samplefile_folder, KMER,SAMPLEINFO[sample]["sample"] + ".result.yaml")
+                with open(sex_file) as f:
+                    xsample = yaml.load(f,Loader=yaml.FullLoader)
+                    if xsample['sex'] == 'M' or not part.startswith('Y'):
+                        region = convert_to_level0(part)
+                    else:
+                        continue
+            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
             gvcf_input.append(filename)
-            res.extend(gvcf_input)
+        res.extend(gvcf_input)
     return res
 
 gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
