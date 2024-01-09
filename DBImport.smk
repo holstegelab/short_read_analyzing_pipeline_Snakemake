@@ -71,7 +71,7 @@ rule backup_gdbi:
             find . -maxdepth 2 -name '*_gdbi_p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
             tar -czv -f BACKUPS/{params.tar} {input}
             """
-def generate_gvcf_input(gvcf_folder):
+def generate_gvcf_input(gvcf_folder, part):
     res = []
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
@@ -96,7 +96,7 @@ def generate_gvcf_input(gvcf_folder):
         res.extend(gvcf_input)
     return res
 
-gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
+gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk", wildcards.part)
 
 rule GenomicDBImport:
     input:
