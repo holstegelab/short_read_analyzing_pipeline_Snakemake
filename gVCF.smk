@@ -279,31 +279,43 @@ rule reblock_gvcf:
         -G StandardAnnotation -G AS_StandardAnnotation
     """
 
+def create_gvcf_input_diploid(wildcards):
+    if SAMPLEINFO[wildcards.sample]["sample_type"] == "wgs":
+        input_gvcf = expand("{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz", GVCF = GVCF, region = level1_regions_diploid, allow_missing = True),
+    else:
+        input_gvcf = expand("{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",GVCF=GVCF,region=level0_regions,allow_missing=True),
+
 rule extract_exomes:
     input:
-        gvcf_reblocked = rules.reblock_gvcf.output.gvcf_reblock,
-        tbi_reblocked = rules.reblock_gvcf.output.tbi,
+        gvcf = create_gvcf_input_diploid
     output:
         gvcf_exome = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     conda: CONDA_VCF
     params: java_options=DEFAULT_JAVA_OPTIONS,
-            interval = region_to_exome_file,
+            interval = region_to_file("F", extension="interval_list"),
             padding = 500,
+            inputs= lambda wildcards,input: ' '.join([f' -I {gvcf} ' for gvcf in input.gvcf]),
+            temp_gvcf = pj(GVCF, "exome_gatk", "{wildcards.sample}_combined.g.vcf.gz"),
+            sample_folder = pj(GVCF, "exome_gatk/{region}")
     resources: n= "1.0",
                mem_mb= 1500,
     run:
         if SAMPLEINFO[wildcards.sample]["sample_type"] == "wgs":
             shell(
                 """
+                    gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" MergeVcfs  \
+                    {params.inputs} -O {params.temp_gvcf}
+                    
                     gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
-                    -V {input.gvcf_reblocked} -O {output.gvcf_exome} \
+                    -V {params.temp_gvcf} -O {output.gvcf_exome} \
                     -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120 \
                     -G StandardAnnotation -G AS_StandardAnnotation
+                    
+                    rm {params.temp_gvcf}
                 """),
         else:
             shell(
                 """
-                    cp {input.gvcf_reblocked} {output.gvcf_exome}
-                    cp {input.tbi_reblocked} {output.tbi}
+                    mv {input.gvcf}* {params.sample_folder}
                 """)
