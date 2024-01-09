@@ -289,7 +289,7 @@ rule extract_exomes:
         tbi = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     conda: CONDA_VCF
     params: java_options=DEFAULT_JAVA_OPTIONS,
-            interval = region_to_file(region = wildcards.region, extension="interval_list"),
+            interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),
             padding = 500,
     resources: n= "1.0",
                mem_mb= 1500,
