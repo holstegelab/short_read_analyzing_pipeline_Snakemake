@@ -71,36 +71,37 @@ rule backup_gdbi:
             find . -maxdepth 2 -name '*_gdbi_p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
             tar -czv -f BACKUPS/{params.tar} {input}
             """
-def generate_gvcf_input(gvcf_folder, part):
+def generate_gvcf_input(gvcf_folder):
     res = []
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
         gvcf_input = []
         for sample in sample_names:
-            #determine if it is wgs or wes
+            # Determine if it is WGS or WES
             if SAMPLEINFO[sample]["sample_type"] == "WGS":
+                # Check the sex of the sample
                 sex = SAMPLEINFO[sample]["sex"]
                 if sex == "M" or not part.startswith('Y'):
                     region = convert_to_level1(part)
                 else:
                     continue
-            else: #wes
+            else:  # WES
                 sex = SAMPLEINFO[sample]["sex"]
                 if sex == "M" or not part.startswith('Y'):
                     region = convert_to_level0(part)
                 else:
                     continue
-            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample,allow_missing=True)
-            res.append(filename)
-        # res.extend(gvcf_input)
+            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
+            gvcf_input.append(filename)
+        res.extend(gvcf_input)
     return res
 
-# gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk", wildcards.part)
+gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
 
 rule GenomicDBImport:
     input:
-        g=lambda wildcards: generate_gvcf_input(GVCF + "/exome_gatk", wildcards.part),
+        g=gvcf_input,
         labels = labels
     conda: CONDA_VCF
     output:
