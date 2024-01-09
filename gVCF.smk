@@ -298,7 +298,7 @@ rule extract_exomes:
             padding = 500,
             inputs= lambda wildcards,input: ' '.join([f' -I {gvcf} ' for gvcf in input.gvcf]),
             temp_gvcf = pj(GVCF, "exome_gatk", "{wildcards.sample}_combined.g.vcf.gz"),
-            sample_folder = pj(GVCF, "exome_gatk/{region}/")
+            sample_folder = pj(GVCF, "exome_gatk/F/")
     resources: n= "1.0",
                mem_mb= 1500,
     run:
