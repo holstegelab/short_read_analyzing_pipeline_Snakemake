@@ -92,8 +92,8 @@ def generate_gvcf_input(gvcf_folder, part):
                 else:
                     continue
             filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample,allow_missing=True)
-            gvcf_input.append(filename)
-        res.extend(gvcf_input)
+            res.append(filename)
+        # res.extend(gvcf_input)
     return res
 
 # gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk", wildcards.part)
