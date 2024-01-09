@@ -35,7 +35,7 @@ elif DBImethod == "update" and len(DBIpath) != 1:
     DBI_method_params = "--genomicsdb-update-workspace-path "
     path_to_dbi = DBIpath
     number_of_splits = len(regions)
-    labels = expand(["labels/done_backup_{samplefile}_{region}.p{part}"],zip, region = regions, part = parts,samplefile=SAMPLE_FILES * number_of_splits)
+    labels = expand(["labels/done_backup_{samplefile}_{region}.p{part}"],zip, part = parts,samplefile=SAMPLE_FILES * number_of_splits)
 
 elif DBImethod == "update" and len(DBIpath) == 1:
     raise ValueError(
@@ -58,17 +58,17 @@ def region_to_IL_file(wildcards):#{{{
 
 rule DBImport_all:
     input:
-        expand(['labels/done_{region}.p{part}.txt'],zip,region = regions, part = parts),
+        expand(['labels/done_p{part}.txt'],part = parts),
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
 
 rule backup_gdbi:
-    input: gdbi = path_to_dbi + '{region}.p{part}'
-    output: label = touch(temp('labels/done_backup_{samplefile}_{region}.p{part}'))
-    params: tar = "{samplefile}_gdbi_{region}.p{part}.tar.gz"
+    input: gdbi = path_to_dbi + 'p{part}'
+    output: label = touch(temp('labels/done_backup_{samplefile}_p{part}'))
+    params: tar = "{samplefile}_gdbi_p{part}.tar.gz"
     shell: """
             mkdir -p BACKUPS/previous &&
-            find . -maxdepth 2 -name '*_gdbi_{region}.p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
+            find . -maxdepth 2 -name '*_gdbi_p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
             tar -czv -f BACKUPS/{params.tar} {input}
             """
 def generate_gvcf_input(gvcf_folder):
@@ -76,7 +76,15 @@ def generate_gvcf_input(gvcf_folder):
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
-        gvcf_input = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = samplefile_folder, GVCF = gvcf_folder, sample=sample_names,allow_missing=True)
+        gvcf_input = []
+        for sample in sample_names:
+            #determine if it is wgs or wes
+            if SAMPLEINFO[sample]["sample_type"] == "WGS":
+                region = convert_to_level1(part)
+            else: #wes
+                region = convert_to_level0(part)
+            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
+            gvcf_input.append(filename)
         res.extend(gvcf_input)
     return res
 
@@ -88,11 +96,11 @@ rule GenomicDBImport:
         labels = labels
     conda: CONDA_VCF
     output:
-        ready=touch(temp('labels/done_{region}.p{part}.txt'))
+        ready=touch(temp('labels/done_p{part}.txt'))
     threads: 3
     params:
         inputs=lambda wildcards,input: ' '.join([f'-V {gvcf}' for gvcf in input.g]),
-        dbi=os.path.join(path_to_dbi + "{region}.p{part}"),
+        dbi=os.path.join(path_to_dbi + "p{part}"),
         method=DBI_method_params,
         batches='75',
         intervals = region_to_IL_file,

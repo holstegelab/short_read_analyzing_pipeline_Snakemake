@@ -84,7 +84,7 @@ level4_range_diploid_only = [('A', 4, x,2) for x in range(0,10000)] + \
 
 def get_regions(lrange):
     """Converts a region describer (tuple format) to a list of regions (string format).
-    E.g. [('A', 1, 3, 1), ('A', 1, 4, 2)] -> ['A03H', 'A04']
+    E.g. [('A', 1, 3, 1), ('A', 2, 4, 2)] -> ['A3H', 'A04']
     """
     res = []
     
@@ -114,7 +114,7 @@ level4_regions_diploid = get_regions(level4_range_diploid_only)
 
 def convert_to_level0(region):
     """Converts a region describer of level >=0 to the corresponding level 0 region.
-    E.g. A33H -> A, X22H -> XH, X1 -> F
+    E.g. A33 -> F, X22H -> XH, X1 -> F
     """
     if region in level0_regions:
         return region
@@ -126,7 +126,43 @@ def convert_to_level0(region):
         return 'F' if not region.endswith('H') else 'YH'
     else:
         raise ValueError(f'Unknown region {region}')
-    
+
+def convert_to_level1(region):
+    """Converts a region describer of level >=1 to the corresponding level 1 region.
+    E.g. A33 -> A3, X22H -> X2H, X1 -> F
+    """
+    # Check if region ends with 'H'
+    ends_with_H = region.endswith('H')
+    if region in level1_regions:
+        return region
+    else:
+        if ends_with_H:
+            region = region[:-1]
+
+        component = region[0]
+        level = len(region[1:])
+        split = region[1:]
+
+        # If level is greater than 1, truncate the split number to 1 digit
+        if component == 'X':
+            level1_region = 'X'
+        elif component == 'Y':
+            level1_region = 'Y'
+        else:
+            if level > 1:
+                split = split[:1]
+
+            # Construct the level 1 region name
+            level1_region = f'{component}{split}'
+
+            # If original region ended with 'H', add it back
+        if ends_with_H:
+            level1_region += 'H'
+
+        return level1_region
+
+
+
 
 def region_to_file(region, wgs=False, extension='bed'):
     """ Converts a region describer to the filename of the file describing the region.

@@ -83,7 +83,7 @@ rule GenotypeDBI:
         ploidy = lambda wildcards: 1 if 'H' in wildcards['part'] else 2
     conda: CONDA_VCF
     resources: 
-        mem_mb_java = get_mem_mb_genotype
+        mem_mb_java = get_mem_mb_genotype,
         mem_mb=40000
     priority: 40
     shell:"""
