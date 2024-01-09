@@ -281,9 +281,9 @@ rule reblock_gvcf:
 
 def create_gvcf_input_diploid(wildcards):
     if SAMPLEINFO[wildcards.sample]["sample_type"] == "wgs":
-        input_gvcf = expand("{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz", GVCF = GVCF, region = level1_regions_diploid, allow_missing = True),
+        input_gvcf = [expand("{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz", GVCF = GVCF, region = level1_regions_diploid, allow_missing = True)],
     else:
-        input_gvcf = expand("{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",GVCF=GVCF,region=level0_regions,allow_missing=True),
+        input_gvcf = [expand("{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",GVCF=GVCF,region=level0_regions,allow_missing=True)],
     return input_gvcf
 
 rule extract_exomes:
