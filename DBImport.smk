@@ -92,9 +92,10 @@ def generate_gvcf_input(gvcf_folder):
                     region = convert_to_level0(part)
                 else:
                     continue
-            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
-        gvcf_input.append(filename)
-    res.extend(gvcf_input)
+            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",
+                cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
+            gvcf_input.append(filename)
+            res.extend(gvcf_input)
     return res
 
 gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
