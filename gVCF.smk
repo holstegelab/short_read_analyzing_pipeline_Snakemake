@@ -299,7 +299,7 @@ rule extract_exomes:
                 """
                     gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
                     -V {input.gvcf} -O {output.gvcf_exome} \
-                    -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120 
+                    -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120    
                 """),
         else:
             shell(

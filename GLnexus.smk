@@ -22,7 +22,28 @@ def generate_gvcf_input(gvcf_folder):
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
-        gvcf_input = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd = samplefile_folder, GVCF = gvcf_folder, sample=sample_names,allow_missing=True)
+        gvcf_input = []
+        for sample in sample_names:
+            # Determine if it is WGS or WES
+            if SAMPLEINFO[sample]["sample_type"] == "WGS":
+                # Check the sex of the sample
+                sex_file = pj(samplefile_folder, KMER, SAMPLEINFO[sample]["sample"] + ".result.yaml")
+                with open(sex_file) as f:
+                    xsample = yaml.load(f,Loader=yaml.FullLoader)
+                    if  xsample['sex'] == 'M' or not parts.startswith('Y'):
+                        region = convert_to_level1(parts)
+                    else:
+                        continue
+            else:  # WES
+                sex_file = pj(samplefile_folder, KMER,SAMPLEINFO[sample]["sample"] + ".result.yaml")
+                with open(sex_file) as f:
+                    xsample = yaml.load(f,Loader=yaml.FullLoader)
+                    if xsample['sex'] == 'M' or not parts.startswith('Y'):
+                        region = convert_to_level0(parts)
+                    else:
+                        continue
+            filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
+            gvcf_input.append(filename)
         res.extend(gvcf_input)
     return res
 
@@ -31,7 +52,7 @@ if gvcf_caller == "HaplotypeCaller":
     glnexus_dir = ["GLnexus_on_Haplotypecaller"]
 
 elif gvcf_caller == "Deepvariant":
-    gvcf_input = generate_gvcf_input(DEEPVARIANT + '/gVCF')
+    gvcf_input = generate_gvcf_input(DEEPVARIANT + '/gVCF/exomes')
     glnexus_dir = ["GLnexus_on_Deepvariant"]
 
 elif gvcf_caller == "BOTH":
@@ -49,8 +70,9 @@ elif glnexus_filtration == 'custom':
     dir_appendix = "custom"
 else:
     raise ValueError(
-        "Invalid option provided to 'glnexus_filtration';"
-        "please choose either 'default' or 'custom'"
+        "Invalid option provided to 'glnexus_filtration'; \n"
+        "please choose either 'default' for default GLnexus filtration \n "
+        "or 'custom' (default) for absence of hard filters \n"
         "custom preset located at /gpfs/work3/0/qtholstg/hg38_res_v2/software/Glnexus_preset.yml"
     )
 
@@ -106,7 +128,7 @@ rule index_deep:
 
 if gvcf_caller == "BOTH":
     use rule glnexus as glnexus_2 with:
-        input: gvcf_input = generate_gvcf_input(DEEPVARIANT + '/gVCF')
+        input: gvcf_input = generate_gvcf_input(DEEPVARIANT + '/gVCF/exomes')
         output: vcf=pj(current_dir,glnexus_dir[1] + dir_appendix,"{region}", "{parts}.vcf.gz")
         params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{region}_{parts}_glnexus_2.DB"),
                 bed= region_to_bed_file,
