@@ -141,6 +141,34 @@ rule DVWhatshapPhasingMerge:
                 touch {output.gvcf_tbi}
             fi
         fi
-        """        
+        """
+
 
 rule extract_exomes:
+    input:
+        gvcf = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
+        tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+    output:
+        gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        tbi = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
+    conda: CONDA_VCF
+    params: java_options=DEFAULT_JAVA_OPTIONS,
+            interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),
+            padding = 500,
+    resources: n= "1.0",
+               mem_mb= 1500,
+    run:
+        if SAMPLEINFO[wildcards.sample]["sample_type"] == "wgs":
+            shell(
+                """
+                    gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
+                    -V {input.gvcf} -O {output.gvcf_exome} \
+                    -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120 \
+                    -G StandardAnnotation -G AS_StandardAnnotation
+                """),
+        else:
+            shell(
+                """
+                    cp {input.gvcf} {output.gvcf_exome}
+                    cp {input.tbi} {output.tbi}
+                """)
