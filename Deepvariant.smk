@@ -148,6 +148,7 @@ rule extract_exomes:
     input:
         gvcf = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
         tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        validated_sex= rules.get_validated_sex.output.yaml
     output:
         gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.exome_extract.wg.vcf.gz"), non_empty=True),
         tbi = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.exome_extract.wg.vcf.gz.tbi"), non_empty=True),
