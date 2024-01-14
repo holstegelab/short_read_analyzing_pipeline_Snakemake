@@ -16,6 +16,7 @@ sample_types = config.get("sample_types","WES")
 print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {sample_types}")
 print(f"Filtration setting: {glnexus_filtration}")
+parts = level2_regions_diploid
 
 def generate_gvcf_input(gvcf_folder):
     res = []
@@ -94,7 +95,7 @@ def region_to_bed_file(wildcards):#{{{
     region = wildcards['parts']
     return region_to_file(region,wgs=sample_types == 'WGS',extension='bed')
 
-parts = level2_regions_diploid
+
 
 rule GLnexus_all:
     input:
