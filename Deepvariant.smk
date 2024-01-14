@@ -155,12 +155,19 @@ rule extract_exomes:
     params: java_options=DEFAULT_JAVA_OPTIONS,
             interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),
             padding = 500,
+            skipsex= lambda wildcards,input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y'))
     resources: n= "1.0",
                mem_mb= 1500,
 
     shell:
         """
+        if [ {params.skipsex} -eq 0 ]
+        then
             gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
             -V {input.gvcf} -O {output.gvcf_exome} \
             -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120 
+        else
+            touch {output.gvcf_exome}
+            touch {output.tbi}
+        fi
         """
