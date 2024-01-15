@@ -144,7 +144,7 @@ rule DVWhatshapPhasingMerge:
         """
 
 
-rule extract_exomes:
+rule extract_exomes_dv:
     input:
         gvcf = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
         tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),

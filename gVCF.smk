@@ -280,7 +280,7 @@ rule reblock_gvcf:
     """
 
 
-rule extract_exomes:
+rule extract_exomes_gvcf:
     input:
         gvcf = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"),
         tbi = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
