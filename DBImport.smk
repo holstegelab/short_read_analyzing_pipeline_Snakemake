@@ -81,9 +81,9 @@ def generate_gvcf_input(gvcf_folder):
         for sample in sample_names:
             # Determine if it is WGS or WES
             if SAMPLEINFO[sample]["sample_type"] == "WGS":
+                region = convert_to_level1(region)
                 # Check the sex of the sample
                 sex_file = pj(samplefile_folder, KMER, SAMPLEINFO[sample]["sample"] + ".result.yaml")
-                region = convert_to_level1(region)
                 with open(sex_file) as f:
                     xsample = yaml.load(f,Loader=yaml.FullLoader)
                     if xsample['sex'] == 'F' and region.startswith('Y'):
@@ -92,9 +92,9 @@ def generate_gvcf_input(gvcf_folder):
                         continue
             else:  # WES
                 sex_file = pj(samplefile_folder, KMER,SAMPLEINFO[sample]["sample"] + ".result.yaml")
+                region = convert_to_level0(region)
                 with open(sex_file) as f:
                     xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    region = convert_to_level0(region)
                     if xsample['sex'] == 'F' and region.startswith('Y'):
                         region = None
                     else:
