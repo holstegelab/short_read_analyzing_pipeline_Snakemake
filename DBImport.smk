@@ -79,6 +79,7 @@ def generate_gvcf_input(gvcf_folder):
         samplefile_folder = get_samplefile_folder(samplefile)
         gvcf_input = []
         for sample in sample_names:
+            region = None
             # Determine if it is WGS or WES
             if SAMPLEINFO[sample]["sample_type"] == "WGS":
                 # Check the sex of the sample
