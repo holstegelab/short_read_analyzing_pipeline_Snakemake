@@ -16,7 +16,6 @@ use rule * from Tools
 rule gVCF_all:
     input:
         expand("{gvcf}/{sample}.done", sample=sample_names, gvcf=GVCF),
-        #rules.Aligner_all.input,
     default_target: True
 
 
