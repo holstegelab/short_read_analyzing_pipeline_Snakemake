@@ -91,8 +91,9 @@ VQSR_rule = []
 VQSR = config.get("VQSR","NO")
 end_point = config.get("END_POINT","gVCF")
 
+print(end_point, gvcf_caller)
 if end_point == "gVCF":
-    if gvcf_caller == "both":
+    if gvcf_caller == "BOTH":
         use rule * from gVCF
 
         use rule * from Deepvariant
@@ -407,7 +408,6 @@ else:
     raise ValueError(
         "Invalid option provided to 'END_POINT'; please choose either 'gVCF(default)', 'Align', 'Genotype' or 'Combine'."
     )
-
 
 rule all:
     input:

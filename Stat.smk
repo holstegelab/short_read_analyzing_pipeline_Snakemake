@@ -8,11 +8,6 @@ wildcard_constraints:
     sample="[\w\d_\-@]+"
 
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-
-use rule * from Aligner
 
 
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
@@ -139,8 +134,8 @@ rule tar_stats_per_sample:
 rule coverage:
     """Estimates contamination in a sample using the verifybamid2 tool"""
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
     output:
         pj(STAT,'cov','{sample}.regions.bed.gz'),
         pj(STAT,'cov','{sample}.regions.bed.gz.csi'),
@@ -199,11 +194,11 @@ def get_svd(wildcards):  #{{{
 rule verifybamid:
     """Estimates contamination in a sample using the verifybamid2 tool"""
     input:
-        bam = rules.markdup.output.mdbams,
-        bai = rules.markdup.output.mdbams_bai,
-        validated_sex = rules.get_validated_sex.output.yaml
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        VBID_stat=STAT + '/contam/{sample}.verifybamid.pca2.selfSM'
+        VBID_stat=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM')
     # end of this file hardcoded in Haplotypecaller and read_contam_w
     priority: 27
     params:
@@ -231,10 +226,10 @@ def get_capture_kit_interval_list(wildcards):  #{{{
 rule hs_stats:
     """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
         interval=MERGED_CAPTURE_KIT_IVL,
-        validated_sex=rules.get_validated_sex.output.yaml,
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
         targets=TARGETS_IVL,
     output:
         HS_metrics=pj(STAT,"{sample}.hs_metrics")
@@ -258,10 +253,10 @@ rule hs_stats:
 
 rule Artifact_stats:
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
         interval=get_capture_kit_interval_list,
-        validated_sex=rules.get_validated_sex.output.yaml
+        validated_sex=pj(KMER,"{sample}.result.yaml")
     output:
         Bait_bias = pj(STAT, '{sample}.bait_bias_summary_metrics'),
         Pre_adapter = ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'),non_empty=True),
@@ -287,10 +282,10 @@ rule Artifact_stats:
 
 rule OXOG_metrics:
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
         interval=get_capture_kit_interval_list,
-        validated_sex=rules.get_validated_sex.output.yaml
+        validated_sex=pj(KMER,"{sample}.result.yaml")
     output:
         Artifact_matrics=pj(STAT,"{sample}.OXOG")
     priority: 99
@@ -308,9 +303,9 @@ rule OXOG_metrics:
 
 rule samtools_stat:
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
-        validated_sex=rules.get_validated_sex.output.yaml
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml")
     output: samtools_stat=ensure(pj(STAT,"{sample}.samtools.stat"),non_empty=True)
     priority: 99
     log: pj(LOG,"Stats","samtools_{sample}.log")
@@ -339,9 +334,9 @@ def get_capture_kit_bed(wildcards):  #{{{
 
 rule samtools_stat_exome:
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
-        validated_sex=rules.get_validated_sex.output.yaml
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml")
     output: samtools_stat_exome=ensure(pj(STAT,"{sample}.samtools.exome.stat"),non_empty=True)
     priority: 99
     params:
@@ -361,8 +356,9 @@ rule bamstats_all:
         # if in input 2 functions and one of them is check chekpoint (rules.markdup.output.mdbams and get_capture_kit_bed here was as example)
         # first command has not been executed
         # and in shell wildcard (instead of iutput of function) has putted
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        
     output:
         All_exome_stats=ensure(pj(STAT,'{sample}.bam_all.tsv'),non_empty=True)
     params:
@@ -376,8 +372,8 @@ rule bamstats_all:
 
 rule bamstats_exome:
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
     output:
         All_exome_stats=ensure(pj(STAT,'{sample}.bam_exome.tsv'),non_empty=True)
     resources:

@@ -4,21 +4,6 @@ onsuccess: shell("rm -fr logs/gVCF/*")
 wildcard_constraints:
     sample="[\w\d_\-@]+",
 
-module Aligner:
-    snakefile:
-        "Aligner.smk"
-    config:
-        config
-
-use rule * from Aligner
-
-module Stat:
-    snakefile:
-        "Stat.smk"
-    config:
-        config
-use rule verifybamid from Stat
-
 module Tools:
     snakefile:
         "Tools.smk"
@@ -31,7 +16,6 @@ use rule * from Tools
 rule gVCF_all:
     input:
         expand("{gvcf}/{sample}.done", sample=sample_names, gvcf=GVCF),
-        rules.Aligner_all.input,
     default_target: True
 
 
@@ -75,9 +59,9 @@ rule CalibrateDragstrModel:
     Provides better STR variant calling.
     """
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
-        validated_sex=rules.get_validated_sex.output.yaml,
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         dragstr_model=pj(BAM, "{sample}-dragstr.txt"),
     priority: 26
@@ -148,12 +132,12 @@ rule HaplotypeCaller:
     """HaplotypeCaller. Call SNPs and indels for each sample."""
     input:
         # check what bam file we need to use (with or without additional cleanup)
-        bams=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai,
+        bams=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
         model=rules.CalibrateDragstrModel.output.dragstr_model,
-        contam=rules.verifybamid.output.VBID_stat,
+        contam=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM'),
         interval=region_to_interval_file,
-        validated_sex=rules.get_validated_sex.output.yaml,
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         orig_gvcf=ensure(
             temp(pj(GVCF, "{region}/{sample}.{region}.g.vcf.gz")), non_empty=True
@@ -168,7 +152,7 @@ rule HaplotypeCaller:
         vcf_tbi=temp(pj(GVCF, "{region}/{sample}.{region}.w.vcf.gz.tbi")),
         wstats=pj(STAT, "whatshap_phasing/{sample}.{region}.stats"),
         mwstats=pj(STAT, "whatshap_phasing/{sample}.{region}.merge_stats"),
-        tmp_gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf")),
+        tmp_gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf")),        
         gvcf=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz"),
         gvcf_tbi=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     conda:
@@ -256,7 +240,8 @@ rule reblock_gvcf:
     input:
         gvcf=rules.HaplotypeCaller.output.gvcf,
         idx=rules.HaplotypeCaller.output.gvcf_tbi,
-        validated_sex=rules.get_validated_sex.output.yaml,
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
+
     output:
         gvcf_reblock=ensure( pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi=ensure( pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
@@ -280,7 +265,7 @@ rule reblock_gvcf:
     """
 
 
-rule extract_exomes:
+rule extract_exomes_gvcf:
     input:
         gvcf = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"),
         tbi = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"),

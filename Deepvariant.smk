@@ -6,10 +6,6 @@ onsuccess: shell("rm -fr logs/Deepvariant/*")
 from common import *
 
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-use rule * from Aligner
 module Tools:
     snakefile: 'Tools.smk'
     config: config
@@ -19,7 +15,6 @@ mode = config.get("computing_mode", "WES")
 rule DeepVariant_all:
     input:
         expand("{dv}/{sample}.done",sample=sample_names, dv = DEEPVARIANT),
-        rules.Aligner_all.input
     default_target: True
 
 
@@ -37,8 +32,6 @@ rule deepvariant_sample_done:
         mem_mb = 100,
         n = "1.0"
 
-
-
 def get_sequencing_mode(wildcards):#{{{
     return "WGS" if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else "WES"#}}}
 
@@ -55,10 +48,10 @@ def region_to_bed_file(wildcards):#{{{
 
 rule deepvariant:
     input:
-        bam = rules.markdup.output.mdbams,
-        bai = rules.markdup.output.mdbams_bai,
         bed = region_to_bed_file,
-        validated_sex = rules.get_validated_sex.output.yaml
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         vcf = temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz")),
         vcf_tbi = temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi")),
@@ -98,9 +91,9 @@ rule DVWhatshapPhasingMerge:
         vcf_tbi = rules.deepvariant.output.vcf_tbi,
         gvcf = rules.deepvariant.output.gvcf,
         gvcf_tbi = rules.deepvariant.output.gvcf_tbi,
-        bams = rules.markdup.output.mdbams,
-        bai = rules.markdup.output.mdbams_bai,
-        validated_sex = rules.get_validated_sex.output.yaml
+        bams=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         vcf = pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz"),
         wstats = pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
@@ -144,11 +137,11 @@ rule DVWhatshapPhasingMerge:
         """
 
 
-rule extract_exomes:
+rule extract_exomes_dv:
     input:
         gvcf = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
         tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
-        validated_sex= rules.get_validated_sex.output.yaml
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.exome_extract.wg.vcf.gz"), non_empty=True),
         tbi = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.exome_extract.wg.vcf.gz.tbi"), non_empty=True),
