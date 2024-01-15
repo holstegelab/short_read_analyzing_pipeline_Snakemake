@@ -303,6 +303,10 @@ def get_source_aligned_file(wildcards):  #{{{
 
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']][0]
 
+    #raise error if file does not exist
+    if not os.path.exists(readgroup['file']):
+        raise ValueError
+
     return readgroup['file']
 
 
@@ -398,6 +402,10 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
     folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
+
+    #check that folder really exists
+    if not os.path.exsits(folder):
+        raise ValueError
     return folder
 
 
