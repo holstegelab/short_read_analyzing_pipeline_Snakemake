@@ -16,7 +16,7 @@ sample_types = config.get("sample_types","WES")
 print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {sample_types}")
 print(f"Filtration setting: {glnexus_filtration}")
-part = level2_regions_diploid
+parts = level2_regions_diploid
 
 def generate_gvcf_input(gvcf_folder):
     res = []
@@ -99,8 +99,8 @@ def region_to_bed_file(wildcards):#{{{
 
 rule GLnexus_all:
     input:
-        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{part}.vcf.gz", cur_dir = current_dir, region = ["F"], part = part, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{part}.vcf.gz.tbi", cur_dir = current_dir, region = ["F"], part = part, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{part}.vcf.gz", cur_dir = current_dir, region = ["F"], part = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{types_of_gl}{appendix}/{region}/{part}.vcf.gz.tbi", cur_dir = current_dir, region = ["F"], part = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
     default_target: True
 
 rule glnexus:
