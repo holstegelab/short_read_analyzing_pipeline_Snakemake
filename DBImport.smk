@@ -106,6 +106,8 @@ def generate_gvcf_input(gvcf_folder):
         res.extend(gvcf_input)
     return res
 
+gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
+
 rule GenomicDBImport:
     input:
         g=gvcf_input,
