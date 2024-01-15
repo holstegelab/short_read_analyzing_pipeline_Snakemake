@@ -31,18 +31,18 @@ def generate_gvcf_input(gvcf_folder):
                 sex_file = pj(samplefile_folder, KMER, SAMPLEINFO[sample]["sample"] + ".result.yaml")
                 with open(sex_file) as f:
                     xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    if  xsample['sex'] == 'M' or not part.startswith('Y'):
-                        region = convert_to_level1(part)
-                    else:
+                    if xsample['sex'] == 'F' and part.startswith('Y'):
                         continue
+                    else:
+                        region = convert_to_level1(part)
             else:  # WES
                 sex_file = pj(samplefile_folder, KMER,SAMPLEINFO[sample]["sample"] + ".result.yaml")
                 with open(sex_file) as f:
                     xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    if xsample['sex'] == 'M' or not part.startswith('Y'):
-                        region = convert_to_level0(part)
-                    else:
+                    if xsample['sex'] == 'F' and part.startswith('Y'):
                         continue
+                    else:
+                        region = convert_to_level0(part)
             filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample_names,allow_missing=True)
             gvcf_input.append(filename)
         res.extend(gvcf_input)
