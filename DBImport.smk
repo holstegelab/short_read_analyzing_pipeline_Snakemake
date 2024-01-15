@@ -85,18 +85,18 @@ def generate_gvcf_input(gvcf_folder):
                 sex_file = pj(samplefile_folder, KMER, SAMPLEINFO[sample]["sample"] + ".result.yaml")
                 with open(sex_file) as f:
                     xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    if xsample['sex'] == 'F' and part.startswith('Y'):
+                    if xsample['sex'] == 'F' and region.startswith('Y'):
                         continue
                     else:
-                        region = convert_to_level1(part)
+                        region = convert_to_level1(region)
             else:  # WES
                 sex_file = pj(samplefile_folder, KMER,SAMPLEINFO[sample]["sample"] + ".result.yaml")
                 with open(sex_file) as f:
                     xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    if xsample['sex'] == 'F' and part.startswith('Y'):
+                    if xsample['sex'] == 'F' and region.startswith('Y'):
                         continue
                     else:
-                        region = convert_to_level0(part)
+                        region = convert_to_level0(region)
                 filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample,allow_missing=True)
                 with open('test.txt', 'w') as f:
                     f.write('\n'.join(filename) + '\n')
@@ -105,8 +105,6 @@ def generate_gvcf_input(gvcf_folder):
             gvcf_input.append(filename)
         res.extend(gvcf_input)
     return res
-
-gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
 
 rule GenomicDBImport:
     input:
