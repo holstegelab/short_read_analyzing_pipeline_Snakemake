@@ -277,7 +277,7 @@ rule extract_exomes_gvcf:
     resources: n= "1.0",
                mem_mb= 1500,
     run:
-        if SAMPLEINFO[wildcards.sample]["sample_type"] == "wgs":
+        if "wgs" in SAMPLEINFO[wildcards.sample]["sample_type"] :
             shell(
                 """
                     gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
