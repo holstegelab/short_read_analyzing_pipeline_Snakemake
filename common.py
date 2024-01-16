@@ -160,7 +160,7 @@ def convert_to_level1(region):
         if ends_with_H:
             level1_region += 'H'
 
-        return level1_region
+    return level1_region
 
 
 
