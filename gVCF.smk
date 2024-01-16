@@ -21,10 +21,10 @@ rule gVCF_all:
 
 def get_gvcf_files(wildcards):  # {{{
     sample = wildcards["sample"]
-    regions = (
-        level1_regions if "wgs" in SAMPLEINFO[sample]["sample_type"] else level0_regions
-    )
-    return [pj(GVCF, "exome_gatk", region, f"{sample}.{region}.wg.vcf.gz") for region in regions]
+    if 'wgs' in SAMPLEINFO[sample]['sample_type']:
+        return [pj(GVCF, "exome_extract", region, f"{sample}.{region}.wg.vcf.gz") for region in level1_regions]
+    else:
+        return [pj(GVCF, "reblock", region, f"{sample}.{region}.wg.vcf.gz") for region in level0_regions]
 # }}}
 
 
@@ -140,21 +140,21 @@ rule HaplotypeCaller:
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         orig_gvcf=ensure(
-            temp(pj(GVCF, "{region}/{sample}.{region}.g.vcf.gz")), non_empty=True
+            temp(pj(GVCF, "raw/{region}/{sample}.{region}.g.vcf.gz")), non_empty=True
         ),
         orig_gvcf_tbi=ensure(
-            temp(pj(GVCF, "{region}/{sample}.{region}.g.vcf.gz.tbi")), non_empty=True
+            temp(pj(GVCF, "raw/{region}/{sample}.{region}.g.vcf.gz.tbi")), non_empty=True
         ),
-        genotyped_vcf=temp(pj(GVCF, "{region}/{sample}.{region}.vcf.gz")),
-        genotyped_vcf_tbi=temp(pj(GVCF, "{region}/{sample}.{region}.vcf.gz.tbi")),
-        tmp_vcf=temp(pj(GVCF, "{region}/{sample}.{region}.tmp.vcf.gz")),
-        vcf=temp(pj(GVCF, "{region}/{sample}.{region}.w.vcf.gz")),
-        vcf_tbi=temp(pj(GVCF, "{region}/{sample}.{region}.w.vcf.gz.tbi")),
+        genotyped_vcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.vcf.gz")),
+        genotyped_vcf_tbi=temp(pj(GVCF, "raw/{region}/{sample}.{region}.vcf.gz.tbi")),
+        tmp_vcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.tmp.vcf.gz")),
+        vcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.w.vcf.gz")),
+        vcf_tbi=temp(pj(GVCF, "raw/{region}/{sample}.{region}.w.vcf.gz.tbi")),
         wstats=pj(STAT, "whatshap_phasing/{sample}.{region}.stats"),
         mwstats=pj(STAT, "whatshap_phasing/{sample}.{region}.merge_stats"),
-        tmp_gvcf=temp(pj(GVCF, "{region}/{sample}.{region}.wg.vcf")),        
-        gvcf=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz"),
-        gvcf_tbi=pj(GVCF, "{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        tmp_gvcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.wg.vcf")),        
+        gvcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.wg.vcf.gz")),
+        gvcf_tbi=temp(pj(GVCF, "raw/{region}/{sample}.{region}.wg.vcf.gz.tbi")),
     conda:
         CONDA_VCF
     resources:
@@ -239,8 +239,7 @@ rule HaplotypeCaller:
 rule reblock_gvcf:
     input:
         gvcf=rules.HaplotypeCaller.output.gvcf,
-        idx=rules.HaplotypeCaller.output.gvcf_tbi,
-        validated_sex=pj(KMER,"{sample}.result.yaml"),
+        idx=rules.HaplotypeCaller.output.gvcf_tbi
 
     output:
         gvcf_reblock=ensure( pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
@@ -250,15 +249,14 @@ rule reblock_gvcf:
     priority: 29
     params:
         dbsnp=DBSNP,
-        java_options=DEFAULT_JAVA_OPTIONS,
-        ref=get_ref_by_validated_sex,
+        java_options=DEFAULT_JAVA_OPTIONS
     resources:
         n="1.0",
         mem_mb=lambda wildcards, attempt: attempt * 1250,
     shell:
         """
     {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" ReblockGVCF  \
-        --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {params.ref} --do-qual-score-approximation \
+        --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {REF_MALE} --do-qual-score-approximation \
          -V {input.gvcf} -O {output.gvcf_reblock}  --seconds-between-progress-updates 120 \
         -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 \
         -G StandardAnnotation -G AS_StandardAnnotation
@@ -270,8 +268,8 @@ rule extract_exomes_gvcf:
         gvcf = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"),
         tbi = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     output:
-        gvcf_exome = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
-        tbi = ensure( pj(GVCF, "exome_gatk/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
+        gvcf_exome = ensure( pj(GVCF, "exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        tbi = ensure( pj(GVCF, "exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     conda: CONDA_VCF
     params: java_options=DEFAULT_JAVA_OPTIONS,
             interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),

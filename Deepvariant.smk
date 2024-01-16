@@ -20,8 +20,12 @@ rule DeepVariant_all:
 
 def get_deepvariant_files(wildcards):#{{{
     sample = wildcards['sample']
-    regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
-    return [pj(DEEPVARIANT,  'gVCF', 'exomes', region, f'{sample}.{region}.exome_extract.wg.vcf.gz') for region in regions]#}}}
+    if 'wgs' in SAMPLEINFO[sample]['sample_type']:
+        return [pj(DEEPVARIANT,  'gVCF', 'exome_extract', region, f'{sample}.{region}.wg.vcf.gz') for region in level1_regions]
+    else:
+        return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in level0_regions]
+#}}}
+
 
 rule deepvariant_sample_done:
     input:
@@ -143,8 +147,8 @@ rule extract_exomes_dv:
         tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.exome_extract.wg.vcf.gz"), non_empty=True),
-        tbi = ensure(pj(DEEPVARIANT, "gVCF/exomes/{region}/{sample}.{region}.exome_extract.wg.vcf.gz.tbi"), non_empty=True),
+        gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        tbi = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
     conda: CONDA_VCF
     params: java_options=DEFAULT_JAVA_OPTIONS,
             interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),

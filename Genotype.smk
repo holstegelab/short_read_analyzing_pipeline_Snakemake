@@ -16,8 +16,9 @@ module Combine_gVCF:
     config: config
 
 
-gVCF_combine_method = config.get("Combine_gVCF_method", "DBIMPORT")
-mode = config.get("computing_mode", "WES")
+gVCF_combine_method = config.get("gvcf_combine_method", "DBIMPORT")
+mode = config.get("genotype_mode", "WES")
+alg = config.get("genotype_alg", "GenotypeGVCFs") #or GnarlyGenotyper
 
 
 #parts = level2_regions
