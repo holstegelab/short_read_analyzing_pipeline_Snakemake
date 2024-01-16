@@ -14,7 +14,6 @@ genotype_mode = config.get("genotype_mode", "WES") #or WGS
 parts = level2_regions
 
 
-
 print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {genotype_mode}")
 print(f"DBImethod: {DBImethod}, DBIpath: {DBIpath}")
@@ -78,6 +77,7 @@ rule backup_gdbi:
             find . -maxdepth 2 -name '*_gdbi_p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
             tar -czv -f BACKUPS/{params.tar} {input}
             """
+
 def generate_gvcf_input(wildcards):
     region = wildcards['region']
     res = []

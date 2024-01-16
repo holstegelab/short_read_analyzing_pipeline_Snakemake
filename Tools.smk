@@ -47,8 +47,8 @@ rule CreateBinsFullGenome:
         mkdir -p {output}
         cd {output}
         bedtools sort -i {input.merged_kit} > {input.merged_kit}.sorted.bed
-        awk '{{print $1 "\t" 0 "\t" $2}}' {input.fai} | awk '$1 != "chrom"' > genome.bed
-        bedtools sort -i genome.bed > genome.sorted.bed
+        awk '{{print $1 "\t" 0 "\t" $2}}' {input.fai} | awk '$1 != "chrom"' > genome.orig.bed
+        bedtools sort -i genome.orig.bed > genome.sorted.bed
         bedtools multiinter -i genome.sorted.bed {input.merged_kit}.sorted.bed | cut -f1-3 > all_chroms_gencode.bed
         bedtools subtract -a all_chroms_gencode.bed -b {input.mask} > genome.masked.bed
         bedtools makewindows -b genome.masked.bed -w 10000 > genome.masked_windows.bed
@@ -58,13 +58,18 @@ rule CreateBinsFullGenome:
         bedtools sort -i genome.bed -g {input.fai} > genome.sorted.bed
         touch genome.split
         rm genome.spli*
-        cat genome.sorted.bed | grep -v chrX | grep -v chrY > genome.auto.bed
+        cat genome.sorted.bed | grep -v -P "chrX|chrY|HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.auto.bed
         cat genome.sorted.bed | grep chrX > genome.X.bed
         cat genome.sorted.bed | grep chrY > genome.Y.bed
+        #need the full contig for all the remaining contigs, as this is required for genomicsdbimport to merge intervals.
+        cat genome.orig.bed | grep -P "chrX|chrY|HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.other.bed
+
 
         split genome.auto.bed -a 4 -d -n l/10000 genome.autosplit4.
         split genome.X.bed -a 3 -d -n l/500 genome.Xsplit3.
         split genome.Y.bed -a 3 -d -n l/200 genome.Ysplit3.
+        split genome.other.bed -a 3 -d -n l/200 genome.Osplit3.
+
 
         ls genome.*split?.* | xargs -I{{}} sh -c "bedtools merge -i {{}} | awk '\$2 != \$3' > {{}}.bed"
         rm genome.*split4.????
@@ -84,6 +89,10 @@ rule CreateBinsFullGenome:
             counter=$(printf "%02d" $j)
             cat genome.Ysplit3.$counter?.bed | bedtools merge > genome.Ysplit2.$counter.bed
         done
+        for j in $(seq 0 19); do
+            counter=$(printf "%02d" $j)
+            cat genome.Osplit3.$counter?.bed | bedtools merge > genome.Osplit2.$counter.bed
+        done
 
 
         #level 2
@@ -98,13 +107,17 @@ rule CreateBinsFullGenome:
             cat genome.Ysplit2.$i?.bed | bedtools merge > genome.Ysplit1.$i.bed
         done
 
+        for i in $(seq 0 1); do
+            cat genome.Osplit2.$i?.bed | bedtools merge > genome.Osplit1.$i.bed
+        done
+
         #level 1
         for i in $(seq 0 9); do
             cat genome.autosplit2.$i?.bed | bedtools merge > genome.autosplit1.$i.bed
         done
 
         cat genome.sorted.bed | bedtools merge > genome.fullsplit0.bed
-        cat genome.autosplit1.?.bed | bedtools merge > genome.autosplit0.bed
+        cat genome.autosplit1.?.bed genome.Osplit1.?.bed | bedtools merge > genome.autosplit0.bed
         cat genome.Xsplit1.?.bed | bedtools merge > genome.Xsplit0.bed
         cat genome.Ysplit1.?.bed | bedtools merge > genome.Ysplit0.bed
                 """
@@ -146,6 +159,10 @@ rule CreateBinsExome:
             bedtools intersect -a {input.wgs_folder}/genome.Ysplit2.$counter.bed -b {input.merged_kit}.padded.bed > merged.Ysplit2.$counter.bed
         done
 
+        for j in $(seq 0 19); do
+            counter=$(printf "%02d" $j)
+            bedtools intersect -a {input.wgs_folder}/genome.Osplit2.$counter.bed -b {input.merged_kit}.padded.bed > merged.Osplit2.$counter.bed
+        done
 
 
         #level 2
@@ -158,6 +175,9 @@ rule CreateBinsExome:
         done
         for i in $(seq 0 1); do
             bedtools intersect -a {input.wgs_folder}/genome.Ysplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.Ysplit1.$i.bed
+        done
+        for i in $(seq 0 1); do
+            bedtools intersect -a {input.wgs_folder}/genome.Osplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.Osplit1.$i.bed
         done
 
         #level 1
