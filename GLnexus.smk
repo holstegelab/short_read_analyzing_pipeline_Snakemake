@@ -141,6 +141,7 @@ rule index_deep:
     input: rules.glnexus_HC.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz.tbi")
     conda: CONDA_VCF
+    resources: n = "1"
     shell: "gatk IndexFeatureFile -I {input}"
 
 
