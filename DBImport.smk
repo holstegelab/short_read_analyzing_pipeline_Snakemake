@@ -90,7 +90,7 @@ def generate_gvcf_input(wildcards):
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
                 continue
             # Determine if it is WGS or WES
-            if SAMPLEINFO[sample]["sample_type"] == "WGS":
+            if 'wgs' in SAMPLEINFO[sample]["sample_type"] or "WGS" in SAMPLEINFO[sample]["sample_type"] :
                 region = convert_to_level1(region)
                 if genotype_mode == 'WES':
                     filenames = expand("{cd}/{GVCF}/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
@@ -101,7 +101,6 @@ def generate_gvcf_input(wildcards):
                 filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
-    print(res)
     return res
 
 rule GenomicDBImport:
