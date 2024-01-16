@@ -60,7 +60,7 @@ def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['region']
     # WGS files have fewer regions so DBI works faster and could use multiple cores
-    return region_to_file(region, wgs=genotype_mode=='WGS', extension='interval_list')#}}}
+    return region_to_file(region, wgs=True, extension='interval_list')#}}}
 
 
 rule DBImport_all:
