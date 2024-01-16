@@ -25,6 +25,12 @@ for part in parts:
 
 print(parts, regions)
 
+regions_level1 = []
+for part in parts:
+    regions_level1.append(convert_to_level1(part))
+
+print(parts, regions_level1)
+
 if DBImethod == "new":
     # if want to
     DBI_method_params = "--genomicsdb-workspace-path "
@@ -41,7 +47,7 @@ elif DBImethod == "update" and len(DBIpath) != 1:
 elif DBImethod == "update" and len(DBIpath) == 1:
     raise ValueError(
         "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_' \n"
-        "Don't provide {chr}.p{chr_p} part of path!"
+        "Don't provide .p{region} part of path!"
     )
 
 else:
@@ -83,8 +89,6 @@ def generate_gvcf_input(wildcards):
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
                 continue
-
-       
             # Determine if it is WGS or WES
             if SAMPLEINFO[sample]["sample_type"] == "WGS":
                 region = convert_to_level1(region)
