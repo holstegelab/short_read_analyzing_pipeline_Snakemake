@@ -152,5 +152,5 @@ use rule glnexus_HC as glnexus_DV with:
             mem_gb= 7,
             conf_filters= conf_filter
 use rule index_deep as index_deep_2 with:
-    input: rules.glnexus_2.output.vcf
+    input: rules.glnexus_DV.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
