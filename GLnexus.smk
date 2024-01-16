@@ -109,7 +109,7 @@ def conf_filter(wildcards):
 
 def region_to_bed_file(wildcards):#{{{
     """Converts a region to a bed file location (see common.py and Tools.smk)"""
-    region = wildcards['part']
+    region = wildcards['region']
     return region_to_file(region,wgs=genotype_mode == 'WGS',extension='bed')
 
 
