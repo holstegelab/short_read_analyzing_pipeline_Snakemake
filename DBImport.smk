@@ -7,16 +7,16 @@ wildcard_constraints:
     mode = "WES|WGS"
 
 gvcf_caller = config.get("caller", "HaplotypeCaller")
-sample_types = config.get("sample_types","WGS")
 DBImethod = config.get("DBI_method", "new")
 DBIpath = config.get("DBIpath", "genomicsdb_")
+genotype_mode = config.get("genotype_mode", "WES") #or WGS
 
 parts = level2_regions
 
 
 
 print(f"Caller: {gvcf_caller}")
-print(f"Sample type: {sample_types}")
+print(f"Sample type: {genotype_mode}")
 print(f"DBImethod: {DBImethod}, DBIpath: {DBIpath}")
 
 regions = []
@@ -54,7 +54,7 @@ def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['region']
     # WGS files have fewer regions so DBI works faster and could use multiple cores
-    return region_to_file(region, wgs=sample_types=='WGS', extension='interval_list')#}}}
+    return region_to_file(region, wgs=genotype_mode=='WGS', extension='interval_list')#}}}
 
 
 rule DBImport_all:
@@ -72,44 +72,37 @@ rule backup_gdbi:
             find . -maxdepth 2 -name '*_gdbi_p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
             tar -czv -f BACKUPS/{params.tar} {input}
             """
-def generate_gvcf_input(gvcf_folder):
+def generate_gvcf_input(wildcards):
+    region = wildcards['region']
     res = []
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
+        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'))
         gvcf_input = []
         for sample in sample_names:
+            if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
+                continue
+
+       
             # Determine if it is WGS or WES
             if SAMPLEINFO[sample]["sample_type"] == "WGS":
                 region = convert_to_level1(region)
-                # Check the sex of the sample
-                sex_file = pj(samplefile_folder, KMER, SAMPLEINFO[sample]["sample"] + ".result.yaml")
-                with open(sex_file) as f:
-                    xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    if xsample['sex'] == 'F' and region.startswith('Y'):
-                        region = None
-                    else:
-                        continue
+                if genotype_mode == 'WES':
+                    filenames = expand("{cd}/{GVCF}/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
+                else:
+                    filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
             else:  # WES
-                sex_file = pj(samplefile_folder, KMER,SAMPLEINFO[sample]["sample"] + ".result.yaml")
                 region = convert_to_level0(region)
-                with open(sex_file) as f:
-                    xsample = yaml.load(f,Loader=yaml.FullLoader)
-                    if xsample['sex'] == 'F' and region.startswith('Y'):
-                        region = None
-                    else:
-                        continue
-                filename = expand("{cd}/{GVCF}/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=gvcf_folder,region = region, sample=sample,allow_missing=True)
-            gvcf_input.append(filename)
+                filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
+            gvcf_input.extend(filenames)
         res.extend(gvcf_input)
+    print(res)
     return res
-
-gvcf_input = generate_gvcf_input(GVCF + "/exome_gatk")
-print(gvcf_input)
 
 rule GenomicDBImport:
     input:
-        g=gvcf_input,
+        g=generate_gvcf_input,
         labels = labels
     conda: CONDA_VCF
     output:

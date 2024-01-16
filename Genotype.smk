@@ -17,8 +17,10 @@ module Combine_gVCF:
 
 
 gVCF_combine_method = config.get("gvcf_combine_method", "DBIMPORT")
-mode = config.get("genotype_mode", "WES")
-alg = config.get("genotype_alg", "GenotypeGVCFs") #or GnarlyGenotyper
+genotype_mode = config.get("genotype_mode", "WES") #or WGS
+genotype_alg = config.get("genotype_alg", "GenotypeGVCFs") #or GnarlyGenotyper
+
+print(f"Genotype algorithm: {genotype_alg}")
 
 
 #parts = level2_regions
@@ -53,7 +55,7 @@ rule Genotype_all:
         rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
-        [f"{VCF}/merged_{region}.p{part}.{mode}.vcf.gz" for region, part in zip(regions,parts)]
+        [f"{VCF}/merged_{region}.p{part}.{genotype_mode}.vcf.gz" for region, part in zip(regions,parts)]
         #expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = main_chr),
@@ -69,7 +71,7 @@ def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['part']
     # WGS files have fewer regions so DBI works faster and could use multiple cores
-    return region_to_file(region, wgs=mode=='WGS', extension='interval_list')#}}}
+    return region_to_file(region, wgs=genotype_mode=='WGS', extension='interval_list')#}}}
 
 
 #if gVCF_combine_method == "DBIMPORT":
@@ -77,18 +79,19 @@ rule GenotypeDBI:
     input:
         ready=rules.GenomicDBImport.output.ready
     output:
-        raw_vcfDBI=pj(VCF, "merged_{region}.p{part}.{mode}.vcf.gz")
+        raw_vcfDBI=pj(VCF, "merged_{region}.p{part}.{genotype_mode}.vcf.gz")
     params:
         dir = rules.GenomicDBImport.params.dbi,
         intervals = region_to_IL_file,
-        ploidy = lambda wildcards: 1 if 'H' in wildcards['part'] else 2
+        ploidy = lambda wildcards: 1 if 'H' in wildcards['part'] else 2,
+        genotype_alg = genotype_alg
     conda: CONDA_VCF
     resources: 
         mem_mb_java = get_mem_mb_genotype,
         mem_mb=40000
     priority: 40
     shell:"""
-        {gatk} GenotypeGVCFs --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{params.dir} -O {output} -D {DBSNP} --intervals {params.intervals} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --keep-combined-raw-annotations --bypass-feature-reader --only-output-calls-starting-in-intervals
+        {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{params.dir} -O {output} -D {DBSNP} --intervals {params.intervals} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --keep-combined-raw-annotations --bypass-feature-reader --only-output-calls-starting-in-intervals
         """
 
 
@@ -110,11 +113,11 @@ rule GenotypeDBI:
 
 rule merge_per_chr:
     input:
-        vcfs = lambda wildcards: expand("{dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{mode}.vcf.gz".format(dir=VCF, chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
+        vcfs = lambda wildcards: expand("{dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{genotype_mode}.vcf.gz".format(dir=VCF, chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
     output: 
-        per_chr_vcfs = os.path.join(VCF, "PER_chr", "{chr}_{mode}_merged.vcf.gz")
+        per_chr_vcfs = os.path.join(VCF, "PER_chr", "{chr}_{genotype_mode}_merged.vcf.gz")
     params: 
-        inputs = lambda wildcards: expand("-I {dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{mode}.vcf.gz".format(dir=VCF, chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
+        inputs = lambda wildcards: expand("-I {dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{genotype_mode}.vcf.gz".format(dir=VCF, chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
     priority: 45
     conda: "envs/vcf_handling.yaml"
     resources: 
@@ -127,7 +130,7 @@ rule merge_per_chr:
 rule index_per_chr:
     input: rules.merge_per_chr.output.per_chr_vcfs
     output:
-        vcfidx = os.path.join(VCF, "PER_chr", "{chr}_{mode}_merged.vcf.gz.tbi")
+        vcfidx = os.path.join(VCF, "PER_chr", "{chr}_{genotype_mode}_merged.vcf.gz.tbi")
     priority: 46
     conda: "envs/preprocess.yaml"
     resources: 
@@ -141,7 +144,7 @@ rule norm_per_chr:
         vcf = rules.merge_per_chr.output.per_chr_vcfs,
         idx = rules.index_per_chr.output.vcfidx
     output:
-        normVCF=pj(VCF, "{chr}/Merged_norm.{chr}.{mode}.vcf.gz"),
+        normVCF=pj(VCF, "{chr}/Merged_norm.{chr}.{genotype_mode}.vcf.gz"),
     priority: 50
     conda: "envs/preprocess.yaml"
     threads: 150
@@ -152,7 +155,7 @@ rule norm_idx_per_chr:
     input:
         normVCF = rules.norm_per_chr.output.normVCF
     output:
-        idx=pj(VCF,"{chr}/Merged_norm.{chr}.{mode}.vcf.gz.tbi")
+        idx=pj(VCF,"{chr}/Merged_norm.{chr}.{genotype_mode}.vcf.gz.tbi")
     priority: 55
     conda: CONDA_VCF
     shell:
@@ -166,15 +169,15 @@ rule basic_stats_per_chr:
         vcf = rules.norm_per_chr.output.normVCF,
         tbi = rules.norm_idx_per_chr.output.idx
     output:
-        os.path.join(STAT, "BASIC.{chr}.{mode}.variant_calling_detail_metrics"),
-        os.path.join(STAT, "BASIC.{chr}.{mode}.variant_calling_summary_metrics")
+        os.path.join(STAT, "BASIC.{chr}.{genotype_mode}.variant_calling_detail_metrics"),
+        os.path.join(STAT, "BASIC.{chr}.{genotype_mode}.variant_calling_summary_metrics")
     priority: 90
     conda: CONDA_VCF
     resources:
         n=2,
         mem_mb=4500
     shell:"""{gatk} CollectVariantCallingMetrics \
-        -R {REF} -I {input.vcf} -O stats/BASIC.{wildcards.chr}.{wildcards.mode} \
+        -R {REF} -I {input.vcf} -O stats/BASIC.{wildcards.chr}.{wildcards.genotype_mode} \
         --DBSNP {DBSNP} --THREAD_COUNT {resources.n}"""
 
 
