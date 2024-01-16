@@ -91,16 +91,19 @@ def generate_gvcf_input(wildcards):
                 continue
             # Determine if it is WGS or WES
             if 'wgs' in SAMPLEINFO[sample]["sample_type"] or "WGS" in SAMPLEINFO[sample]["sample_type"] :
-                region = convert_to_level1(region)
+                print('WGS')
+                chunk = convert_to_level1(region)
                 if genotype_mode == 'WES':
-                    filenames = expand("{cd}/{GVCF}/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
+                    filenames = expand("{cd}/{GVCF}/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
                 else:
-                    filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
+                    filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
             else:  # WES
-                region = convert_to_level0(region)
-                filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = region, sample=sample,allow_missing=True)
+                print('WES')
+                chunk = convert_to_level0(region)
+                filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
+        print(res)
     return res
 
 rule GenomicDBImport:
