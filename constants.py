@@ -78,7 +78,7 @@ BAMSTATS= 'scripts/bam_stats.py'
 DECHIMER= 'scripts/bam_dechimer.py'
 DECHIMER_THRESHOLD= 0.005
 MERGEPHASE = 'scripts/merge_phasing.py'
-
+CHECKEMPTY = 'scripts/check_empty.py'
 
 #path to kmer files
 KMER_CHRY= pj(RESOURCES,'kmer_sex/k32.chrY.diff')

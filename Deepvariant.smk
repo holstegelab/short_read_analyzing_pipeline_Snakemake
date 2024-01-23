@@ -66,7 +66,8 @@ rule deepvariant:
             mode=get_sequencing_mode,
             haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
             skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
-            inter_dir = pj(DEEPVARIANT,'DV_intermediate')
+            inter_dir = pj(DEEPVARIANT,'DV_intermediate'),
+            check = CHECKEMPTY
     container: 'docker://google/deepvariant:1.6.0'
     resources:
         n="2.5",
@@ -79,6 +80,8 @@ rule deepvariant:
             mkdir -p "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
             /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{params.inter_dir}/{wildcards.sample}.{wildcards.region}" --postprocess_cpus 4
             rm -rf "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
+            python {params.check} {output.vcf} 
+            python {params.check} {output.gvcf}
         else
             touch {output.vcf}
             touch {output.vcf_tbi}
