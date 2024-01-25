@@ -6,60 +6,37 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     mode = "WES|WGS"
 
-gvcf_caller = config.get("caller", "HaplotypeCaller")
-DBImethod = config.get("DBI_method", "new")
-DBIpath = config.get("DBIpath", "genomicsdb_")
+
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+use rule * from Tools
+
+gvcf_caller = config.get("caller", "HaplotypeCaller") #not implemented yet
+
 genotype_mode = config.get("genotype_mode", "WES") #or WGS
+genotype_level = int(config.get("genotype_level", 3))
+DBIpath = config.get("DBIpath", "genomicsdb_")
 
-parts = level2_regions
-
-
-print(f"Caller: {gvcf_caller}")
-print(f"Sample type: {genotype_mode}")
-print(f"DBImethod: {DBImethod}, DBIpath: {DBIpath}")
-
-regions = []
-for part in parts:
-    regions.append(convert_to_level0(part))
-
-print(parts, regions)
-
-regions_level1 = []
-for part in parts:
-    regions_level1.append(convert_to_level1(part))
-
-print(parts, regions_level1)
-
-if DBImethod == "new":
-    # if want to
-    DBI_method_params = "--genomicsdb-workspace-path "
-    path_to_dbi = DBIpath
-    labels = []
-
-elif DBImethod == "update" and len(DBIpath) != 1:
-    
-    DBI_method_params = "--genomicsdb-update-workspace-path "
-    path_to_dbi = DBIpath
-    number_of_splits = len(regions)
-    labels = expand(["labels/done_backup_{samplefile}.p{part}"], region = parts,samplefile=SAMPLE_FILES)
-
-elif DBImethod == "update" and len(DBIpath) == 1:
-    raise ValueError(
-        "If you want to update existing DB please provide path to this DB in format 'DBIpath=/path/to/directory_with_DB-s/genomicsdb_' \n"
-        "Don't provide .p{region} part of path!"
-    )
-
+if genotype_level == 2:
+    parts = get_regions(level2_range_so)
+elif genotype_level == 3:
+    parts = get_regions(level3_range_so)
+elif genotype_level == 4:
+    parts = get_regions(level4_range_so)
 else:
-    raise ValueError(
-        "invalid option provided to 'DBImethod'; please choose either 'new' or 'update'."
-    )
+    raise RuntimeError(f'Unknown level {gneotype_level}')
 
+
+
+print(f"Sample type: {genotype_mode}")
+print(f"Genotype level: {genotype_level}")
 
 def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['region']
     # WGS files have fewer regions so DBI works faster and could use multiple cores
-    return region_to_file(region, wgs=True, extension='interval_list')#}}}
+    return region_to_file(region, wgs=True, classic=True, extension='interval_list')#}}}
 
 
 rule DBImport_all:
@@ -67,16 +44,6 @@ rule DBImport_all:
         expand(['labels/done_p{region}.txt'],region = parts),
         # expand("{chr}_gvcfs.list", chr = main_chrs)
     default_target: True
-
-rule backup_gdbi:
-    input: gdbi = path_to_dbi + 'p{region}'
-    output: label = touch(temp('labels/done_backup_{samplefile}_p{region}'))
-    params: tar = "{samplefile}_gdbi_p{region}.tar.gz"
-    shell: """
-            mkdir -p BACKUPS/previous &&
-            find . -maxdepth 2 -name '*_gdbi_p{part}.tar.gz' -type f -print0 | xargs -0r mv -t BACKUPS/previous/ && 
-            tar -czv -f BACKUPS/{params.tar} {input}
-            """
 
 def generate_gvcf_input(wildcards):
     region = wildcards['region']
@@ -91,36 +58,32 @@ def generate_gvcf_input(wildcards):
                 continue
             # Determine if it is WGS or WES
             if 'wgs' in SAMPLEINFO[sample]["sample_type"] or "WGS" in SAMPLEINFO[sample]["sample_type"] :
-                print('WGS')
                 chunk = convert_to_level1(region)
                 if genotype_mode == 'WES':
                     filenames = expand("{cd}/{GVCF}/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
                 else:
                     filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
             else:  # WES
-                print('WES')
                 chunk = convert_to_level0(region)
                 filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
-        print(res)
     return res
 
 rule GenomicDBImport:
     input:
         g=generate_gvcf_input,
-        labels = labels
+        intervals = region_to_IL_file
     conda: CONDA_VCF
     output:
-        ready=touch(temp('labels/done_p{region}.txt'))
+        ready=touch(temp('labels/done_p{region}.txt')),
+        dbi=temp(directory(DBIpath + "p{region}"))
     threads: 3
     params:
         inputs=lambda wildcards,input: ' '.join([f'-V {gvcf}' for gvcf in input.g]),
-        dbi=os.path.join(path_to_dbi + "p{region}"),
-        method=DBI_method_params,
         batches='75',
-        intervals = region_to_IL_file,
-        ref = REF_MALE
+        ref = REF_MALE,
+        merge_contigs=lambda wildcards: ' --merge-contigs-into-num-partitions 1 '  if 'O' in wildcards['region'] else ''
     priority: 30
     resources: 
         n="3",
@@ -128,6 +91,7 @@ rule GenomicDBImport:
         mem_mb_reduced = lambda wildcards, attempt: attempt * 6500, #tile db is not included in java memory
         tmpdir= TMPDIR
     shell:
-        """{gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb_reduced}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
-            --intervals {params.intervals}  -R {params.ref} {params.method} {params.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} --merge-input-intervals \
+        """
+            {gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb_reduced}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
+            --intervals {input.intervals} {params.merge_contigs} -R {params.ref} --genomicsdb-workspace-path {output.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} --merge-input-intervals \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader"""

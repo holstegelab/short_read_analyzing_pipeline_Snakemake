@@ -36,9 +36,11 @@ rule CreateBinsFullGenome:
     input: fai=ancient(REF_MALE_FAI),
         mask=ancient(REF_MALE_BED),
         merged_kit=ancient(MERGED_CAPTURE_KIT_BED)
-    output: directory(pj(INTERVALS_DIR,'wgs_bins'))
+    output: directory(pj(INTERVALS_DIR,'wgs_bins_v2'))
     params:
-        nsplit=1000
+        nsplit=1000,
+        nproc=8,
+        slop_script=srcdir(SLOPSCRIPT)
     conda: CONDA_MAIN
     resources:
         n="1.0",
@@ -58,28 +60,47 @@ rule CreateBinsFullGenome:
         bedtools sort -i genome.bed -g {input.fai} > genome.sorted.bed
         touch genome.split
         rm genome.spli*
-        cat genome.sorted.bed | grep -v -P "chrX|chrY|HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.auto.bed
+        cat genome.sorted.bed | grep -v -P "chrX|chrY" > genome.auto.bed
+        cat genome.sorted.bed | grep -v -P "chrX|chrY|HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.auto_classic.bed
         cat genome.sorted.bed | grep chrX > genome.X.bed
         cat genome.sorted.bed | grep chrY > genome.Y.bed
-        #need the full contig for all the remaining contigs, as this is required for genomicsdbimport to merge intervals.
-        cat genome.orig.bed | grep -P "chrX|chrY|HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.other.bed
+        cat genome.sorted.bed | grep  -P "HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.O.bed
 
+        #need the full contig for all the remaining contigs, as this is required for genomicsdbimport to merge intervals.
+        cat genome.orig.bed | grep -P "HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.other.bed
+
+        echo "Main files prepared, now splitting"
 
         split genome.auto.bed -a 4 -d -n l/10000 genome.autosplit4.
         split genome.X.bed -a 3 -d -n l/500 genome.Xsplit3.
         split genome.Y.bed -a 3 -d -n l/200 genome.Ysplit3.
         split genome.other.bed -a 3 -d -n l/200 genome.Osplit3.
 
+        echo "Merging bed records"
+        ls genome.*split?.* | xargs -I{{}} -P {params.nproc} sh -c "bedtools merge -i {{}} | awk '\$2 != \$3' > {{}}.bed"
+        echo "Merging bed records, filtering on classic regions"
+        ls genome.autosplit4.???? | xargs -I{{}} -P {params.nproc} sh -c "bedtools merge -i {{}} | awk '\$2 != \$3' | grep -v -P 'chrX|chrY|HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18' > {{}}.classic.bed || true" || true
 
-        ls genome.*split?.* | xargs -I{{}} sh -c "bedtools merge -i {{}} | awk '\$2 != \$3' > {{}}.bed"
+        echo "Splitting done, now dropping empty/temp files"
+        
+        #drop files that now do not contain any regions
+        find . -name "genome.autosplit4.????.classic.bed" -type f -empty -print -delete
+       
+        echo "Empty classic files dropped"
+
         rm genome.*split4.????
         rm genome.*split3.???
 
+
+        
+        echo "Merging split files level 4"
         #level 3
         for j in $(seq 0 999); do
             counter=$(printf "%03d" $j)
             cat genome.autosplit4.$counter?.bed | bedtools merge > genome.autosplit3.$counter.bed
+            (cat genome.autosplit4.$counter?.classic.bed 2>/dev/null || true) | bedtools merge > genome.autosplit3.$counter.classic.bed
         done
+        find . -name "genome.autosplit3.*.classic.bed" -type f -empty -print -delete
 
         for j in $(seq 0 49); do
             counter=$(printf "%02d" $j)
@@ -94,12 +115,16 @@ rule CreateBinsFullGenome:
             cat genome.Osplit3.$counter?.bed | bedtools merge > genome.Osplit2.$counter.bed
         done
 
+        echo "Merging split files level 3"
 
         #level 2
         for j in $(seq 0 99); do
             counter=$(printf "%02d" $j)
             cat genome.autosplit3.$counter?.bed | bedtools merge > genome.autosplit2.$counter.bed
+            (cat genome.autosplit3.$counter?.classic.bed 2>/dev/null || true) | bedtools merge > genome.autosplit2.$counter.classic.bed
         done
+        find . -name "genome.autosplit2.*.classic.bed" -type f -empty -print -delete
+
         for i in $(seq 0 4); do
             cat genome.Xsplit2.$i?.bed | bedtools merge > genome.Xsplit1.$i.bed
         done
@@ -111,13 +136,34 @@ rule CreateBinsFullGenome:
             cat genome.Osplit2.$i?.bed | bedtools merge > genome.Osplit1.$i.bed
         done
 
+
+        echo "Merging split files level 2"
         #level 1
         for i in $(seq 0 9); do
             cat genome.autosplit2.$i?.bed | bedtools merge > genome.autosplit1.$i.bed
+            cat genome.autosplit2.$i?.classic.bed | bedtools merge > genome.autosplit1.$i.classic.bed
         done
 
+        echo "Adding slop to level 1"
+
+        ls genome.autosplit1.?.bed | xargs -I{{}} -P {params.nproc} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.autosplit1.?.classic.bed | xargs -I{{}} -P {params.nproc} sh -c "python {params.slop_script} {{}} {input.fai}"
+        echo "Adding slop to level 2"
+        ls genome.autosplit2.??.bed | xargs -I{{}} -P {params.nproc} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.autosplit2.??.classic.bed | xargs -P {params.nproc} -I{{}} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.Xsplit1.?.bed | xargs -P {params.nproc} -I{{}} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.Ysplit1.?.bed | xargs -P {params.nproc} -I{{}} sh -c "python {params.slop_script} {{}} {input.fai}"
+        echo "Adding slop to level 3"
+        ls genome.autosplit3.???.bed | xargs -I{{}} -P {params.nproc} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.autosplit3.???.classic.bed | xargs -P {params.nproc} -I{{}} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.Xsplit2.??.bed | xargs -P {params.nproc} -I{{}} sh -c "python {params.slop_script} {{}} {input.fai}"
+        ls genome.Ysplit2.??.bed | xargs -P {params.nproc} -I{{}} sh -c "python {params.slop_script} {{}} {input.fai}"
+
+        echo "Merging split files level 1"
         cat genome.sorted.bed | bedtools merge > genome.fullsplit0.bed
-        cat genome.autosplit1.?.bed genome.Osplit1.?.bed | bedtools merge > genome.autosplit0.bed
+        cat genome.sorted.bed | grep -v -P "HLA|NC|chrUn|alt|random|KMT2C|EBV|MAP2K3|KCNJ18" > genome.fullsplit0.classic.bed
+        cat genome.autosplit1.?.bed | bedtools merge > genome.autosplit0.bed
+        cat genome.autosplit1.?.classic.bed | bedtools merge > genome.autosplit0.classic.bed
         cat genome.Xsplit1.?.bed | bedtools merge > genome.Xsplit0.bed
         cat genome.Ysplit1.?.bed | bedtools merge > genome.Ysplit0.bed
                 """
@@ -130,9 +176,9 @@ rule CreateBinsExome:
 
     """
     input: merged_kit=ancient(MERGED_CAPTURE_KIT_BED),
-        wgs_folder=pj(INTERVALS_DIR,'wgs_bins'),
+        wgs_folder=pj(INTERVALS_DIR,'wgs_bins_v2'),
         fai=ancient(REF_MALE_FAI),
-    output: directory(pj(INTERVALS_DIR,'wes_bins'))
+    output: directory(pj(INTERVALS_DIR,'wes_bins_v2'))
     params:
         nsplit=1000
     conda: CONDA_MAIN
@@ -149,14 +195,23 @@ rule CreateBinsExome:
             counter=$(printf "%03d" $j)
             bedtools intersect -a {input.wgs_folder}/genome.autosplit3.$counter.bed -b {input.merged_kit}.padded.bed > merged.autosplit3.$counter.bed
         done
+        
+        for j in $(seq 0 999); do
+            counter=$(printf "%03d" $j)
+            if [ -f {input.wgs_folder}/genome.autosplit3.$counter.classic.bed ]; then
+                bedtools intersect -a {input.wgs_folder}/genome.autosplit3.$counter.classic.bed -b {input.merged_kit}.padded.bed > merged.autosplit3.$counter.classic.bed
+            fi
+        done
 
         for j in $(seq 0 49); do
             counter=$(printf "%02d" $j)
             bedtools intersect -a {input.wgs_folder}/genome.Xsplit2.$counter.bed -b {input.merged_kit}.padded.bed > merged.Xsplit2.$counter.bed
+            bedtools intersect -a {input.wgs_folder}/genome.Xsplit2.$counter.padded.bed -b {input.merged_kit}.padded.bed > merged.Xsplit2.$counter.padded.bed
         done
         for j in $(seq 0 19); do
             counter=$(printf "%02d" $j)
             bedtools intersect -a {input.wgs_folder}/genome.Ysplit2.$counter.bed -b {input.merged_kit}.padded.bed > merged.Ysplit2.$counter.bed
+            bedtools intersect -a {input.wgs_folder}/genome.Ysplit2.$counter.padded.bed -b {input.merged_kit}.padded.bed > merged.Ysplit2.$counter.padded.bed
         done
 
         for j in $(seq 0 19); do
@@ -169,12 +224,23 @@ rule CreateBinsExome:
         for j in $(seq 0 99); do
             counter=$(printf "%02d" $j)
             bedtools intersect -a {input.wgs_folder}/genome.autosplit2.$counter.bed -b {input.merged_kit}.padded.bed > merged.autosplit2.$counter.bed
+            bedtools intersect -a {input.wgs_folder}/genome.autosplit2.$counter.padded.bed -b {input.merged_kit}.padded.bed > merged.autosplit2.$counter.padded.bed
         done
+        for j in $(seq 0 99); do
+            counter=$(printf "%02d" $j)
+            if [ -f {input.wgs_folder}/genome.autosplit2.$counter.classic.bed ]; then
+                bedtools intersect -a {input.wgs_folder}/genome.autosplit2.$counter.classic.bed -b {input.merged_kit}.padded.bed > merged.autosplit2.$counter.classic.bed
+                bedtools intersect -a {input.wgs_folder}/genome.autosplit2.$counter.classic.padded.bed -b {input.merged_kit}.padded.bed > merged.autosplit2.$counter.classic.padded.bed
+            fi
+        done
+
         for i in $(seq 0 4); do
             bedtools intersect -a {input.wgs_folder}/genome.Xsplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.Xsplit1.$i.bed
+            bedtools intersect -a {input.wgs_folder}/genome.Xsplit1.$i.padded.bed -b {input.merged_kit}.padded.bed > merged.Xsplit1.$i.padded.bed
         done
         for i in $(seq 0 1); do
             bedtools intersect -a {input.wgs_folder}/genome.Ysplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.Ysplit1.$i.bed
+            bedtools intersect -a {input.wgs_folder}/genome.Ysplit1.$i.padded.bed -b {input.merged_kit}.padded.bed > merged.Ysplit1.$i.padded.bed
         done
         for i in $(seq 0 1); do
             bedtools intersect -a {input.wgs_folder}/genome.Osplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.Osplit1.$i.bed
@@ -183,6 +249,12 @@ rule CreateBinsExome:
         #level 1
         for i in $(seq 0 9); do
             bedtools intersect -a {input.wgs_folder}/genome.autosplit1.$i.bed -b {input.merged_kit}.padded.bed > merged.autosplit1.$i.bed
+            bedtools intersect -a {input.wgs_folder}/genome.autosplit1.$i.padded.bed -b {input.merged_kit}.padded.bed > merged.autosplit1.$i.padded.bed
+        done
+
+        for i in $(seq 0 9); do
+            bedtools intersect -a {input.wgs_folder}/genome.autosplit1.$i.classic.bed -b {input.merged_kit}.padded.bed > merged.autosplit1.$i.classic.bed
+            bedtools intersect -a {input.wgs_folder}/genome.autosplit1.$i.classic.padded.bed -b {input.merged_kit}.padded.bed > merged.autosplit1.$i.classic.padded.bed
         done
 
         bedtools intersect -a {input.wgs_folder}/genome.autosplit0.bed -b {input.merged_kit}.padded.bed > merged.autosplit0.bed

@@ -23,7 +23,12 @@ main_chrs_ploidy_female = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7
 # 2. A corresponding string region describer is generated from this tuple, e.g. ('A', 2, 3, 2) -> 'A23'
 #    or ('X', 1, 3, 1) -> 'X3H' (see get_regions function below)
 # 3. String region describers can be used to get the corresponding bed /interval_list files describing 
-#    the region, e.g. A23 -> wes_bins/merged.autosplit2.03.bed or wgs_bins/genome.autosplit2.03.bed (see region_to_file function below)
+#    the region, e.g. A23 -> wes_bins_v2/merged.autosplit2.03.bed or wgs_bins/genome.autosplit2.03.bed (see region_to_file function below)
+# 4. '.padded.bed' files have 1000bp of padding at the start and end of the bed file added to them, to enable accurate calling 
+#    at the junctions between the bed files. Padded files are avilable for level 1-3 for A, X and Y. 
+
+
+
 
 # Note: The split files are not disjoint. The split files of a higher level
 # are a subset of the split files of a lower level. E.g. genome.autosplit1.3.bed combines
@@ -39,6 +44,15 @@ main_chrs_ploidy_female = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7
 
 # Note 3: autosomes of level n are usually combined with sex chromosomes of level n-1. This is described
 #         by the level0_range, level1_range, level2_range, level3_range etc. lists below.
+
+
+# Note 4: To deal with some peculiarities of GenomicDBImport, there is also a separate set of
+# bam files in which A only covers the classical chromosomes and no other contigs.  These A files have
+# the extension .classic.bed.
+# All other contigs are stored in O files, and cover the whole contig. To use these, you need to make use
+# of  levelX_regions_so lists, and enable the 'classic=True' on the region_to_file function.
+
+
 
 
 
@@ -83,6 +97,29 @@ level4_range_diploid_only = [('A', 4, x,2) for x in range(0,10000)] + \
                 [('Y', 3, x,2) for x in range(0,200)]
               
 
+
+#levels were other contigs are separated, and bed files cover full contig. Intended for use with GenomicDBImport.
+level2_range_so = [('A', 2,x,2) for x in range(0,99)] + \
+               [('X', 1,x,2) for x in range(0,5)] + \
+               [('X', 1, x, 1) for x in range(0, 5)] + \
+               [('Y', 1, x,2) for x in range(0,2)] + \
+               [('Y', 1, x, 1) for x in range(0, 2)] + \
+               [('O', 1, x, 2) for x in range(0,2)]
+
+level3_range_so = [('A', 3, x,2) for x in range(0,989)] + \
+               [('X', 2, x,2) for x in range(0,50)] + \
+               [('X', 2, x, 1) for x in range(0, 50)] + \
+               [('Y', 2, x,2) for x in range(0,20)] + \
+               [('Y', 2, x, 1) for x in range(0, 20)] + \
+               [('O', 2, x, 2) for x in range(0,20)] 
+
+level4_range_so= [('A', 4, x,2) for x in range(0,9895)] + \
+                [('X', 3, x,2) for x in range(0,500)] + \
+                [('X', 3, x, 1) for x in range(0, 500)] + \
+                [('Y', 3, x,2) for x in range(0,200)] + \
+                [('Y', 3, x, 1) for x in range(0, 200)] + \
+                [('O', 3, x, 2) for x in range(0,200)]
+
 def get_regions(lrange):
     """Converts a region describer (tuple format) to a list of regions (string format).
     E.g. [('A', 1, 3, 1), ('A', 2, 4, 2)] -> ['A3H', 'A04']
@@ -113,13 +150,17 @@ level2_regions_diploid = get_regions(level2_range_diploid_only)
 level3_regions_diploid = get_regions(level3_range_diploid_only)
 level4_regions_diploid = get_regions(level4_range_diploid_only)
 
+level2_regions_so = get_regions(level2_range_so)
+level3_regions_so = get_regions(level3_range_so)
+level4_regions_so = get_regions(level4_range_so)
+
 def convert_to_level0(region):
     """Converts a region describer of level >=0 to the corresponding level 0 region.
     E.g. A33 -> F, X22H -> XH, X1 -> F
     """
     if region in level0_regions:
         return region
-    if region.startswith('A') or region.startswith('F'):
+    if region.startswith('A') or region.startswith('F') or region.startswith('O'):
         return 'F'
     elif region.startswith('X'):
         return 'F' if not region.endswith('H') else 'XH'
@@ -149,6 +190,8 @@ def convert_to_level1(region):
             level1_region = 'X'
         elif component == 'Y':
             level1_region = 'Y'
+        elif component == 'O':
+            level1_region = 'A9'
         else:
             if level > 1:
                 split = split[:1]
@@ -165,13 +208,15 @@ def convert_to_level1(region):
 
 
 
-def region_to_file(region, wgs=False, extension='bed'):
+def region_to_file(region, wgs=False, classic=False, padding=False, extension='bed'):
     """ Converts a region describer to the filename of the file describing the region.
     
-        E.g. A33H, wgs=False, extension=bed -> <interval_folder>/wes_bins/merged.autosplit2.33.bed
+        E.g. A33H, wgs=False, extension=bed -> <interval_folder>/wes_bins_v2/merged.autosplit2.33.bed
         
         :param region: region describer
         :param wgs: whether to use the wgs or wes intervals
+        :param classic: only include classic (chr1-chr22) autosomes. No effect for for O,X,Y components.
+        :param padding: add padding (1000bp) to end of interval files.
         :param extension: extension of the file (bed or interval_list)
     """
     
@@ -181,10 +226,21 @@ def region_to_file(region, wgs=False, extension='bed'):
 
     split = region[1:]
     
+    if padding and component in ['A','X','Y'] and split:
+        preextension = ['padded']
+    else:
+        preextension = []
+
     if component == 'A':
         component = 'auto'
+        if classic:
+            preextension.append('classic')
     elif component == 'F':
         component = 'full'
+        if classic:
+            preextension.append('classic')
+
+    extension = '.'.join(preextension + [extension])
 
     level = len(split)
     if level > 0:
@@ -192,9 +248,9 @@ def region_to_file(region, wgs=False, extension='bed'):
     else:
         split = ''
     if wgs: 
-        f = pj(INTERVALS_DIR, f'wgs_bins/genome.{component}split{level}{split}.{extension}')     
+        f = pj(INTERVALS_DIR, f'wgs_bins_v2/genome.{component}split{level}{split}.{extension}')     
     else:
-        f = pj(INTERVALS_DIR, f'wes_bins/merged.{component}split{level}{split}.{extension}')        
+        f = pj(INTERVALS_DIR, f'wes_bins_v2/merged.{component}split{level}{split}.{extension}')        
     return f
     
 

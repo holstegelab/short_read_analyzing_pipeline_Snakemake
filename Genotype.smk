@@ -19,19 +19,22 @@ module Combine_gVCF:
 gVCF_combine_method = config.get("gvcf_combine_method", "DBIMPORT")
 genotype_mode = config.get("genotype_mode", "WES") #or WGS
 genotype_alg = config.get("genotype_alg", "GenotypeGVCFs") #or GnarlyGenotyper
+genotype_level = int(config.get("genotype_level", 3))
+DBIpath = config.get("DBIpath", "genomicsdb_")
+
 
 print(f"Genotype algorithm: {genotype_alg}")
+print(f"Genotype level: {genotype_level}")
+print(f"Genotype caller: {genotype_alg}")
 
-
-#parts = level2_regions
-#work around problem in genomicdbimport with many contigs
-level2_range_special = [('A', 2,x,2) for x in range(0,99)] + \
-               [('X', 1,x,2) for x in range(0,5)] + \
-               [('X', 1, x, 1) for x in range(0, 5)] + \
-               [('Y', 1, x,2) for x in range(0,2)] + \
-               [('Y', 1, x, 1) for x in range(0, 2)] 
-parts = get_regions(level2_range_special)
-
+if genotype_level == 2:
+    parts = get_regions(level2_range_so)
+elif genotype_level == 3:
+    parts = get_regions(level3_range_so)
+elif genotype_level == 4:
+    parts = get_regions(level4_range_so)
+else:
+    raise RuntimeError(f'Unknown level {gneotype_level}')
 
 
 if gVCF_combine_method == "DBIMPORT":
@@ -66,28 +69,28 @@ def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
     region = wildcards['region']
     # WGS files have fewer regions so DBI works faster and could use multiple cores
-    return region_to_file(region, wgs=genotype_mode=='WGS', extension='interval_list')#}}}
+    return region_to_file(region, wgs=genotype_mode=='WGS', classic=True, padding=False, extension='interval_list')#}}}
 
 
 #if gVCF_combine_method == "DBIMPORT":
 rule GenotypeDBI:
     input:
-        ready=rules.GenomicDBImport.output.ready
+        ready='labels/done_p{region}.txt',
+        dir=DBIpath + "p{region}",
+        intervals = region_to_IL_file
     output:
         raw_vcfDBI=pj(VCF, "merged_{region}.{genotype_mode}.vcf.gz")
     params:
-        dir = rules.GenomicDBImport.params.dbi,
-        intervals = region_to_IL_file,
         ploidy = lambda wildcards: 1 if 'H' in wildcards['region'] else 2,
-        annotations = lambda wildcards: '' if genotype_alg == 'GnarlyGenotyper' else "-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity",
+        annotations = lambda wildcards: '' if genotype_alg == 'GnarlyGenotyper' else "-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --keep-combined-raw-annotations",
         genotype_alg = genotype_alg
     conda: CONDA_VCF
     resources: 
         mem_mb_java = get_mem_mb_genotype,
-        mem_mb=40000
+        mem_mb=lambda wildcards: 5000 if genotype_alg == 'GnarlyGenotyper' else 10000 #need to make this sample nr. and region level dependent. 
     priority: 40
     shell:"""
-        {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{params.dir} -O {output} -D {DBSNP} --intervals {params.intervals} {params.annotations} --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --keep-combined-raw-annotations --bypass-feature-reader --only-output-calls-starting-in-intervals
+        {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{input.dir} -O {output} -D {DBSNP} --intervals {input.intervals} {params.annotations} --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --only-output-calls-starting-in-intervals
         """
 
 

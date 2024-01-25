@@ -114,19 +114,10 @@ def region_to_interval_file(wildcards):  # {{{
     return region_to_file(
         region,
         wgs="wgs" in SAMPLEINFO[sample]["sample_type"],
+        padding=True,
         extension="interval_list",
     )
 # }}}
-
-def region_to_exome_file(wildcards):  # {{{
-    """Converts a region to a interval file location (see common.py and Tools.smk)"""
-    sample = wildcards["sample"]
-    region = wildcards["region"]
-    return region_to_file(
-        region,
-        extension="interval_list",
-    )
-
 
 rule HaplotypeCaller:
     """HaplotypeCaller. Call SNPs and indels for each sample."""

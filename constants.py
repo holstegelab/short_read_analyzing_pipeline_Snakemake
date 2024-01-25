@@ -79,6 +79,8 @@ DECHIMER= 'scripts/bam_dechimer.py'
 DECHIMER_THRESHOLD= 0.005
 MERGEPHASE = 'scripts/merge_phasing.py'
 CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
+SLOPSCRIPT = 'scripts/slop_start_stop.py'
+
 
 #path to kmer files
 KMER_CHRY= pj(RESOURCES,'kmer_sex/k32.chrY.diff')
