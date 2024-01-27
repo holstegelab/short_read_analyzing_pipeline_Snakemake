@@ -10,7 +10,7 @@ class PhaseBlock:
     def __init__(self, phase_id, source):
         self.variants = []
         self.source = source
-        self.id = phase_id #block id, usually the start position of the block. Can be changed if the block is connected to another block to the ancestor id of that block
+        self.id = phase_id #block id, format is chrom:start position of the block. Can be changed if the block is connected to another block to the ancestor id of that block
         self.orig_id = phase_id
         self.correct_orientation = True #orrientation wrt ancestor block. If False, the alleles should be swapped
         self.parent=None #block with a lower id (i.e. started earlier on the chromosome) which overlaps with this block
@@ -18,7 +18,14 @@ class PhaseBlock:
         self.invalid = False #if the block is invalid, there was a phasing mismatch, and the block should not be used. This is set to True if the block is connected to conflicting ancestors.
 
     def addVariant(self, pos):
+        if self.variants:
+            assert pos >= self.variants[-1], 'Adding variant with earlier position should not be possible'
+            
+            if (pos - self.variants[-1]) > 50000: #check if the block makes too big of a jump. Happens rarely, should be filtered. 
+                print(f"Jump attempted for {self} by adding variant {pos} to {self.variants}")
+                return False
         self.variants.append(pos)
+        return True
 
     def getAncestorBlock(self):
         #look up the parent of the parent until you find a block without a parent
@@ -109,7 +116,7 @@ class PhaseBlock:
                     #if this is not the case, this is an error.
                 else:
                     #
-                    print(f'ERROR: Phase block orientation mismatch, disconnecting phase blocks {self} and {ancestor_phase_block}')
+                    print(f'ERROR: Phase block orientation mismatch with {phase_block}, disconnecting phase blocks {self} and {ancestor_phase_block}')
                     stats['nphased_orientation_mismatch'] = stats.get('nphased_orientation_mismatch', 0) + 1
                     self.parent.removeChild(self)
                     self.parent = False
@@ -121,7 +128,7 @@ class PhaseBlock:
                 #we have to set the parent, but the parent is not compatible with the parent we already have.
                 #that means that the (ancestor of the) parent we already have is different from the (ancestor of the) parent we want to set
                 #this means that the parents are not connected. This is weird, as in read-based phasing, if they overlap, they should be connected
-                print(f'ERROR: Phase block ancestry mismatch, disconnecting phase blocks {self} and {ancestor_phase_block}')
+                print(f'ERROR: Phase block ancestry mismatch over {phase_block}, disconnecting phase blocks {self} and {ancestor_phase_block}')
                 stats['nphased_ancestry_mismatch'] = stats.get('nphased_ancestry_mismatch', 0) + 1
                 self.parent.removeChild(self)
                 self.parent = False
@@ -145,7 +152,8 @@ def process_record(grecord, vrecord, gphase_blocks, wphase_blocks):
     gphase_block = None
     if 'PID' in grecord.FORMAT: #if gvcf record is phased
         gatk_phase_block = int(grecord.format('PID')[0].split('_')[0])
-        gphase_block = gphase_blocks[gatk_phase_block]
+        gatkkey = f'{grecord.CHROM}:{gatk_phase_block}'
+        gphase_block = gphase_blocks[gatkkey]
         gvariant = grecord.format('PGT').ravel()[0]
         gatk_allele1, gatk_allele2 =  (int(e) for e in gvariant.split('|')) #get the alleles
         gatk_allele1 = grecord.REF if gatk_allele1 == 0 else grecord.ALT[gatk_allele1-1]
@@ -158,7 +166,8 @@ def process_record(grecord, vrecord, gphase_blocks, wphase_blocks):
     wphase_block = None
     if vrecord is not None:
         whatshap_phase_block = int(vrecord.format('PS')[0])
-        wphase_block = wphase_blocks[whatshap_phase_block]
+        whkey = f'{vrecord.CHROM}:{whatshap_phase_block}'
+        wphase_block = wphase_blocks[whkey]
         wvariant = vrecord.gt_bases.ravel()[0]
         if wphase_block.invalid:
             wphase_block = None
@@ -186,9 +195,9 @@ def process_record(grecord, vrecord, gphase_blocks, wphase_blocks):
         variant = wvariant
         vpos = vrecord.POS
         delim = '|'
-        vreflen = len(vrecord.REF) if wphase_block.id < gphase_block.id else len(grecord.REF) #fixme: should we not just use the whatshap here?
+        vreflen = len(vrecord.REF) 
 
-    block_id = phase_block.id #output phase block id
+    block_id = int(str(phase_block.id).split(':')[1]) #output phase block id
     v_allele1, v_allele2 = variant.split('|')  #get the alleles
     if not phase_block.correct_orientation: #if the phase block is in the wrong orientation, swap the alleles
         v_allele1, v_allele2 = v_allele2, v_allele1
@@ -196,7 +205,7 @@ def process_record(grecord, vrecord, gphase_blocks, wphase_blocks):
     if vreflen == 1: #if the reference allele is 1 base, do not output the length
         vreflen = ''
     else: #if the reference allele is longer than 1 base, output the length
-        vreflen = f'+{vreflen}' #why? can we not just derive this from the alleles?
+        vreflen = f'+{vreflen}' #why? can we not just derive this from the alleles --> to clarify which one is the ref allele. 
     result = f'{vpos_str}{vreflen}{v_allele1}{delim}{v_allele2}'
 
     grecord.set_format('GTW',numpy.array([result],dtype='S'))
@@ -260,9 +269,10 @@ def main():
         if gvcf_record.CHROM < vcf_record.CHROM or (gvcf_record.CHROM == vcf_record.CHROM and gvcf_record.POS < vcf_record.POS):
             if 'PID' in gvcf_record.FORMAT: #if gvcf record is phased
                 gatk_phase_block = int(gvcf_record.format('PID')[0].split('_')[0]) #get the phase block id
-                if gatk_phase_block not in gphase_blocks: #is this a new phase block?
-                    gphase_blocks[gatk_phase_block] = PhaseBlock(gatk_phase_block, 'GATK')
-                gphase_blocks[gatk_phase_block].addVariant(gvcf_record.POS) #add the variant to the phase block
+                gatkkey = f'{gvcf_record.CHROM}:{gatk_phase_block}'
+                if gatkkey not in gphase_blocks: #is this a new phase block?
+                    gphase_blocks[gatkkey] = PhaseBlock(gatkkey, 'GATK')
+                gphase_blocks[gatkkey].addVariant(gvcf_record.POS) #add the variant to the phase block
 
             write_stack.append((gvcf_record, None)) 
             try:
@@ -283,9 +293,10 @@ def main():
         else: #if the records are at the same position
             if 'PID' in gvcf_record.FORMAT: #if gvcf record is phased
                 gatk_phase_block = int(gvcf_record.format('PID')[0].split('_')[0]) #get the phase block id
-                if  gatk_phase_block not in gphase_blocks: #is this a new phase block?
-                    gphase_blocks[gatk_phase_block] = PhaseBlock(gatk_phase_block, 'GATK') 
-                gphase_blocks[gatk_phase_block].addVariant(gvcf_record.POS) #add the variant to the phase block
+                gatkkey = f'{gvcf_record.CHROM}:{gatk_phase_block}'
+                if gatkkey not in gphase_blocks: #is this a new phase block?
+                    gphase_blocks[gatkkey] = PhaseBlock(gatkkey, 'GATK') 
+                gphase_blocks[gatkkey].addVariant(gvcf_record.POS) #add the variant to the phase block
 
             # Check if the reference and alternate alleles match
             # FIXME: this does not account for the case where the gVCF record has a longer reference allele than the phased VCF record
@@ -305,49 +316,52 @@ def main():
             #this fixes all records in my testing (5342/5342 matched)
 
             if gref == vref and set(valt).issubset(set(galt)):
+                
 
                 # Get the phased genotype information from the VCF record
                 assert vcf_record.gt_phases, 'PS field present without phasing information'
                 wh_allele1, wh_allele2 = vcf_record.gt_bases.ravel()[0].split("|") #get the alleles
                 wh_phase_block = vcf_record.format('PS').ravel()[0] #get the phase block id
+                whkey = f'{vcf_record.CHROM}:{wh_phase_block}'
 
-                if wh_phase_block not in wphase_blocks: #is this a new phase block?
-                    wphase_blocks[wh_phase_block] = PhaseBlock(wh_phase_block, 'whatshap')
-                wphase_blocks[wh_phase_block].addVariant(gvcf_record.POS)
+                if whkey not in wphase_blocks: #is this a new phase block?
+                    wphase_blocks[whkey] = PhaseBlock(whkey, 'whatshap')
+                if wphase_blocks[whkey].addVariant(gvcf_record.POS):
+                    #re-orient alleles if necessary (occurs if the phase block is connected to a parent block with a different orientation)
+                    if not wphase_blocks[whkey].correct_orientation:
+                        wh_allele1, wh_allele2 = wh_allele2, wh_allele1
 
-                #re-orient alleles if necessary (occurs if the phase block is connected to a parent block with a different orientation)
-                if not wphase_blocks[wh_phase_block].correct_orientation:
-                    wh_allele1, wh_allele2 = wh_allele2, wh_allele1
+                    #two phase blocks GATK and whatshap overlap
+                    if 'PID' in gvcf_record.FORMAT:
+                        #determine if gatk and whatshap phase blocks are aligned
+                        gatk_allele1, gatk_allele2 =  (int(e) for e in gvcf_record.format('PGT').ravel()[0].split('|')) #get the alleles
+                        gatk_allele1 = gref if gatk_allele1 == 0 else galt[gatk_allele1-1] #from allele index to allele
+                        gatk_allele2 = gref if gatk_allele2 == 0 else galt[gatk_allele2-1]
+                        #re-orient alleles if necessary
+                        if not gphase_blocks[gatkkey].correct_orientation:
+                            gatk_allele1, gatk_allele2 = gatk_allele2, gatk_allele1
 
-                #two phase blocks GATK and whatshap overlap
-                if 'PID' in gvcf_record.FORMAT:
-                    #determine if gatk and whatshap phase blocks are aligned
-                    gatk_allele1, gatk_allele2 =  (int(e) for e in gvcf_record.format('PGT').ravel()[0].split('|')) #get the alleles
-                    gatk_allele1 = gref if gatk_allele1 == 0 else galt[gatk_allele1-1] #from allele index to allele
-                    gatk_allele2 = gref if gatk_allele2 == 0 else galt[gatk_allele2-1]
-                    #re-orient alleles if necessary
-                    if not gphase_blocks[gatk_phase_block].correct_orientation:
-                        gatk_allele1, gatk_allele2 = gatk_allele2, gatk_allele1
-
-                    if wh_allele1 == gatk_allele1 and wh_allele2 == gatk_allele2:
-                        same_orientation = True
-                    elif wh_allele2 == gatk_allele1 and wh_allele1 == gatk_allele2:
-                        same_orientation = False
-                    else:
-                        same_orientation = None
-                        print('whatshap and gatk alleles do not match', gvcf_record.POS, wh_allele1, wh_allele2, gatk_allele1, gatk_allele2)
-                        stats['whatshap_gatk_allele_mismatch'] = stats.get('whatshap_gatk_allele_mismatch',0) + 1
-
-
-                    if same_orientation is not None:
-                        if gphase_blocks[gatk_phase_block].isDominant(wphase_blocks[wh_phase_block]): #if gatk phase block is dominant (i.e. has a lower id, meaning it started earlier on the chromosome)
-                            wphase_blocks[wh_phase_block].setParent(gphase_blocks[gatk_phase_block], same_orientation,args.quiet) #set the parent of the whatshap phase block to the gatk phase block
+                        if wh_allele1 == gatk_allele1 and wh_allele2 == gatk_allele2:
+                            same_orientation = True
+                        elif wh_allele2 == gatk_allele1 and wh_allele1 == gatk_allele2:
+                            same_orientation = False
                         else:
-                            gphase_blocks[gatk_phase_block].setParent(wphase_blocks[wh_phase_block], same_orientation,args.quiet) #else set the parent of the gatk phase block to the whatshap phase block
+                            same_orientation = None
+                            print('whatshap and gatk alleles do not match', gvcf_record.POS, wh_allele1, wh_allele2, gatk_allele1, gatk_allele2)
+                            stats['whatshap_gatk_allele_mismatch'] = stats.get('whatshap_gatk_allele_mismatch',0) + 1
 
-                # Write the updated record to the output gVCF file
-                write_stack.append((gvcf_record, vcf_record))
-                stats['nphased_variants_wh_linked'] = stats.get('nphased_variants_wh_linked',0) + 1
+
+                        if same_orientation is not None:
+                            if gphase_blocks[gatkkey].isDominant(wphase_blocks[whkey]): #if gatk phase block is dominant (i.e. has a lower id, meaning it started earlier on the chromosome)
+                                wphase_blocks[whkey].setParent(gphase_blocks[gatkkey], same_orientation,args.quiet) #set the parent of the whatshap phase block to the gatk phase block
+                            else:
+                                gphase_blocks[gatkkey].setParent(wphase_blocks[whkey], same_orientation,args.quiet) #else set the parent of the gatk phase block to the whatshap phase block
+
+                    # Write the updated record to the output gVCF file
+                    write_stack.append((gvcf_record, vcf_record))
+                    stats['nphased_variants_wh_linked'] = stats.get('nphased_variants_wh_linked',0) + 1
+                else:
+                    write_stack.append((gvcf_record, None))
             else:
                 # Write the updated record to the output gVCF file
                 write_stack.append((gvcf_record, None))
@@ -374,9 +388,10 @@ def main():
     while gvcf_record is not None:
         if 'PID' in gvcf_record.FORMAT:
             gatk_phase_block = int(gvcf_record.format('PID')[0].split('_')[0])
-            if gatk_phase_block not in gphase_blocks:
-                gphase_blocks[gatk_phase_block] = PhaseBlock(gatk_phase_block, 'GATK')
-            gphase_blocks[gatk_phase_block].addVariant(gvcf_record.POS)
+            gatkkey = f'{gvcf_record.CHROM}:{gatk_phase_block}'
+            if gatkkey not in gphase_blocks:
+                gphase_blocks[gatkkey] = PhaseBlock(gatkkey, 'GATK')
+            gphase_blocks[gatkkey].addVariant(gvcf_record.POS)
         write_stack.append((gvcf_record,None))
         try:
             gvcf_record = next(gvcf)
@@ -407,6 +422,8 @@ def main():
     stats['whatshap_blocks_final'] = len([b for b in blocks if b[1].source == 'whatshap'])
     stats['gatk_blocks_final'] = len([b for b in blocks if b[1].source == 'GATK'])
     variants = [b[1].getAllVariants() for b in blocks]
+
+    #detect variants in multiple blocks
     s = set()
     for v in variants:
         if v.intersection(s):
@@ -416,6 +433,9 @@ def main():
     nvariants = len(s)
     stats['nvariants_phased'] = nvariants
     blocklength = [max(v) - min(v) for v in variants]
+    idx = numpy.argmax(blocklength)
+    print('BLOCKLENGTH MAX', idx, blocklength[idx], variants[idx])
+    print(blocks[idx])
     stats['average_phase_block_length'] = numpy.mean(blocklength)
     stats['median_phase_block_length'] = numpy.median(blocklength)
     if blocklength:
