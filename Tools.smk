@@ -36,7 +36,7 @@ rule CreateBinsFullGenome:
     input: fai=ancient(REF_MALE_FAI),
         mask=ancient(REF_MALE_BED),
         merged_kit=ancient(MERGED_CAPTURE_KIT_BED)
-    output: directory(pj(INTERVALS_DIR,'wgs_bins_v2'))
+    output: directory(pj(INTERVALS_DIR,'wgs_bins_v3'))
     params:
         nsplit=1000,
         nproc=8,
@@ -176,9 +176,9 @@ rule CreateBinsExome:
 
     """
     input: merged_kit=ancient(MERGED_CAPTURE_KIT_BED),
-        wgs_folder=pj(INTERVALS_DIR,'wgs_bins_v2'),
+        wgs_folder=pj(INTERVALS_DIR,'wgs_bins_v3'),
         fai=ancient(REF_MALE_FAI),
-    output: directory(pj(INTERVALS_DIR,'wes_bins_v2'))
+    output: directory(pj(INTERVALS_DIR,'wes_bins_v3'))
     params:
         nsplit=1000
     conda: CONDA_MAIN

@@ -248,9 +248,9 @@ def region_to_file(region, wgs=False, classic=False, padding=False, extension='b
     else:
         split = ''
     if wgs: 
-        f = pj(INTERVALS_DIR, f'wgs_bins_v2/genome.{component}split{level}{split}.{extension}')     
+        f = pj(INTERVALS_DIR, f'wgs_bins_v3/genome.{component}split{level}{split}.{extension}')
     else:
-        f = pj(INTERVALS_DIR, f'wes_bins_v2/merged.{component}split{level}{split}.{extension}')        
+        f = pj(INTERVALS_DIR, f'wes_bins_v3/merged.{component}split{level}{split}.{extension}')
     return f
     
 
