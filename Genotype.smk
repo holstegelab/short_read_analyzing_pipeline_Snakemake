@@ -53,7 +53,8 @@ rule Genotype_all:
         rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
-        [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts]
+        [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
+        [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz.tbi" for region in parts],
         #expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = main_chr),
