@@ -79,7 +79,8 @@ rule GenotypeDBI:
         dir=DBIpath + "p{region}",
         intervals = region_to_IL_file
     output:
-        raw_vcfDBI=ensure(expand(pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz"), genotype_alg = genotype_alg, allow_missing=True), non_empty=True)
+        raw_vcfDBI=ensure(expand(pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz"), genotype_alg = genotype_alg, allow_missing=True), non_empty=True),
+        tbi = ensure(expand(pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz.tbi"), genotype_alg = genotype_alg, allow_missing=True), non_empty=True)
     params:
         ploidy = lambda wildcards: 1 if 'H' in wildcards['region'] else 2,
         annotations = lambda wildcards: '' if genotype_alg == 'GnarlyGenotyper' else "-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --keep-combined-raw-annotations",
