@@ -118,6 +118,7 @@ rule GLnexus_all:
     input:
         expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/{region}.vcf.gz", genotype_mode = genotype_mode, cur_dir = current_dir, region  = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
         expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/{region}.vcf.gz.tbi", genotype_mode = genotype_mode, cur_dir = current_dir, region = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/ANNOTATED/{region}_annotated.vcf.gz", genotype_mode= genotype_mode, cur_dir = current_dir, region  = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
     default_target: True
 
 rule glnexus_HC:
@@ -145,6 +146,7 @@ rule index_deep:
     shell: "gatk IndexFeatureFile -I {input}"
 
 
+
 use rule glnexus_HC as glnexus_DV with:
     input: gvcf_input = generate_gvcf_input_DV
     output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz")
@@ -155,3 +157,14 @@ use rule glnexus_HC as glnexus_DV with:
 use rule index_deep as index_deep_2 with:
     input: rules.glnexus_DV.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
+
+rule annotate_genes:
+    input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
+            tbi = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz.tbi")
+    output: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{glnexus_dir}" + dir_appendix, "ANNOTATED" , "{region}_annotated.vcf.gz"),
+    conda: CONDA_ANNOVAR
+    resources: n = "2"
+    shell:
+        """
+        perl {annovar} {input.vcf} {annovar_db} -out {output.vcf_annotated} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 
+        """

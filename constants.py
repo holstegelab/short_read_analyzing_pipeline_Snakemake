@@ -31,6 +31,7 @@ CONDA_KRAKEN = 'envs/kraken.yaml'
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 CONDA_PCA = 'envs/PCA.yaml'
 CONDA_GATK_CNV = pj(RESOURCES, 'software', 'gatk_4.4', 'build', 'gatkcondaenv.yml')
+CONDA_ANNOVAR = 'envs/annovar.yaml'
 
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
@@ -71,7 +72,8 @@ dragmap= 'dragen-os'
 verifybamid2= 'verifybamid2'
 java_cnv = pj(SOFTWARE, 'java/jdk-17.0.7/bin/java')
 gatk_cnv = pj(SOFTWARE, 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.0.0-27-gabe8148-SNAPSHOT-local.jar')
-
+annovar = pj(RESOURCES, "annovar/annovar/table_annovar.pl")
+annovar_db = pj(RESOURCES, "annovar/annovar/humandb/")
 #custom scripts (encapsulate in srcdir())
 BAMMERGE= 'scripts/bam_merge.py'
 BAMSTATS= 'scripts/bam_stats.py'

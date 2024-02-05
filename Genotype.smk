@@ -55,6 +55,7 @@ rule Genotype_all:
         # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz.tbi" for region in parts],
+        [f"{genotype_alg}/{VCF}/ANNOTATED/merged_{region}.{genotype_mode}_annotated.vcf.gz" for region in parts]
         #expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = main_chr),
@@ -94,6 +95,17 @@ rule GenotypeDBI:
     shell:"""
         {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{input.dir} -O {output.raw_vcfDBI} -D {DBSNP} --intervals {input.intervals} {params.annotations} --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --only-output-calls-starting-in-intervals
         """
+
+rule annotate_genes:
+    input: vcf = pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz")
+    output: vcf_annotated =  pj("{genotype_alg}",VCF, "ANNOTATED", "merged_{region}.{genotype_mode}_annotated.vcf.gz"),
+    conda: CONDA_ANNOVAR
+    resources: n = "2"
+    shell:
+        """
+        perl {annovar} {input.vcf} {annovar_db} -out {output.vcf_annotated} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 
+        """
+
 
 
 #elif gVCF_combine_method == "COMBINE_GVCF":

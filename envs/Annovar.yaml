@@ -1,0 +1,8 @@
+name: annovar
+channels:
+  - bioconda
+  - conda-forge
+  - default
+  - defaults
+dependencies:
+  - perl
