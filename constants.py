@@ -136,6 +136,10 @@ KILO_G = pj(RESOURCES,'databases/1000G_phase1.snps.high_confidence.hg38.vcf.gz')
 MILLS = pj(RESOURCES,'databases/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz')
 DBSNP_INDEL = pj(RESOURCES,'databases/Homo_sapiens_assembly38.known_indels.vcf.gz')
 
+# ANNOTATIONS
+REVEL = pj(RESOURCES, 'REVEL/revel_for_bcftools.tab.gz')
+REVEL_header = pj(RESOURCES, 'REVEL/revel.hdr')
+
 #path to file with adapters
 ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')
 

@@ -101,9 +101,15 @@ rule annotate_genes:
     output: vcf_annotated =  pj("{genotype_alg}",VCF, "ANNOTATED", "merged_{region}.{genotype_mode}_annotated.vcf.gz"),
     conda: CONDA_ANNOVAR
     resources: n = "2"
+    params:
+        temp_vcf = pj("{genotype_alg}",VCF, "ANNOTATED", "temp_{region}.{genotype_mode}.vcf"),
     shell:
         """
+        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {params.temp_vcf} --threads {resources.n} &&
+        
         perl {annovar} {input.vcf} {annovar_db} -out {output.vcf_annotated} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 
+        
+        rm -rf {params.temp_vcf}
         """
 
 

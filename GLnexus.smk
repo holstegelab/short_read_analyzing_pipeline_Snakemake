@@ -164,7 +164,12 @@ rule annotate_genes:
     output: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{glnexus_dir}" + dir_appendix, "ANNOTATED" , "{region}_annotated.vcf.gz"),
     conda: CONDA_ANNOVAR
     resources: n = "2"
+    params: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{glnexus_dir}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf.gz"),
     shell:
         """
-        perl {annovar} {input.vcf} {annovar_db} -out {output.vcf_annotated} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 
+        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {params.temp_vcf} --threads {resources.n} &&
+        
+        perl {annovar} {params.temp_vcf} {annovar_db} -out {output.vcf_annotated} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n}
+        
+        rm -rf {params.temp_vcf} 
         """
