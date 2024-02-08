@@ -29,7 +29,6 @@ wildcard_constraints:
 rule Aligner_all:
     input:
         expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names,cram=CRAM),
-        expand("{KMER}/{sample}.result.yaml", sample = sample_names, KMER = KMER),
     default_target: True
 
 
