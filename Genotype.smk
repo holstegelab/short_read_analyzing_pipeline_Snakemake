@@ -114,6 +114,26 @@ rule annotate_genes:
 
 
 
+rule posterior_phasing:
+    input:
+       rules.GenotypeDBI.output.raw_vcfDBI
+    output:
+        rescaled=temp(pj(VCF, "merged_{region}.{genotype_mode}.rescaled.vcf.gz")),
+        processed=pj(VCF, "merged_{region}.{genotype_mode}.rescaled_phased.vcf.gz")
+    params:
+        process_phasing=''
+        posterior_rescale=''
+    conda: CONDA_VCF
+    resources: 
+        mem_mb=1000,
+        n=1
+    priority: 40
+    shell:"""
+            {param.posterior_rescale} 
+        """
+       
+
+
 #elif gVCF_combine_method == "COMBINE_GVCF":
 #    rule GenotypeDBI:
 #        input: 
