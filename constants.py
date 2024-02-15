@@ -74,6 +74,7 @@ java_cnv = pj(SOFTWARE, 'java/jdk-17.0.7/bin/java')
 gatk_cnv = pj(SOFTWARE, 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.0.0-27-gabe8148-SNAPSHOT-local.jar')
 annovar = pj(RESOURCES, "annovar/annovar/table_annovar.pl")
 annovar_db = pj(RESOURCES, "annovar/annovar/humandb/")
+ada = pj(SOFTWARE, 'SpiderScripts/ada/ada')
 #custom scripts (encapsulate in srcdir())
 BAMMERGE= 'scripts/bam_merge.py'
 BAMSTATS= 'scripts/bam_stats.py'

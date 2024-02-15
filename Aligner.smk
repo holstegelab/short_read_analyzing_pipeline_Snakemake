@@ -508,7 +508,7 @@ rule adapter_removal:
     output:
         for_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_1.fq.gz")),
         rev_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_2.fq.gz")),
-        adapter_removal=pj(STAT,"{sample}.{readgroup}.adapter_removal.log"),
+        adapter_removal=ensure(pj(STAT,"{sample}.{readgroup}.adapter_removal.log"), non_empty=True),
     # log file in this case contain some stats about removed seqs
     priority: 10
     conda: CONDA_MAIN
@@ -686,7 +686,8 @@ rule merge_bam_alignment:
     input:
         fastq=get_fastqpaired,
         bam=rules.align_reads.output.bam,
-        stats=rules.adapter_removal_identify.output.stats
+        stats=rules.adapter_removal_identify.output.stats,
+        log = rules.adapter_removal.output.adapter_removal
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.merged.bam")),
         badmap_fastq1=pj(FQ,"{sample}.{readgroup}.badmap_R1.fastq.gz"),

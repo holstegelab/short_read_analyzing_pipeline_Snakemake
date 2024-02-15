@@ -1,4 +1,5 @@
 from common import *
+import zlib
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
@@ -46,7 +47,8 @@ rule copy_to_dcache:
         mem_mb=200,
         n="0.1"
     output:
-        pj(CRAM,"{sample}.mapped_hg38.cram.copied")
+        copied = pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
+        sum = pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32")
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         target = sample['target']
@@ -57,6 +59,19 @@ rule copy_to_dcache:
             target = target[:-1]
 
         shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")    
-        shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")    
-        shell("touch {output}")
+        shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
+        shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/$(basename {input.cram}) | awk '{print$2}' | awk -F '=' '{print$2}' > {output.sum}")
+        with open(input.cram, 'rb') as f:
+            data = f.read()
+            ADLER32_local = zlib.adler32(data)
+        with open(output.sum, 'r') as sum_file:
+            ADLER32_remote = sum_file.readline().rstrip('\n')
+        if f'{ADLER32_local:x}' != ADLER32_remote:
+            shell("rclone --config {agh_dcache} delete agh_processed:{target}/$(basename {input.cram})")
+            shell("rclone --config {agh_dcache} delete agh_processed:{target}/$(basename {input.crai})")
+            raise ValueError(f"Checksums do not match for {input.cram}. Local: {ADLER32_local:x}, Remote: {ADLER32_remote}")
+        else:
+            shell("touch {output.copied}")
+
+
 
