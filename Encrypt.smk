@@ -60,7 +60,7 @@ rule copy_to_dcache:
 
         shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")    
         shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
-        shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/$(basename {input.cram}) | awk '{print$2}' | awk -F '=' '{print$2}' > {output.sum}")
+        shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/$(basename {input.cram}) | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
         with open(input.cram, 'rb') as f:
             data = f.read()
             ADLER32_local = zlib.adler32(data)
