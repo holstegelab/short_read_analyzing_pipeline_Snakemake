@@ -50,6 +50,7 @@ rule copy_to_dcache:
         copied = pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
         sum = pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32")
     run:
+
         sample = SAMPLEINFO[wildcards['sample']]
         target = sample['target']
 
@@ -58,7 +59,7 @@ rule copy_to_dcache:
         if target.endswith('/'):
             target = target[:-1]
 
-        shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")    
+        shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
         shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
         shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/$(basename {input.cram}) | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
         with open(input.cram, 'rb') as f:
@@ -69,6 +70,7 @@ rule copy_to_dcache:
         if f'{ADLER32_local:x}' != ADLER32_remote:
             shell("rclone --config {agh_dcache} delete agh_processed:{target}/$(basename {input.cram})")
             shell("rclone --config {agh_dcache} delete agh_processed:{target}/$(basename {input.crai})")
+            shell("rm {input.cram}")
             raise ValueError(f"Checksums do not match for {input.cram}. Local: {ADLER32_local:x}, Remote: {ADLER32_remote}")
         else:
             shell("touch {output.copied}")
