@@ -6,6 +6,7 @@ current_dir = os.getcwd()
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     chr = "[\w\d]+",
+    region = "[\w\d]+",
     # readgroup="[\w\d_\-@]+"
 
 gvcf_caller = config.get("caller", "BOTH")
