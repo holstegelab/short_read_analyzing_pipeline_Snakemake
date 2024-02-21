@@ -127,18 +127,18 @@ rule glnexus_HC:
     output: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = region_to_bed_file,
-            mem_gb = 7,
+            mem_gb = 9,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus.DB"),
             conf_filters = conf_filter
     threads: 4
     log: pj(current_dir, "logs", "glnexus", "glnexus_HC_{region}.{genotype_mode}.log")
     resources: 
-        n = "5",
-        mem_mb = lambda wildcards, attempt: 7000 * attempt
+        n = "6",
+        mem_mb = 10000
     shell:
         """
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input}  | bcftools view -  | bgzip -@ {threads} -c > {output} 2> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view -  | bgzip -@ {threads} -c > {output} 2>> {log}
         """
 rule index_deep:
     input: rules.glnexus_HC.output.vcf
@@ -155,7 +155,7 @@ use rule glnexus_HC as glnexus_DV with:
     log: pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
     params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_2.DB"),
             bed= region_to_bed_file,
-            mem_gb= 7,
+            mem_gb= 9,
             conf_filters= conf_filter
 use rule index_deep as index_deep_2 with:
     input: rules.glnexus_DV.output.vcf
