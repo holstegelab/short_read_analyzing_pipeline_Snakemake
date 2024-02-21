@@ -7,7 +7,7 @@ wildcard_constraints:
 module Aligner:
     snakefile: 'Aligner.smk'
     config: config
-use rule * from Aligner
+#use rule * from Aligner
 
 rule Encrypt_all:
     input: 
@@ -25,7 +25,7 @@ agh_dcache = config.get('agh_processed', pj(RESOURCES,".agh/agh_processed.conf")
 
 
 rule Encrypt_crams:
-    input: rules.mCRAM.output.cram
+    input: pj(CRAM,"{sample}.mapped_hg38.cram")
     output: enCRAM=temp(pj(CRAM,"{sample}.mapped_hg38.cram.c4gh"))
     params:
         private_key = sk,
@@ -42,7 +42,7 @@ rule Encrypt_crams:
 rule copy_to_dcache:
     input:
         cram=rules.Encrypt_crams.output.enCRAM,
-        crai=rules.mCRAM.output.crai
+        crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai")
     resources:
         mem_mb=200,
         n="0.1"
