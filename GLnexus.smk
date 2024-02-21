@@ -138,7 +138,7 @@ rule glnexus_HC:
     shell:
         """
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view -  | bgzip -@ {threads} -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads {threads} --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view -  | bgzip -@ 6 -c > {output} 2>> {log}
         """
 rule index_deep:
     input: rules.glnexus_HC.output.vcf
