@@ -133,12 +133,12 @@ rule glnexus_HC:
     threads: 6
     log: pj(current_dir, "logs", "glnexus", "glnexus_HC_{region}.{genotype_mode}.log")
     resources: 
-        n = "4",
+        n = "6",
         mem_mb = 14000
     shell:
         """
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 4 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view -  | bgzip -@ 6 -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 5 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view -  | bgzip -@ 6 -c > {output} 2>> {log}
         """
 rule index_deep:
     input: rules.glnexus_HC.output.vcf
