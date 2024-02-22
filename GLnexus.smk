@@ -119,7 +119,7 @@ rule GLnexus_all:
     input:
         expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/{region}.vcf.gz", genotype_mode = genotype_mode, cur_dir = current_dir, region  = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
         expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/{region}.vcf.gz.tbi", genotype_mode = genotype_mode, cur_dir = current_dir, region = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
-        expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/ANNOTATED/{region}_annotated.vcf.gz", genotype_mode= genotype_mode, cur_dir = current_dir, region  = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
+        expand("{cur_dir}/{genotype_mode}_{types_of_gl}{appendix}/ANNOTATED/{region}_annotated.hg38_multianno.vcf.gz", genotype_mode= genotype_mode, cur_dir = current_dir, region  = parts, types_of_gl = glnexus_dir, appendix = dir_appendix),
     default_target: True
 
 rule glnexus_HC:
