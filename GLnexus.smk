@@ -177,6 +177,4 @@ rule annotate_genes:
         bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {params.temp_vcf} --threads {resources.n} &&
         
         perl {annovar} {params.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n}
-        
-        rm -rf {params.temp_vcf} 
         """
