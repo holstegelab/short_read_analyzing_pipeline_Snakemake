@@ -164,12 +164,13 @@ use rule index_deep as index_deep_2 with:
 rule annotate_genes:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
             tbi = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz.tbi")
-    output: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated.hg38_multianno.vcf"),
+    output: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated.hg38_multianno.vcf.gz"),
     conda: CONDA_ANNOVAR
     resources: n = "2"
     params: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf"),
             temp_dir = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp"),
-            out = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated")
+            out = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated"),
+            vcf_out = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated.hg38_multianno.vcf"),
     shell:
         """
         mkdir -p {params.temp_dir} &&
@@ -177,4 +178,9 @@ rule annotate_genes:
         bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {params.temp_vcf} --threads {resources.n} &&
         
         perl {annovar} {params.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n}
+        
+        bgzip {params.vcf_out} 
+        tabix -p vcf {params.vcf_out}.gz
+        
+        rm -rf {params.temp_vcf}
         """
