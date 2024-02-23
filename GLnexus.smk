@@ -164,7 +164,7 @@ use rule index_deep as index_deep_2 with:
 rule annotate_genes:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
             tbi = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz.tbi")
-    output: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated.hg38_multianno.vcf.gz"),
+    output: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED" , "{region}_annotated.hg38_multianno.vcf"),
     conda: CONDA_ANNOVAR
     resources: n = "2"
     params: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf"),
