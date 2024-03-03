@@ -6,4 +6,3 @@ channels:
   - defaults
 dependencies:
   - perl
-  - bcftools

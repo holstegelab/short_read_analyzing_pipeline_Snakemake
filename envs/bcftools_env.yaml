@@ -1,0 +1,8 @@
+channels:
+- conda-forge
+- bioconda
+- default
+- defaults
+dependencies:
+- bcftools=1.17
+- htslib=1.17
