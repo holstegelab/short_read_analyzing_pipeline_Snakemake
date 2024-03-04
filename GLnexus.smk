@@ -201,25 +201,25 @@ rule annotate_gene:
 rule bring_anno_to_samples:
     input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp", "{region}.annotated.hg38_multianno.vcf"),
             samples_vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
-    output: vcf_anno_samples = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
-            tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
+    output: vcf_anno_samples = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf"),
+            # tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_MAIN
     resources:
         n = "2",
         mem_mb = 6000
     shell:
         """
-        bcftools annotate --write-index -a {input.vcf_annotated} -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
+        bcftools annotate -a {input.vcf_annotated} -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
         """
 
 
-# rule bgzip:
-#     input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}_annotated.hg38_multianno.vcf")
-#     output: vcf_annotated_gz = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}_annotated.hg38_multianno.vcf.gz"),
-#             vcf_annotated_gz_tbi= pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}_annotated.hg38_multianno.vcf.gz.tbi")
-#     conda: CONDA_MAIN
-#     shell:
-#         """
-#         bgzip {input.vcf_annotated}
-#         tabix -p vcf {output.vcf_annotated_gz}
-#         """
+rule bgzip:
+    input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf")
+    output: vcf_annotated_gz = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
+            vcf_annotated_gz_tbi= pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}.annotated.vcf.gz.tbi")
+    conda: CONDA_MAIN
+    shell:
+        """
+        bgzip {input.vcf_annotated}
+        tabix -p vcf {output.vcf_annotated_gz}
+        """
