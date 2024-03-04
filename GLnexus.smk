@@ -170,7 +170,7 @@ rule extract_positions:
 
 rule annotate_revel:
     input: vcf = pj(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf")),
-    output: vcf_annotated = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_pos_only.vcf"))
+    output: vcf_annotated = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf"))
     conda: CONDA_MAIN
     resources: n = "4",
             mem_mb = 6000
@@ -185,12 +185,11 @@ rule annotate_revel:
         """
 
 rule annotate_gene:
-    input: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_pos_only.vcf")
-    output: vcf_annotated=temp(pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED_temp","{region}_annotated.hg38_multianno.vcf")),
+    input: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf")
+    output: vcf_annotated=temp(pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED_temp","{region}.annotated.hg38_multianno.vcf")),
     conda: CONDA_ANNOVAR
     params:
-        out=pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED_temp","{region}_annotated"),
-        vcf_out=pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED_temp","{region}_annotated.hg38_multianno.vcf"),
+        out=pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED_temp","{region}.annotated"),
     log: pj(current_dir,"logs","glnexus","annotate_gene_{region}.{genotype_mode}.{types_of_gl}.log")
     resources: n = "2",
                 mem_mb = 5000
@@ -200,10 +199,10 @@ rule annotate_gene:
         """
 
 rule bring_anno_to_samples:
-    input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp", "{region}_annotated.hg38_multianno.vcf"),
+    input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp", "{region}.annotated.hg38_multianno.vcf"),
             samples_vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
-    output: vcf_anno_samples = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}_annotated.vcf.gz"),
-            tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}_annotated.vcf.gz.tbi"), non_empty=True)
+    output: vcf_anno_samples = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
+            tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_MAIN
     resources:
         n = "2",
