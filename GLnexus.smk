@@ -165,9 +165,9 @@ rule annotate_revel:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
             tbi = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz.tbi")
     output: vcf_annotated = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf"))
-    conda: CONDA_BCFTOOLS
-    resources: n = "2",
-            mem_mb = 6000
+    conda: CONDA_MAIN
+    resources: n = "8",
+            mem_mb = 16000
     log: pj(current_dir,"logs","glnexus","annotate_revel_{region}.{genotype_mode}.{types_of_gl}.log")
     params: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf"),
             temp_dir = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp"),
@@ -180,19 +180,26 @@ rule annotate_revel:
         
 rule annotate_gene:
     input: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf")
-    output: vcf_annotated=pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}_annotated.hg38_multianno.vcf.gz"),
+    output: vcf_annotated=temp(pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}_annotated.hg38_multianno.vcf")),
     conda: CONDA_ANNOVAR
     params:
         out=pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}_annotated"),
         vcf_out=pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}_annotated.hg38_multianno.vcf"),
     log: pj(current_dir,"logs","glnexus","annotate_gene_{region}.{genotype_mode}.{types_of_gl}.log")
-    resources: n = "2",
-                mem_mb = 6000
+    resources: n = "6",
+                mem_mb = 30000
     shell:
-                """
-        perl {annovar} {input.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 2> {log}
-
-        bgzip {params.vcf_out}
-        tabix -p vcf {params.vcf_out}.gz
         """
-        
+        perl {annovar} {input.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 2> {log}
+        """
+
+rule bgzip:
+    input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}_annotated.hg38_multianno.vcf")
+    output: vcf_annotated_gz = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}_annotated.hg38_multianno.vcf.gz"),
+            vcf_annotated_gz_tbi= pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED","{region}_annotated.hg38_multianno.vcf.gz.tbi")
+    conda: CONDA_MAIN
+    shell:
+        """
+        bgzip {input.vcf_annotated}
+        tabix -p vcf {output.vcf_annotated_gz}
+        """
