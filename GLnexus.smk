@@ -7,6 +7,7 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     chr = "[\w\d]+",
     region = "[\w\d]+",
+    genotype_mode = "WES|WGS",
     # readgroup="[\w\d_\-@]+"
 
 gvcf_caller = config.get("caller", "BOTH")
@@ -131,7 +132,6 @@ rule glnexus_HC:
             mem_gb = 17,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus.DB"),
             conf_filters = conf_filter,
-
     threads: 9
     resources:
         n = "9",
@@ -154,12 +154,10 @@ rule index_deep:
 
 use rule glnexus_HC as glnexus_DV with:
     input: gvcf_input = generate_gvcf_input_DV
-    output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz")
-    log: pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
+    output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
+            log= pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
     params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_2.DB"),
-            bed= region_to_bed_file,
-            mem_gb= 17,
-            conf_filters= conf_filter
+
 use rule index_deep as index_deep_2 with:
     input: rules.glnexus_DV.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
@@ -176,7 +174,11 @@ rule check_glnexus_lof_file:
             mkdir error_vcfs
             mv {input.vcf} error_vcfs/
         fi
-#         """
+         """
+
+use rule check_glnexus_lof_file as check_glnexus_lof_file_2 with:
+    input: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
+            log= pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
 
 rule extract_positions:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
@@ -229,7 +231,7 @@ rule bring_anno_to_samples:
         """
         bgzip {input.vcf_annotated}
         tabix -p vcf {input.vcf_annotated}.gz
-        bcftools annotate -a {input.vcf_annotated} -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
+        bcftools annotate -a {input.vcf_annotated}.gz -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
         """
 
 
