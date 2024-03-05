@@ -213,6 +213,7 @@ rule start_sample:
     output:
         pj(SOURCEDIR,"{sample}.started")
     resources:
+        # storsge memory is reserved for the sample
         active_use_add=calculate_active_use,
         mem_mb=50,
         n="1"

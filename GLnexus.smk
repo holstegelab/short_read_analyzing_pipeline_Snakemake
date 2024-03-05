@@ -124,21 +124,21 @@ rule GLnexus_all:
 
 rule glnexus_HC:
     input: generate_gvcf_input_HC
-    output: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz")
+    output: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz"),
+            log = pj(current_dir,"logs","glnexus","glnexus_HC_{region}.{genotype_mode}.log")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = region_to_bed_file,
             mem_gb = 17,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus.DB"),
             conf_filters = conf_filter
     threads: 9
-    log: pj(current_dir, "logs", "glnexus", "glnexus_HC_{region}.{genotype_mode}.log")
-    resources: 
+    resources:
         n = "9",
         mem_mb = 17000
     shell:
         """
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 8 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view --threads 9 -  | bgzip -@ 9 -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 8 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {output.log}  |  bcftools view --threads 9 -  | bgzip -@ 9 -c > {output} 2>> {output.log}
         """
 rule index_deep:
     input: rules.glnexus_HC.output.vcf
@@ -161,9 +161,24 @@ use rule index_deep as index_deep_2 with:
     input: rules.glnexus_DV.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
 
+rule check_glnexus_lof_file:
+    input: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz"),
+            log= pj(current_dir,"logs","glnexus","glnexus_HC_{region}.{genotype_mode}.log")
+    output: pj(current_dir, "{genotype_mode}_", "{region}.vcf_is_ok")# file to staret annotation {wildcard.region}
+    shell: #check if 'Finish' message is in log file, then write output, otherwise delete input vcf file
+        """
+        if grep -q "genotyping complete!" {input.log}; then
+            touch {output}
+        else
+            mkdir error_vcfs
+            mv {input.vcf} error_vcfs/
+        fi
+#         """
+
 rule extract_positions:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
-            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi")
+            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi"),
+            logcheck=pj(current_dir, "{genotype_mode}_", "{region}.vcf_is_ok")
     output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf"))
     conda: CONDA_MAIN
     shell: "bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}"
@@ -209,6 +224,8 @@ rule bring_anno_to_samples:
         mem_mb = 6000
     shell:
         """
+        bgzip {input.vcf_annotated}
+        tabix -p vcf {input.vcf_annotated}.gz
         bcftools annotate -a {input.vcf_annotated} -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
         """
 
