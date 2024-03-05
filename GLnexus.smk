@@ -136,7 +136,7 @@ rule glnexus_HC:
     resources:
         n = "9",
         mem_mb = 17000,
-        active_use_add= 7000000
+        active_use_add= 7000
     shell:
         """
         rm -rf {params.scratch_dir} &&
@@ -147,7 +147,7 @@ rule index_deep:
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz.tbi")
     conda: CONDA_VCF
     resources: n = "1",
-            active_use_remove = 7000000
+            active_use_remove = 7000
     shell: "gatk IndexFeatureFile -I {input}"
 
 
