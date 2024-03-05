@@ -130,11 +130,13 @@ rule glnexus_HC:
     params: bed = region_to_bed_file,
             mem_gb = 17,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus.DB"),
-            conf_filters = conf_filter
+            conf_filters = conf_filter,
+
     threads: 9
     resources:
         n = "9",
-        mem_mb = 17000
+        mem_mb = 17000,
+        active_use_add= 7000000
     shell:
         """
         rm -rf {params.scratch_dir} &&
@@ -144,7 +146,8 @@ rule index_deep:
     input: rules.glnexus_HC.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz.tbi")
     conda: CONDA_VCF
-    resources: n = "1"
+    resources: n = "1",
+            active_use_remove = 7000000
     shell: "gatk IndexFeatureFile -I {input}"
 
 
