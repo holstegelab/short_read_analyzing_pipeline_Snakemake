@@ -2,18 +2,16 @@ import os
 from itertools import repeat
 wildcard_constraints:
     sample="[\w\d_\-@]+",
+    genotype_level="[2|3|4]",
+    region="[0-9XYAFOH]+",
+    genotype_alg="[GenotypeGVCFs|GnarlyGenotyper]",
+    genotype_mode="[WES|WGS]"
 
 from common import *
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
-module DBImport:
-    snakefile: 'DBImport.smk'
-    config: config
-module Combine_gVCF:
-    snakefile: 'Combine_gVCF.smk'
-    config: config
 
 
 gVCF_combine_method = config.get("gvcf_combine_method", "DBIMPORT")
@@ -37,31 +35,13 @@ else:
     raise RuntimeError(f'Unknown level {genotype_level}')
 
 
-if gVCF_combine_method == "DBIMPORT":
-    use rule * from DBImport
-    rule_all_combine = rules.DBImport_all.input
-elif gVCF_combine_method == "COMBINE_GVCF":
-    use rule * from Combine_gVCF
-    rule_all_combine = rules.Combine_gVCF_all.input
-else:
-    raise ValueError(
-        "invalid option provided to 'Combine_gVCF_method'; please choose either 'COMBINE_GVCF' or 'DBIMPORT'."
-    )
-
 rule Genotype_all:
     input:
-        rule_all_combine,
+        # rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
-        # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz.tbi" for region in parts],
-        [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.rescaled.vcf.gz" for region in parts],
-        # [f"{genotype_alg}/{VCF}/ANNOTATED/merged_{region}.{genotype_mode}_annotated.vcf.gz" for region in parts]
-        #expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = main_chr),
-        #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = main_chr),
-        #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = main_chr),
-        #expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz", vcf = config['VCF_Final'], mode = mode, chr = main_chr),
-        #expand("{vcf}/{chr}/Merged_norm.{chr}.{mode}.vcf.gz.tbi", vcf = config['VCF_Final'], mode = mode, chr = main_chr)
+        [f"{genotype_alg}/{VCF}/rescaled/{region}_{genotype_mode}.rescaled.vcf.gz" for region in parts],
     default_target: True
 
 
@@ -89,9 +69,9 @@ rule GenotypeDBI:
         annotations = lambda wildcards: '' if genotype_alg == 'GnarlyGenotyper' else "-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation -A StrandBiasBySample -A AssemblyComplexity --keep-combined-raw-annotations",
         genotype_alg = genotype_alg
     conda: CONDA_VCF
-    resources: 
+    resources:
         mem_mb_java = get_mem_mb_genotype,
-        mem_mb=lambda wildcards: 5000 if genotype_alg == 'GnarlyGenotyper' else 10000 #need to make this sample nr. and region level dependent. 
+        mem_mb=lambda wildcards: 5000 if genotype_alg == 'GnarlyGenotyper' else 10000 #need to make this sample nr. and region level dependent.
     priority: 40
     shell:"""
         {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{input.dir} -O {output.raw_vcfDBI} -D {DBSNP} --intervals {input.intervals} {params.annotations} --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --only-output-calls-starting-in-intervals
@@ -99,20 +79,17 @@ rule GenotypeDBI:
 
 rule posterior_phasing:
     input:
-       rules.GenotypeDBI.output.raw_vcfDBI
+       vcf = expand(pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing=True),
     output:
-        rescaled=pj(VCF, "merged_{region}.{genotype_mode}.rescaled.vcf.gz"),
-        tbi = ensure(pj(VCF, "merged_{region}.{genotype_mode}.rescaled.vcf.gz.tbi"), non_empty=True)
-        # processed=pj(VCF, "merged_{region}.{genotype_mode}.rescaled_phased.vcf.gz")
-    params:
-        process_phasing='',
-        posterior_rescale=''
+        rescaled=expand(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing=True),
+        tbi = ensure(expand(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz.tbi"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing = True), non_empty=True)
     conda: CONDA_VCF
     resources:
-        mem_mb=1000,
+        mem_mb=5000,
         n=1
     priority: 40
     shell:"""
-            gatk CalculateGenotypePosteriors -V {input} -O {output.rescaled}  
+            mkdir -p {genotype_alg}/vcfs/rescaled
+            gatk CalculateGenotypePosteriors --java-options "-Xmx{resources.mem_mb}M" -V {input} -O {output.rescaled}  
         """
 
