@@ -34,7 +34,7 @@ elif genotype_level == 3:
 elif genotype_level == 4:
     parts = get_regions(level4_range_so)
 else:
-    raise RuntimeError(f'Unknown level {gneotype_level}')
+    raise RuntimeError(f'Unknown level {genotype_level}')
 
 
 if gVCF_combine_method == "DBIMPORT":
