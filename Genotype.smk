@@ -55,7 +55,8 @@ rule Genotype_all:
         # expand("{vcf}/ALL_chrs.{mode}.vcf.gz", vcf=config['VCF'], mode = mode),
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz.tbi" for region in parts],
-        [f"{genotype_alg}/{VCF}/ANNOTATED/merged_{region}.{genotype_mode}_annotated.vcf.gz" for region in parts]
+        [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.rescaled.vcf.gz" for region in parts],
+        # [f"{genotype_alg}/{VCF}/ANNOTATED/merged_{region}.{genotype_mode}_annotated.vcf.gz" for region in parts]
         #expand("{stat}/BASIC.{chr}.{mode}.variant_calling_detail_metrics", stat = config['STAT'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz",  vcf=config['VCF'], mode = mode, chr = main_chr),
         #expand("{vcf}/PER_chr/{chr}_{mode}_merged.vcf.gz.tbi", vcf=config['VCF'], mode = mode, chr = main_chr),
@@ -96,178 +97,22 @@ rule GenotypeDBI:
         {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{input.dir} -O {output.raw_vcfDBI} -D {DBSNP} --intervals {input.intervals} {params.annotations} --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --only-output-calls-starting-in-intervals
         """
 
-rule annotate_genes:
-    input: vcf = pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz")
-    output: vcf_annotated =  pj("{genotype_alg}",VCF, "ANNOTATED", "merged_{region}.{genotype_mode}_annotated.vcf.gz"),
-    conda: CONDA_ANNOVAR
-    resources: n = "2"
-    params:
-        temp_vcf = pj("{genotype_alg}",VCF, "ANNOTATED", "temp_{region}.{genotype_mode}.vcf"),
-    shell:
-        """
-        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {params.temp_vcf} --threads {resources.n} &&
-        
-        perl {annovar} {input.vcf} {annovar_db} -out {output.vcf_annotated} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 
-        
-        rm -rf {params.temp_vcf}
-        """
-
-
-
 rule posterior_phasing:
     input:
        rules.GenotypeDBI.output.raw_vcfDBI
     output:
-        rescaled=temp(pj(VCF, "merged_{region}.{genotype_mode}.rescaled.vcf.gz")),
-        processed=pj(VCF, "merged_{region}.{genotype_mode}.rescaled_phased.vcf.gz")
+        rescaled=pj(VCF, "merged_{region}.{genotype_mode}.rescaled.vcf.gz"),
+        tbi = ensure(pj(VCF, "merged_{region}.{genotype_mode}.rescaled.vcf.gz.tbi"), non_empty=True)
+        # processed=pj(VCF, "merged_{region}.{genotype_mode}.rescaled_phased.vcf.gz")
     params:
-        process_phasing=''
+        process_phasing='',
         posterior_rescale=''
     conda: CONDA_VCF
-    resources: 
+    resources:
         mem_mb=1000,
         n=1
     priority: 40
     shell:"""
-            {param.posterior_rescale} 
+            gatk CalculateGenotypePosteriors -V {input} -O {output.rescaled}  
         """
-       
 
-
-#elif gVCF_combine_method == "COMBINE_GVCF":
-#    rule GenotypeDBI:
-#        input: 
-#            gvcf = rules.combinegvcfs.output.chr_gvcfs
-#        output: 
-#            raw_vcf = pj(VCF, "/merged_{region}.p{part}.{mode}.vcf.gz"
-#        conda: CONDA_VCF
-#        resources: mem_mb = get_mem_mb_genotype
-#        priority: 40
-#        shell:"""
-#            {gatk} GenotypeGVCFs -R {ref} -V {input.gvcf} -O {output} -D {DBSNP} --intervals {wildcards.chr}
-#            """
-
-
-#
-#
-# rule merge_per_chr:
-#     input:
-#         vcfs = lambda wildcards: expand("{dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{genotype_mode}.vcf.gz".format(dir=VCF, chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
-#     output:
-#         per_chr_vcfs = os.path.join(VCF, "PER_chr", "{chr}_{genotype_mode}_merged.vcf.gz")
-#     params:
-#         inputs = lambda wildcards: expand("-I {dir}/Merged_raw_DBI_{chr}.p{{chr_p}}.{genotype_mode}.vcf.gz".format(dir=VCF, chr=wildcards.chr, mode=mode), chr_p=valid_chr_p[wildcards.chr])
-#     priority: 45
-#     conda: "envs/vcf_handling.yaml"
-#     resources:
-#         mem_mb = 400
-#     shell: """
-#             {gatk} GatherVcfs {params.inputs} -O {output} -R {REF}
-#             """
-#
-#
-# rule index_per_chr:
-#     input: rules.merge_per_chr.output.per_chr_vcfs
-#     output:
-#         vcfidx = os.path.join(VCF, "PER_chr", "{chr}_{genotype_mode}_merged.vcf.gz.tbi")
-#     priority: 46
-#     conda: "envs/preprocess.yaml"
-#     resources:
-#         mem_mb=450
-#     shell:
-#         "{gatk} IndexFeatureFile -I {input} -O {output}"
-#
-#
-# rule norm_per_chr:
-#     input:
-#         vcf = rules.merge_per_chr.output.per_chr_vcfs,
-#         idx = rules.index_per_chr.output.vcfidx
-#     output:
-#         normVCF=pj(VCF, "{chr}/Merged_norm.{chr}.{genotype_mode}.vcf.gz"),
-#     priority: 50
-#     conda: "envs/preprocess.yaml"
-#     threads: 150
-#     shell:
-#         "({bcftools} norm --threads {threads} -f {REF} {input} -m -both -O v | {bcftools} norm --threads {threads} --check-ref ws -d exact -f {REF} -O z > {output.normVCF})"
-#
-# rule norm_idx_per_chr:
-#     input:
-#         normVCF = rules.norm_per_chr.output.normVCF
-#     output:
-#         idx=pj(VCF,"{chr}/Merged_norm.{chr}.{genotype_mode}.vcf.gz.tbi")
-#     priority: 55
-#     conda: CONDA_VCF
-#     shell:
-#         "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx}"
-#
-#
-# # basic stats
-# # include hom-het ratio, titv ratio, etc.
-# rule basic_stats_per_chr:
-#     input:
-#         vcf = rules.norm_per_chr.output.normVCF,
-#         tbi = rules.norm_idx_per_chr.output.idx
-#     output:
-#         os.path.join(STAT, "BASIC.{chr}.{genotype_mode}.variant_calling_detail_metrics"),
-#         os.path.join(STAT, "BASIC.{chr}.{genotype_mode}.variant_calling_summary_metrics")
-#     priority: 90
-#     conda: CONDA_VCF
-#     resources:
-#         n=2,
-#         mem_mb=4500
-#     shell:"""{gatk} CollectVariantCallingMetrics \
-#         -R {REF} -I {input.vcf} -O stats/BASIC.{wildcards.chr}.{wildcards.genotype_mode} \
-#         --DBSNP {DBSNP} --THREAD_COUNT {resources.n}"""
-#
-
-
-# rule Mergechrs:
-#     input:
-        # merged_input = expand(["{dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, dir = [config['VCF']]*853, mode = [mode]*853)
-#     params: vcfs_to_merge = expand(["-I {dir}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p,dir=[config['VCF']] * 853, mode = [mode]*853)
-#     conda: "envs/preprocess.yaml"
-#     log: config['LOG'] + "/Mergechrs.{mode}.log"
-#     benchmark: config['BENCH'] + "/Mergechrs.{mode}.txt"
-#     output:
-#         vcf = config['VCF'] + "/ALL_chrs.{mode}.vcf.gz"
-#     priority: 45
-#     shell:
-#         "{gatk} GatherVcfs {params.vcfs} -O {output} -R {ref} 2> {log}"
-#
-# rule index_mergechrs:
-#     input: rules.Mergechrs.output.vcf
-#     conda: "envs/preprocess.yaml"
-#     log: config['LOG'] + '/' + "Mergechrsed_index.{mode}.log"
-#     benchmark: config['BENCH'] + "/Mergechrsed_index.{mode}.txt"
-#     output:
-#         vcfidx = config['VCF'] + "/ALL_chrs.{mode}.vcf.gz.tbi"
-#     priority: 46
-#     shell:
-#         "{gatk} IndexFeatureFile -I {input} -O {output} 2> {log}"
-#
-# rule norm:
-#     input:
-#         vcf = rules.Mergechrs.output.vcf,
-#         idx = rules.index_mergechrs.output.vcfidx
-#     output:
-#         normVCF=config['VCF_Final'] + "/Merged_norm.{mode}.vcf",
-#     log: config['LOG'] + '/' + "normalization.{mode}.log"
-#     benchmark: config['BENCH'] + "/normalization.{mode}.txt"
-#     priority: 50
-#     conda: "envs/preprocess.yaml"
-#     shell:
-#         "({bcftools} norm -f {ref} {input} -m -both -O v | {bcftools} norm -d exact -f {ref} > {output.normVCF}) 2> {log}"
-#
-# rule norm_idx:
-#     input:
-#         normVCF = rules.norm.output.normVCF
-#     output:
-#         idx=config['VCF_Final'] + "/Merged_norm.{mode}.vcf.idx"
-#     log: config['LOG'] + '/' + "normalization.{mode}.log"
-#     benchmark: config['BENCH'] + "/idx_normalizated.{mode}.txt"
-#     priority: 55
-#     conda: "envs/preprocess.yaml"
-#     shell:
-#         "{gatk} IndexFeatureFile -I {input.normVCF} -O {output.idx} 2> {log}"
-#
-#

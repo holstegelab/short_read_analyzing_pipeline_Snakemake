@@ -25,7 +25,7 @@ elif genotype_level == 3:
 elif genotype_level == 4:
     parts = get_regions(level4_range_so)
 else:
-    raise RuntimeError(f'Unknown level {gneotype_level}')
+    raise RuntimeError(f'Unknown level {genotype_level}')
 
 
 
@@ -95,3 +95,6 @@ rule GenomicDBImport:
             {gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb_reduced}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
             --intervals {input.intervals} {params.merge_contigs} -R {params.ref} --genomicsdb-workspace-path {output.dbi}/ --batch-size {params.batches} --tmp-dir {resources.tmpdir} --merge-input-intervals \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader"""
+
+
+
