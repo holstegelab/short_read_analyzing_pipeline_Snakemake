@@ -31,7 +31,7 @@ rule deepvariant_sample_done:
     input:
         get_deepvariant_files
     output:
-        temp(touch(pj(DEEPVARIANT, "{sample}.done")))
+        touch(pj(DEEPVARIANT, "{sample}.done"))
     resources:
         mem_mb = 100,
         n = "1.0"

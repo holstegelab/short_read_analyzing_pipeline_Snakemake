@@ -32,7 +32,7 @@ rule gvcf_sample_done:
     input:
         get_gvcf_files,
     output:
-        temp(touch(pj(GVCF, "{sample}.done"))),
+        touch(pj(GVCF, "{sample}.done")),
     resources:
         n="1.0",
         mem_mb=50,
@@ -281,3 +281,5 @@ rule extract_exomes_gvcf:
                     cp {input.gvcf} {output.gvcf_exome}
                     cp {input.tbi} {output.tbi}
                 """)
+
+
