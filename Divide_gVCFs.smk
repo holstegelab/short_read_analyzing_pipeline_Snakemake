@@ -15,7 +15,7 @@ rule Divide_gVCFs_all:
 
 rule divide_deepvariant:
     input: get_deepvariant_files
-    output: expand(pj(DEEPVARIANT, 'gVCF', 'DIVIDED', '{region}', '{sample}.{region}.wg.vcf.gz'), region=level2_regions)
+    output: expand(pj(DEEPVARIANT, 'gVCF', 'DIVIDED', '{region}', '{sample}.{region}.wg.vcf.gz'), region=level2_regions, allow_missing = True)
     conda: CONDA_MAIN
     run:
         for region in level2_regions:
