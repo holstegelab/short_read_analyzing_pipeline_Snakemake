@@ -64,8 +64,9 @@ def generate_gvcf_input_DV(wildcards):
                 else:
                     filenames = expand("{cd}/{GVCF}/gVCF/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=DEEPVARIANT,region = chunk, sample=sample,allow_missing=True)
             else:  # WES
-                chunk = convert_to_level0(region)
-                filenames = expand("{cd}/{GVCF}/gVCF/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=DEEPVARIANT,region = chunk, sample=sample,allow_missing=True)
+                # chunk = convert_to_level0(region)
+                # 'gVCF', 'DIVIDED', '{region}', '{sample}.{region}.wg.vcf.gz'
+                filenames = expand("{cd}/{GVCF}/gVCF/DIVIDED/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=DEEPVARIANT,region = region, sample=sample,allow_missing=True)
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
     return res
