@@ -9,7 +9,7 @@ def get_deepvariant_files(wildcards):#{{{
         return [pj(DEEPVARIANT,  'gVCF', region, f'{sample}.{region}.wg.vcf.gz') for region in level0_regions]#}}}
 
 rule Divide_gVCFs_all:
-    input: expand(pj(DEEPVARIANT, 'gVCF', 'DIVIDED', '{region}', '{sample}.{region}.wg.vcf.gz'), region=level2_regions)
+    input: expand(pj(DEEPVARIANT, 'gVCF', 'DIVIDED', '{region}', '{sample}.{region}.wg.vcf.gz'), region=level2_regions, sample=sample_names)
     default_target: True
 
 
