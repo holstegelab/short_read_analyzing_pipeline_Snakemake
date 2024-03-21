@@ -20,5 +20,4 @@ rule divide_deepvariant:
     run:
         for region in level2_regions_diploid:
             bed_file = region_to_file(region, wgs=True, extension='bed')
-            for input_file in input:
-                shell(f'bcftools view -R {bed_file} {input_file} -O z -o deepvariant/gVCF/DIVIDED/{region}/{wildcards.sample}.{region}.wg.vcf.gz')
+            shell(f'bcftools view -R {bed_file} {input} -O z -o deepvariant/gVCF/DIVIDED/{region}/{wildcards.sample}.{region}.wg.vcf.gz')
