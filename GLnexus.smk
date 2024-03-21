@@ -158,6 +158,9 @@ use rule glnexus_HC as glnexus_DV with:
     output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
     log: pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
     params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_2.DB"),
+            bed= region_to_bed_file,
+            mem_gb=17,
+            conf_filters= conf_filter,
 
 use rule index_deep as index_deep_2 with:
     input: rules.glnexus_DV.output.vcf
