@@ -157,7 +157,7 @@ rule archive_get:
                           e and not os.path.isabs(e)])
 
         archive_files = " ".join([f.replace('archive:/','') for f in files if f.startswith('archive:/')])
-        shell("dmget -a " + archive_files)
+        shell("dmget -a " + "'" + archive_files + "'")
         shell("touch {output}")
 
 
