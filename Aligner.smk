@@ -156,8 +156,8 @@ rule archive_get:
             files.extend([append_prefix(prefixpath,e) for e in itertools.chain(files1,files2) if
                           e and not os.path.isabs(e)])
 
-        archive_files = " ".join([f.replace('archive:/','') for f in files if f.startswith('archive:/')])
-        shell("dmget -a " + "'" + archive_files + "'")
+        archive_files = " ".join([f'"{f.replace("archive:/", "")}"' for f in files if f.startswith("archive:/")])
+        shell("dmget -a " +  archive_files)
         shell("touch {output}")
 
 
