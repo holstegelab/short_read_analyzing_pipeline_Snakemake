@@ -256,7 +256,7 @@ rule archive_to_active:
             shell("""
             mkdir -p `dirname {destination}`
             rsync --size-only {source} {destination}
-            dmput -r -w {source} || true
+            dmput -r -w "{source}" || true
             """)
 
         shell("""
