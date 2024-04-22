@@ -254,8 +254,8 @@ rule archive_to_active:
 
             destination = pj(destinationpath,e)
             shell("""
-            mkdir -p `dirname {destination}`
-            rsync --size-only {source} {destination}
+            mkdir -p `dirname "{destination}"`
+            rsync --size-only "{source}" "{destination}"
             dmput -r -w "{source}" || true
             """)
 
