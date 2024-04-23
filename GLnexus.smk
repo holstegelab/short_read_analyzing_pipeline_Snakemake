@@ -1,7 +1,7 @@
 import os
 from common import *
 current_dir = os.getcwd()
-
+import concurrent.futures
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -56,16 +56,7 @@ def generate_gvcf_input_HC_divided(wildcards):
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
                 continue
-            # Determine if it is WGS or WES
-            if 'wgs' in SAMPLEINFO[sample]["sample_type"] or "WGS" in SAMPLEINFO[sample]["sample_type"] :
-                chunk = convert_to_level1(region)
-                if genotype_mode == 'WES':
-                    filenames = expand("{cd}/{GVCF}/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
-                else:
-                    filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
-            else:  # WES
-                chunk = convert_to_level0(region)
-                filenames = expand("{cd}/{GVCF}/reblock/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=GVCF,region = chunk, sample=sample,allow_missing=True)
+            filenames = expand("")
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
     return res
@@ -150,11 +141,9 @@ rule GLnexus_all:
     default_target: True
 
 
-# import concurrent.futures
+
 #
-# def run_bcftools(i):
-#     cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs/{i}.vcf"
-#     shell(cmd)
+
 #
 # rule glnexus_HC:
 #     input: generate_gvcf_input_HC
@@ -180,6 +169,9 @@ rule GLnexus_all:
 #         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 8 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view --threads 9 -  | bgzip -@ 9 -c > {output} 2>> {log}
 #         """)
 
+def run_bcftools_HC(i):
+    cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_HC/{i}.vcf"
+    shell(cmd)
 
 rule glnexus_HC:
     input: generate_gvcf_input_HC
@@ -187,44 +179,60 @@ rule glnexus_HC:
     log: pj(current_dir,"logs","glnexus","glnexus_HC_{region}.{genotype_mode}.log")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = region_to_bed_file,
-            mem_gb = 17,
-            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus.DB"),
+            mem_gb = 120,
+            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_HC.DB"),
             conf_filters = conf_filter,
             # generate_gvcf_input_HC_divided =
-    threads: 9
+    threads: 64
     resources:
-        n = "9",
-        mem_mb = 17000,
-        active_use_add= 7000
+        n = "64",
+        mem_mb = 120000,
+        active_use_add= 5000
     run:
-        shell("mkdir -p {wildcards.region}_gvcfs")
-        for i in input:
-
-            cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs/{i}.vcf"
-            shell(cmd)
+        shell("mkdir -p {wildcards.region}_gvcfs_HC")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+            executor.map(run_bcftools_HC, input)
         shell("""
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 8 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view --threads 9 -  | bgzip -@ 9 -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
+        rm -rf {wildcards.region}_gvcfs_HC
         """)
 rule index_deep:
     input: rules.glnexus_HC.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz.tbi")
     conda: CONDA_VCF
     resources: n = "1",
-            active_use_remove = 7000
+            active_use_remove = 5000
     shell: "gatk IndexFeatureFile -I {input}"
 
 
-
-use rule glnexus_HC as glnexus_DV with:
-    input: gvcf_input = generate_gvcf_input_DV
+def run_bcftools_DV(i):
+    cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_DV/{i}.vcf"
+    shell(cmd)
+rule glnexus_DV:
+    input: generate_gvcf_input_DV
     output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
     log: pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
-    params: scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_2.DB"),
-            bed= region_to_bed_file,
-            mem_gb=17,
-            conf_filters= conf_filter,
-
+    params: bed = region_to_bed_file,
+            mem_gb = 120,
+            scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_DV.DB"),
+            conf_filters = conf_filter,
+            # generate_gvcf_input_HC_divided =
+    container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
+    threads: 64
+    resources:
+        n = "64",
+        mem_mb = 120000,
+        active_use_add= 5000
+    run:
+        shell("mkdir -p {wildcards.region}_gvcfs_DV")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+            executor.map(run_bcftools_DV, input)
+        shell("""
+        rm -rf {params.scratch_dir} &&
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {input} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
+        rm -rf {wildcards.region}_gvcfs_DV
+        """)
 use rule index_deep as index_deep_2 with:
     input: rules.glnexus_DV.output.vcf
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
