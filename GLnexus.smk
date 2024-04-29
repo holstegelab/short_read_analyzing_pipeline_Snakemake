@@ -160,7 +160,9 @@ rule GLnexus_all:
 
 
 def run_bcftools_HC(i, bed, region):
-    cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_HC/{i}.vcf"
+    filename = i.split("/")[-1]
+    samplename = filename.split(".")[0]
+    cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_HC/{samplename}.vcf"
     return cmd
 
 rule glnexus_HC:
@@ -201,7 +203,9 @@ rule index_deep:
 
 
 def run_bcftools_DV(i, bed, region):
-    cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_DV/{i}.vcf"
+    filename = i.split("/")[-1]
+    samplename = filename.split(".")[0]
+    cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_DV/{samplename}.vcf"
     return cmd
 
 rule glnexus_DV:
