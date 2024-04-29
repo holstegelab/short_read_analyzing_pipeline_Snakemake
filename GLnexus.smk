@@ -198,7 +198,8 @@ rule index_deep:
 
 def run_bcftools_DV(i):
     cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_DV/{i}.vcf"
-    shell(cmd)
+    return shell(cmd)
+
 rule glnexus_DV:
     input: generate_gvcf_input_DV
     output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
