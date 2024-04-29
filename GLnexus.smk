@@ -183,12 +183,8 @@ rule glnexus_HC:
         cmds = []
         for i in input:
             cmds.extend(run_bcftools_HC(i))
-            if len(cmds) == 64:
-                with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
-                    executor.map(shell, cmds)
-                cmds = []
-            else:
-                continue
+        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+            executor.map(shell, cmds)
 
         shell("""
         rm -rf {params.scratch_dir} &&
@@ -228,12 +224,8 @@ rule glnexus_DV:
         cmds = []
         for i in input:
             cmds.extend(run_bcftools_DV(i))
-            if len(cmds) == 64:
-                with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
-                    executor.map(shell, cmds)
-                cmds = []
-            else:
-                continue
+        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+            executor.map(shell, cmds)
         shell("""
         rm -rf {params.scratch_dir} &&
         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_DV_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
