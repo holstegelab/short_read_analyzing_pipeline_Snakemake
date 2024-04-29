@@ -182,6 +182,8 @@ rule glnexus_HC:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
         cmds = [run_bcftools_HC(i) for i in input]
         with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+            print(cmds)
+            print(map("shell", cmds))
             executor.map(shell, cmds)
 
         shell("""
