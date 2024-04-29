@@ -161,7 +161,7 @@ rule GLnexus_all:
 
 def run_bcftools_HC(i):
     cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_HC/{i}.vcf"
-    return shell(cmd)
+    return cmd
 
 rule glnexus_HC:
     input: generate_gvcf_input_HC
@@ -180,8 +180,16 @@ rule glnexus_HC:
         active_use_add= 5000
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
-        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
-            executor.map(run_bcftools_HC, input)
+        cmds = []
+        for i in input:
+            cmds.extend(run_bcftools_HC(i))
+            if len(cmds) == 64:
+                with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+                    executor.map(shell, cmds)
+                cmds = []
+            else:
+                continue
+
         shell("""
         rm -rf {params.scratch_dir} &&
         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_HC_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
@@ -198,7 +206,7 @@ rule index_deep:
 
 def run_bcftools_DV(i):
     cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_DV/{i}.vcf"
-    return shell(cmd)
+    return cmd
 
 rule glnexus_DV:
     input: generate_gvcf_input_DV
@@ -217,8 +225,15 @@ rule glnexus_DV:
         active_use_add= 5000
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_DV")
-        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
-            executor.map(run_bcftools_DV, input)
+        cmds = []
+        for i in input:
+            cmds.extend(run_bcftools_DV(i))
+            if len(cmds) == 64:
+                with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+                    executor.map(shell, cmds)
+                cmds = []
+            else:
+                continue
         shell("""
         rm -rf {params.scratch_dir} &&
         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_DV_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
