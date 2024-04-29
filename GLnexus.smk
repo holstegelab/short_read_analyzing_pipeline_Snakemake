@@ -180,9 +180,7 @@ rule glnexus_HC:
         active_use_add= 5000
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
-        cmds = []
-        for i in input:
-            cmds.extend(run_bcftools_HC(i))
+        cmds = [run_bcftools_DV(i) for i in input]
         with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
             executor.map(shell, cmds)
 
@@ -221,9 +219,7 @@ rule glnexus_DV:
         active_use_add= 5000
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_DV")
-        cmds = []
-        for i in input:
-            cmds.extend(run_bcftools_DV(i))
+        cmds = [run_bcftools_DV(i) for i in input]
         with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
             executor.map(shell, cmds)
         shell("""
