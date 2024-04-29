@@ -160,7 +160,7 @@ rule GLnexus_all:
 
 
 def run_bcftools_HC(i):
-    cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_HC/{i}.vcf"
+    cmd = f"bcftools view -R {{params.bed}} {i} -O v -o {{wildcards.region}}_gvcfs_HC/{i}.vcf"
     return cmd
 
 rule glnexus_HC:
@@ -201,7 +201,7 @@ rule index_deep:
 
 
 def run_bcftools_DV(i):
-    cmd = f"bcftools view -R {params.bed} {i} -O v -o {wildcards.region}_gvcfs_DV/{i}.vcf"
+    cmd = f"bcftools view -R {{params.bed}} {i} -O v -o {{wildcards.region}}_gvcfs_DV/{i}.vcf"
     return cmd
 
 rule glnexus_DV:
