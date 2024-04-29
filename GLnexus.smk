@@ -159,8 +159,8 @@ rule GLnexus_all:
 
 
 
-def run_bcftools_HC(i):
-    cmd = f"bcftools view -R {{params.bed}} {i} -O v -o {{wildcards.region}}_gvcfs_HC/{i}.vcf"
+def run_bcftools_HC(i, bed, region):
+    cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_HC/{i}.vcf"
     return cmd
 
 rule glnexus_HC:
@@ -180,7 +180,7 @@ rule glnexus_HC:
         active_use_add= 5000
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
-        cmds = [run_bcftools_HC(i) for i in input]
+        cmds = [run_bcftools_HC(i, params.bed, wildcards.region) for i in input]
         with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
             print(cmds)
             print(map("shell", cmds))
@@ -200,8 +200,8 @@ rule index_deep:
     shell: "gatk IndexFeatureFile -I {input}"
 
 
-def run_bcftools_DV(i):
-    cmd = f"bcftools view -R {{params.bed}} {i} -O v -o {{wildcards.region}}_gvcfs_DV/{i}.vcf"
+def run_bcftools_DV(i, bed, region):
+    cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_DV/{i}.vcf"
     return cmd
 
 rule glnexus_DV:
@@ -221,7 +221,7 @@ rule glnexus_DV:
         active_use_add= 5000
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_DV")
-        cmds = [run_bcftools_DV(i) for i in input]
+        cmds = [run_bcftools_DV(i, params.bed, wildcards.region) for i in input]
         with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
             executor.map(shell, cmds)
         shell("""
