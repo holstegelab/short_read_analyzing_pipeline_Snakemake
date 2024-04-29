@@ -56,7 +56,7 @@ def generate_gvcf_input_HC_divided(wildcards):
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
                 continue
-            filenames = expand("{cd}/{region}_gvcfs_HC/{i}.vcf", cd = current_dir, i = sample, allow_missing=True)
+            filenames = expand("{cd}/{{region}}_gvcfs_HC/{i}.vcf", cd = current_dir, i = sample, allow_missing=True)
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
     return res
@@ -98,7 +98,7 @@ def generate_gvcf_input_DV_divided(wildcards):
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
                 continue
-            filenames = expand("{cd}/{region}_gvcfs_DV/{i}.vcf", cd = current_dir, i = sample, allow_missing=True)
+            filenames = expand("{cd}/{{region}}_gvcfs_DV/{i}.vcf", cd = current_dir, i = sample, allow_missing=True)
             gvcf_input.extend(filenames)
         res.extend(gvcf_input)
     return res
