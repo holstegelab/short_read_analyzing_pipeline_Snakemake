@@ -179,18 +179,16 @@ rule glnexus_HC:
     resources:
         n = "64",
         mem_mb = 120000,
-        active_use_add= 5000
+        active_use_add= 500
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
         cmds = [run_bcftools_HC(i, params.bed, wildcards.region) for i in input]
         with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
-            print(cmds)
-            print(map("shell", cmds))
             executor.map(shell, cmds)
 
         shell("""
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_HC_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 63 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_HC_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
         rm -rf {wildcards.region}_gvcfs_HC
         """)
 rule index_deep:
@@ -198,7 +196,7 @@ rule index_deep:
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz.tbi")
     conda: CONDA_VCF
     resources: n = "1",
-            active_use_remove = 5000
+            active_use_remove = 500
     shell: "gatk IndexFeatureFile -I {input}"
 
 
@@ -222,7 +220,7 @@ rule glnexus_DV:
     resources:
         n = "64",
         mem_mb = 120000,
-        active_use_add= 5000
+        active_use_add= 500
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_DV")
         cmds = [run_bcftools_DV(i, params.bed, wildcards.region) for i in input]
@@ -230,7 +228,7 @@ rule glnexus_DV:
             executor.map(shell, cmds)
         shell("""
         rm -rf {params.scratch_dir} &&
-        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 62 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_DV_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
+        glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 63 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_DV_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
         rm -rf {wildcards.region}_gvcfs_DV
         """)
 use rule index_deep as index_deep_2 with:
