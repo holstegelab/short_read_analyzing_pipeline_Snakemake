@@ -87,8 +87,8 @@ rule GenomicDBImport:
     priority: 30
     resources: 
         n="3",
-        mem_mb = lambda wildcards, attempt: attempt*8500,
-        mem_mb_reduced = lambda wildcards, attempt: attempt * 6500, #tile db is not included in java memory
+        mem_mb = lambda wildcards, attempt: attempt*20500,
+        mem_mb_reduced = lambda wildcards, attempt: attempt * 16500, #tile db is not included in java memory
         tmpdir= TMPDIR
     shell:
         """
