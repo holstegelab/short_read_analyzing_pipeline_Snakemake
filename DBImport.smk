@@ -76,7 +76,7 @@ rule GenomicDBImport:
         intervals = region_to_IL_file
     conda: CONDA_VCF
     output:
-        ready=touch(temp('labels/done_p{region}.txt')),
+        ready=touch('labels/done_p{region}.txt'),
         dbi=temp(directory(DBIpath + "p{region}"))
     threads: 3
     params:
