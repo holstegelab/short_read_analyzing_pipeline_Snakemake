@@ -48,7 +48,7 @@ rule Genotype_all:
 
 
 def get_mem_mb_genotype(wildcrads, attempt):
-    return attempt*int(20000)
+    return attempt*int(30000)
 
 def region_to_IL_file(wildcards):#{{{
     """Converts a region to a interval_list file location (see common.py and Tools.smk)"""
@@ -73,7 +73,7 @@ rule GenotypeDBI:
     conda: CONDA_VCF
     resources:
         mem_mb_java = get_mem_mb_genotype,
-        mem_mb=lambda wildcards: 5000 if genotype_alg == 'GnarlyGenotyper' else 10000 #need to make this sample nr. and region level dependent.
+        mem_mb=lambda wildcards: 15000 if genotype_alg == 'GnarlyGenotyper' else 25000 #need to make this sample nr. and region level dependent.
     priority: 40
     shell:"""
         {gatk} {params.genotype_alg} --java-options "-Xmx{resources.mem_mb}M" -R {REF} -V gendb://{input.dir} -O {output.raw_vcfDBI} -D {DBSNP} --intervals {input.intervals} {params.annotations} --annotate-with-num-discovered-alleles --genomicsdb-shared-posixfs-optimizations  --ploidy {params.ploidy} --only-output-calls-starting-in-intervals
@@ -83,12 +83,12 @@ rule posterior_phasing:
     input:
        vcf = pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz")
     output:
-        rescaled=expand(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing=True),
-        tbi = ensure(expand(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz.tbi"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing = True), non_empty=True)
+        rescaled=pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"),
+        tbi = ensure(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_VCF
     resources:
-        mem_mb=5000,
-        n=1
+        mem_mb=15000,
+        n=2
     priority: 40
     shell:"""
             mkdir -p {genotype_alg}/vcfs/rescaled
