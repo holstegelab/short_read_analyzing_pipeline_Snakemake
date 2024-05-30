@@ -77,7 +77,7 @@ rule GenomicDBImport:
     conda: CONDA_VCF
     output:
         ready=touch('labels/done_p{region}.txt'),
-        dbi=temp(directory(DBIpath + "p{region}"))
+        dbi=directory(DBIpath + "p{region}")
     threads: 3
     params:
         inputs=lambda wildcards,input: ' '.join([f'-V {gvcf}' for gvcf in input.g]),
@@ -86,7 +86,7 @@ rule GenomicDBImport:
         merge_contigs=lambda wildcards: ' --merge-contigs-into-num-partitions 1 '  if 'O' in wildcards['region'] else ''
     priority: 30
     resources: 
-        n="3",
+        n="10",
         mem_mb = lambda wildcards, attempt: attempt*20500,
         mem_mb_reduced = lambda wildcards, attempt: attempt * 16500, #tile db is not included in java memory
         tmpdir= TMPDIR
