@@ -122,7 +122,7 @@ rule annotate_revel:
 
 rule annotate_gene:
     input: temp_vcf = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_{genotype_mode}.annotated_pos_only.vcf")
-    output: vcf_annotated=temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated.hg38_multianno.vcf")),
+    output: vcf_annotated=pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated.hg38_multianno.vcf"),
     conda: CONDA_ANNOVAR
     params:
         out=pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated")
