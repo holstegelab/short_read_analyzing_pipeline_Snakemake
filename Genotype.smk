@@ -37,7 +37,7 @@ else:
 
 rule Genotype_all:
     input:
-        expand("{current_dir}/{genotype_alg}/{VCF}/ANNOTATED/{region}.annotated.vcf.gz", VCF = VCF, current_dir = current_dir, genotype_alg = genotype_alg, region = parts),
+        expand("{current_dir}/{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz", genotype_mode = genotype_mode, VCF = VCF, current_dir = current_dir, genotype_alg = genotype_alg, region = parts),
         # rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
@@ -101,13 +101,13 @@ rule posterior_phasing:
 
 rule extract_positions:
     input: vcf = pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"),
-    output: vcf = temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_pos_only.vcf"))
+    output: vcf = temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_{genotype_mode}_pos_only.vcf"))
     conda: CONDA_MAIN
     shell: "bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}"
 
 rule annotate_revel:
-    input: vcf = temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_pos_only.vcf"))
-    output: vcf_annotated = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf")
+    input: vcf = temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_{genotype_mode}_pos_only.vcf"))
+    output: vcf_annotated = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_{genotype_mode}.annotated_pos_only.vcf")
     conda: CONDA_MAIN
     resources: n = "4",
             mem_mb = 6000
@@ -117,27 +117,27 @@ rule annotate_revel:
         """
         mkdir -p {params.temp_dir} &&
 
-        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {output.vcf_annotated} --threads {resources.n} 2> {log}
+        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {output.vcf_annotated} --threads {resources.n}
         """
 
 rule annotate_gene:
-    input: temp_vcf = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf")
-    output: vcf_annotated=temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}.annotated.hg38_multianno.vcf")),
+    input: temp_vcf = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" , "{region}_{genotype_mode}.annotated_pos_only.vcf")
+    output: vcf_annotated=temp(pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated.hg38_multianno.vcf")),
     conda: CONDA_ANNOVAR
     params:
-        out=pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}.annotated")
+        out=pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated")
     # log: pj(current_dir,"logs","glnexus","annotate_gene_{region}.{genotype_mode}.{types_of_gl}.log")
     resources: n = "2",
                 mem_mb = 5000
     shell:
         """
-        perl {annovar} {input.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 2> {log}
+        perl {annovar} {input.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 
         """
 
 rule bring_anno_to_samples:
-    input: vcf_annotated = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}.annotated.hg38_multianno.vcf"),
+    input: vcf_annotated = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated.hg38_multianno.vcf"),
             samples_vcf =  pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"),
-    output: vcf_anno_samples = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED" ,"{region}.annotated.vcf.gz"),
+    output: vcf_anno_samples = pj(current_dir, "{genotype_alg}", VCF,  "ANNOTATED" ,"{region}_{genotype_mode}.annotated.vcf.gz"),
             # tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_MAIN
     resources:
