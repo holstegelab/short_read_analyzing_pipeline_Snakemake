@@ -42,7 +42,8 @@ rule Genotype_all:
         # [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
         # [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz.tbi" for region in parts],
         # [f"{genotype_alg}/{VCF}/rescaled/{region}_{genotype_mode}.rescaled.vcf.gz" for region in parts],
-        [f"{current_dir}/{genotype_alg}/{VCF}/ANNOTATED/{region}.annotated.vcf.gz" for region in parts],
+        [f"{current_dir}/{genotype_alg}/VCF/ANNOTATED/{region}.annotated.vcf.gz" for region in parts],
+        # pj(current_dir, "{genotype_alg}", VCF, "ANNOTATED", "{region}.annotated.vcf.gz"),
         # [f"{current_dir}/{genotype_alg}/{VCF}/ANNOTATED/{region}.annotated.vcf.gz.tbi" for region in parts],
     default_target: True
 
