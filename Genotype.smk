@@ -37,6 +37,7 @@ else:
 
 rule Genotype_all:
     input:
+        expand(current_dir, "{genotype_alg}", VCF, "ANNOTATED", "{region}.annotated.vcf.gz", current_dir = current_dir, genotype_alg = genotype_alg, region = parts),
         # rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
@@ -44,7 +45,6 @@ rule Genotype_all:
         # [f"{genotype_alg}/{VCF}/rescaled/{region}_{genotype_mode}.rescaled.vcf.gz" for region in parts],
 
         # [f"{current_dir}/{genotype_alg}/VCF/ANNOTATED/{region}.annotated.vcf.gz" for region in parts],
-        expand(current_dir, "{genotype_alg}", VCF, "ANNOTATED", "{region}.annotated.vcf.gz", current_dir = current_dir, genotype_alg = genotype_alg, region = parts),
         # [f"{current_dir}/{genotype_alg}/{VCF}/ANNOTATED/{region}.annotated.vcf.gz.tbi" for region in parts],
     default_target: True
 
