@@ -81,7 +81,7 @@ rule GenotypeDBI:
 
 rule posterior_phasing:
     input:
-       vcf = expand(pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing=True),
+       vcf = pj("{genotype_alg}",VCF, "merged_{region}.{genotype_mode}.vcf.gz")
     output:
         rescaled=expand(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing=True),
         tbi = ensure(expand(pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz.tbi"), genotype_alg = genotype_alg, genotype_mode = genotype_mode, allow_missing = True), non_empty=True)
