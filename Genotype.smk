@@ -38,6 +38,7 @@ else:
 rule Genotype_all:
     input:
         expand("{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz", genotype_mode = genotype_mode, VCF = VCF, genotype_alg = genotype_alg, region = parts),
+    # pj("{genotype_alg}", VCF, "ANNOTATED", "{region}_{genotype_mode}.annotated.vcf.gz")
         # rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
         # [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
@@ -137,7 +138,9 @@ rule annotate_gene:
 rule bring_anno_to_samples:
     input: vcf_annotated = pj("{genotype_alg}", VCF,  "ANNOTATED_temp" ,"{region}_{genotype_mode}.annotated.hg38_multianno.vcf"),
             samples_vcf =  pj("{genotype_alg}", VCF, "rescaled", "{region}_{genotype_mode}.rescaled.vcf.gz"),
-    output: vcf_anno_samples = pj("{genotype_alg}", VCF,  "ANNOTATED" ,"{region}_{genotype_mode}.annotated.vcf.gz"),
+    output:
+            vcf_anno_samples = "{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz",
+            # vcf_anno_samples = pj("{genotype_alg}", VCF,  "ANNOTATED" ,"{region}_{genotype_mode}.annotated.vcf.gz"),
             # tbi = ensure(pj("{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_MAIN
     resources:
