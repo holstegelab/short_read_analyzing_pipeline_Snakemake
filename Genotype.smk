@@ -37,7 +37,6 @@ else:
 
 rule Genotype_all:
     input:
-
         [f"{genotype_alg}/{VCF}/merged_{region}.{genotype_mode}.vcf.gz" for region in parts],
         # expand(['{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz.tbi'], genotype_mode = genotype_mode, VCF = VCF, genotype_alg = genotype_alg, region = parts),
      # pj("{genotype_alg}", VCF, "ANNOTATED", "{region}_{genotype_mode}.annotated.vcf.gz")
