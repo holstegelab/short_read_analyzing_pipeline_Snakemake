@@ -49,7 +49,7 @@ rule Genotype_all:
 
         # [f"{current_dir}/{genotype_alg}/VCF/ANNOTATED/{region}.annotated.vcf.gz" for region in parts],
         # [f"{current_dir}/{genotype_alg}/{VCF}/ANNOTATED/{region}.annotated.vcf.gz.tbi" for region in parts],
-        default_target: True
+    default_target: True
 
 
 
