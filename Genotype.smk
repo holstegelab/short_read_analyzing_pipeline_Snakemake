@@ -37,7 +37,7 @@ else:
 
 rule Genotype_all:
     input:
-        expand('{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz', genotype_mode = genotype_mode, VCF = VCF, genotype_alg = genotype_alg, region = parts),
+        expand('{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz.tbi', genotype_mode = genotype_mode, VCF = VCF, genotype_alg = genotype_alg, region = parts),
     # pj("{genotype_alg}", VCF, "ANNOTATED", "{region}_{genotype_mode}.annotated.vcf.gz")
         # rule_all_combine,
         # expand(["{vcf}/Merged_raw_DBI_{chr}.p{chr_p}.{mode}.vcf.gz"],zip,chr=main_chrs_db,chr_p=chr_p, vcf = [config['VCF']]*853, mode = [mode]*853),
@@ -151,6 +151,12 @@ rule bring_anno_to_samples:
         bgzip {input.vcf_annotated}
         tabix -p vcf {input.vcf_annotated}.gz
         bcftools annotate -a {input.vcf_annotated}.gz -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}
-        tabix -p vcf {output.vcf_anno_samples}  
         """
+        # tabix -p vcf {output.vcf_anno_samples}
 
+
+rule checking:
+    input: vcf = "{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz"
+    output: vcf = "{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz.tbi"
+    conda: CONDA_MAIN
+    shell: "tabix -p vcf {input.vcf}"
