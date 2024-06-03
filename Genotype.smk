@@ -4,8 +4,8 @@ wildcard_constraints:
     sample="[\w\d_\-@]+",
     genotype_level="[2|3|4]",
     region="[0-9XYAFOH]+",
-    genotype_alg="[GenotypeGVCFs|GnarlyGenotyper]",
-    genotype_mode="[WES|WGS]"
+    genotype_alg="(GenotypeGVCFs|GnarlyGenotyper)",
+    genotype_mode="(WES|WGS)"
 
 from common import *
 
