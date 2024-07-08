@@ -81,6 +81,7 @@ BAMSTATS= 'scripts/bam_stats.py'
 DECHIMER= 'scripts/bam_dechimer.py'
 DECHIMER_THRESHOLD= 0.005
 MERGEPHASE = 'scripts/merge_phasing.py'
+MERGEPHASEDIRECT = 'scripts/merge_phasing_direct.py'
 CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
 SLOPSCRIPT = 'scripts/slop_start_stop.py'
 

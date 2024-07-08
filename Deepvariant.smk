@@ -68,7 +68,7 @@ rule deepvariant:
             skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
             inter_dir = pj(DEEPVARIANT,'DV_intermediate'),
             check = CHECKEMPTY
-    container: 'docker://google/deepvariant:1.6.0'
+    container: 'docker://google/deepvariant:1.6.1'
     resources:
         n="2.5",
         nshards=4,
@@ -109,7 +109,7 @@ rule DVWhatshapPhasingMerge:
         gvcf= pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
         gvcf_tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     params:
-        merge_script=srcdir(MERGEPHASE),
+        merge_script=srcdir(MERGEPHASEDIRECT),
         ploidy=lambda wildcards: 1 if wildcards["region"].endswith("H") else 2,
         skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y'))
     resources: 
