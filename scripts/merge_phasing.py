@@ -21,7 +21,7 @@ class PhaseBlock:
         if self.variants:
             assert pos >= self.variants[-1], 'Adding variant with earlier position should not be possible'
             
-            if (pos - self.variants[-1]) > 50000: #check if the block makes too big of a jump. Happens rarely, should be filtered. 
+            if (pos - self.variants[-1]) > 150000: #check if the block makes too big of a jump. Happens rarely, should be filtered. 
                 print(f"Jump attempted for {self} by adding variant {pos} to {self.variants}")
                 return False
         self.variants.append(pos)
@@ -233,6 +233,13 @@ def main():
     # Open the phased VCF file
     vcf = cyvcf2.VCF(args.vcf)
 
+
+    #contig order check
+    contig_order = {sname:pos for pos,sname in enumerate(gvcf.seqnames)}
+    if len(vcf.seqnames) != len(gvcf.seqnames) or any([a != b for a,b in zip(vcf.seqnames, gvcf.seqnames)]):
+        print('Unequal contigs or contig ordering between vcf and gvcf')
+        return;
+
     # Open the output gVCF file for writing
     out = cyvcf2.Writer(args.output_gvcf, gvcf)
 
@@ -244,6 +251,9 @@ def main():
         file.add_format_to_header({'ID': 'PSW', 'Number': '1', 'Type': 'Integer', 'Description': 'Phase block ID for phase info in GTW.'})
 
 
+
+    last_gvcf_chrom_idx = -1
+    last_vcf_chrom_idx = -1
     # Get the next record from each file
     try:
         gvcf_record = next(gvcf)
@@ -252,8 +262,10 @@ def main():
 
     try:
         vcf_record = next(vcf)
+        last_vcf_chrom_idx = contig_order[vcf_record.CHROM]
         while 'PS' not in vcf_record.FORMAT:
             vcf_record = next(vcf)
+
         stats['nphased_variants_wh'] = 1
     except StopIteration:
         vcf_record = None
@@ -266,7 +278,14 @@ def main():
     # Loop over the variants in both files
     while gvcf_record is not None and vcf_record is not None:
         # If the gVCF record is before the phased VCF record, get the next gVCF record
-        if gvcf_record.CHROM < vcf_record.CHROM or (gvcf_record.CHROM == vcf_record.CHROM and gvcf_record.POS < vcf_record.POS):
+        assert last_vcf_chrom_idx <= contig_order[vcf_record.CHROM], 'Variants not sorted according to contig order in header.'
+        last_vcf_chrom_idx = contig_order[vcf_record.CHROM]
+
+        assert last_gvcf_chrom_idx <= contig_order[gvcf_record.CHROM], 'Variants not sorted according to contig order in header.'
+        last_gvcf_chrom_idx = contig_order[gvcf_record.CHROM]
+
+        if (contig_order[gvcf_record.CHROM] < contig_order[vcf_record.CHROM]) or \
+                (gvcf_record.CHROM == vcf_record.CHROM and gvcf_record.POS < vcf_record.POS):
             if 'PID' in gvcf_record.FORMAT: #if gvcf record is phased
                 gatk_phase_block = int(gvcf_record.format('PID')[0].split('_')[0]) #get the phase block id
                 gatkkey = f'{gvcf_record.CHROM}:{gatk_phase_block}'
@@ -281,7 +300,8 @@ def main():
                 gvcf_record = None
 
         # If the phased VCF record is before the gVCF record, get the next phased VCF record
-        elif vcf_record.CHROM < gvcf_record.CHROM or (vcf_record.CHROM == gvcf_record.CHROM and vcf_record.POS < gvcf_record.POS):
+        elif (contig_order[vcf_record.CHROM] < contig_order[gvcf_record.CHROM]) or \
+                (vcf_record.CHROM == gvcf_record.CHROM and vcf_record.POS < gvcf_record.POS):
             try:
                 vcf_record = next(vcf)
                 while 'PS' not in vcf_record.FORMAT: #skip unphased variants
