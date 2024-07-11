@@ -96,11 +96,21 @@ rule posterior_phasing:
         mem_mb=15000,
         n=2
     priority: 40
-    shell:"""
-            mkdir -p {genotype_alg}/vcfs/rescaled
-            gatk CalculateGenotypePosteriors --java-options "-Xmx{resources.mem_mb}M" -V {input} -O {output.rescaled}  
-        """
-
+    run:
+        if wildcards['region'].endswith("H"):
+            shell("mkdir -p {genotype_alg}/vcfs/rescaled")
+            shell("ln -r {input.vcf} {output.rescaled}")
+            shell("ln -r {input.vcf}.tbi {output.tbi}")
+        else:
+            shell("mkdir -p {genotype_alg}/vcfs/rescaled")
+            shell("gatk CalculateGenotypePosteriors --java-options \"-Xmx{resources.mem_mb}M\" -V {input.vcf} -O {output.rescaled}")
+    #
+    # shell:
+    #     """
+    #         mkdir -p {genotype_alg}/vcfs/rescaled
+    #         gatk CalculateGenotypePosteriors --java-options "-Xmx{resources.mem_mb}M" -V {input} -O {output.rescaled}
+    #     """
+    #
 
 
 rule extract_positions:

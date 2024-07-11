@@ -150,8 +150,8 @@ rule extract_exomes_dv:
         tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
-        tbi = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),
+        gvcf_exome = pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"),
+        tbi = pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     conda: CONDA_VCF
     params: java_options=DEFAULT_JAVA_OPTIONS,
             interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),

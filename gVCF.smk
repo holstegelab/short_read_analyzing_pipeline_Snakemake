@@ -130,12 +130,8 @@ rule HaplotypeCaller:
         interval=region_to_interval_file,
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        orig_gvcf=ensure(
-            temp(pj(GVCF, "raw/{region}/{sample}.{region}.g.vcf.gz")), non_empty=True
-        ),
-        orig_gvcf_tbi=ensure(
-            temp(pj(GVCF, "raw/{region}/{sample}.{region}.g.vcf.gz.tbi")), non_empty=True
-        ),
+        orig_gvcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.g.vcf.gz")),
+        orig_gvcf_tbi=temp(pj(GVCF, "raw/{region}/{sample}.{region}.g.vcf.gz.tbi")),
         genotyped_vcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.vcf.gz")),
         genotyped_vcf_tbi=temp(pj(GVCF, "raw/{region}/{sample}.{region}.vcf.gz.tbi")),
         tmp_vcf=temp(pj(GVCF, "raw/{region}/{sample}.{region}.tmp.vcf.gz")),
@@ -161,6 +157,7 @@ rule HaplotypeCaller:
         ref=get_ref_by_validated_sex,
         dragen_mode=lambda wildcards: "--dragen-mode true " if not "H" in wildcards["region"] else "",
         merge_script=srcdir(MERGEPHASE),
+        skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
     priority: 28
     # Overview of available annotations (GATK version 4.4)
     # AS_StandardAnnotation: AS_BaseQualityRankSumTest, AS_FisherStrand, AS_InbreedingCoeff, AS_MappingQualityRankSumTest, AS_QualByDepth, AS_RMSMappingQuality, AS_ReadPosRankSumTest, AS_StrandOddsRatio (all allele specific annotations)
@@ -190,40 +187,56 @@ rule HaplotypeCaller:
 
     shell:
         """ 
-        {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller \
-            -R {params.ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
-            --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-            --annotate-with-num-discovered-alleles --adaptive-pruning \
-            -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
-            -I {input.bams} -O {output.orig_gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true \
-            --seconds-between-progress-updates 120 \
-            {params.dragen_mode} --dragstr-params-path {input.model}
-
-        {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" GenotypeGVCFs \
-                -R {params.ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} \
-        --seconds-between-progress-updates 120 
-
-
-        mkdir -p `dirname {output.wstats}`
-        if [ {params.ploidy} -eq 2 ]
-        then 
-            whatshap unphase  {output.genotyped_vcf} >  {output.tmp_vcf}
-            whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf} |tail -n 20
-            bcftools index --tbi {output.vcf}
-            whatshap stats {output.genotyped_vcf} > {output.wstats} 
-            whatshap stats {output.vcf} >> {output.wstats} 
-            python {params.merge_script} {output.orig_gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats} -q
-            bcftools annotate -x 'FORMAT/PGT,FORMAT/PS,FORMAT/PID' {output.tmp_gvcf} -o {output.gvcf}
+        if [ {params.skipsex} -eq 0 ]
+        then
+            {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller \
+                -R {params.ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
+                --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
+                --annotate-with-num-discovered-alleles --adaptive-pruning \
+                -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
+                -I {input.bams} -O {output.orig_gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true \
+                --seconds-between-progress-updates 120 \
+                {params.dragen_mode} --dragstr-params-path {input.model}
+    
+            {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" GenotypeGVCFs \
+                    -R {params.ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} \
+            --seconds-between-progress-updates 120 
+    
+    
+            mkdir -p `dirname {output.wstats}`
+            if [ {params.ploidy} -eq 2 ]
+            then 
+                whatshap unphase  {output.genotyped_vcf} >  {output.tmp_vcf}
+                whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf} |tail -n 20
+                bcftools index --tbi {output.vcf}
+                whatshap stats {output.genotyped_vcf} > {output.wstats} 
+                whatshap stats {output.vcf} >> {output.wstats} 
+                python {params.merge_script} {output.orig_gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats} -q
+                bcftools annotate -x 'FORMAT/PGT,FORMAT/PS,FORMAT/PID' {output.tmp_gvcf} -o {output.gvcf}
+            else
+                touch {output.tmp_vcf}
+                touch {output.vcf}
+                touch {output.vcf}.tbi
+                whatshap stats {output.genotyped_vcf} > {output.wstats} || true
+                touch {output.mwstats}
+                touch {output.tmp_gvcf}
+                bcftools view {output.orig_gvcf} -o {output.gvcf}
+            fi  
+            bcftools index --tbi {output.gvcf}
         else
+            touch {output.orig_gvcf}
+            touch {output.orig_gvcf_tbi}
+            touch {output.genotyped_vcf}
+            touch {output.genotyped_vcf_tbi} 
             touch {output.tmp_vcf}
             touch {output.vcf}
-            touch {output.vcf}.tbi
-            whatshap stats {output.genotyped_vcf} > {output.wstats} || true
+            touch {output.vcf_tbi}
+            touch {output.wstats}
             touch {output.mwstats}
             touch {output.tmp_gvcf}
-            bcftools view {output.orig_gvcf} -o {output.gvcf}
-        fi  
-        bcftools index --tbi {output.gvcf}          
+            touch {output.gvcf}
+            touch {output.gvcf_tbi}
+        fi         
         """
 
 
