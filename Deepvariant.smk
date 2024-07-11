@@ -120,11 +120,22 @@ rule DVWhatshapPhasingMerge:
         mkdir -p `dirname {output.wstats}`
         if [ {params.ploidy} -eq 2 ]
         then 
-            whatshap phase  --ignore-read-groups --reference {REF} {input.vcf} {input.bams} -o {output.vcf}        
-            whatshap stats {output.vcf} > {output.wstats}
-            python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
-            bcftools view {output.tmp_gvcf} -o {output.gvcf}
-            bcftools index --tbi {output.gvcf}
+            if [ {params.skipsex} -eq 0 ]
+            then 
+                whatshap phase  --ignore-read-groups --reference {REF} {input.vcf} {input.bams} -o {output.vcf}        
+                whatshap stats {output.vcf} > {output.wstats}
+                python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
+                bcftools view {output.tmp_gvcf} -o {output.gvcf}
+                bcftools index --tbi {output.gvcf}
+            else
+                touch {output.vcf}
+                touch {output.vcf}.tbi
+                touch {output.wstats}
+                touch {output.mwstats}
+                touch {output.tmp_gvcf}
+                touch {output.gvcf}
+                touch {output.gvcf_tbi}
+            fi
         else
             touch {output.tmp_gvcf}
             touch {output.vcf}
