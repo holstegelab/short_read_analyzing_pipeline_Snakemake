@@ -118,7 +118,7 @@ rule DVWhatshapPhasingMerge:
     conda: CONDA_VCF
     shell: """
         mkdir -p `dirname {output.wstats}`
-        if [ {params.ploidy} -eq 2 ]
+        if [ {params.ploidy} -eq 2 ] && [ {params.skipsex} -eq 0 ]
         then 
             if [ {params.skipsex} -eq 0 ]
             then 
@@ -137,20 +137,15 @@ rule DVWhatshapPhasingMerge:
                 touch {output.gvcf_tbi}
             fi
         else
+            cp {input.vcf} {output.vcf}
+            cp {input.vcf_tbi} {output.vcf}.tbi
+            cp {input.gvcf} {output.gvcf}
+            cp {input.gvcf_tbi} {output.gvcf_tbi}
+
             touch {output.tmp_gvcf}
-            touch {output.vcf}
-            touch {output.vcf}.tbi
             touch {output.wstats}
             touch {output.mwstats}
             touch {output.tmp_gvcf}
-            if [ {params.skipsex} -eq 0 ]
-            then
-                bcftools view {input.gvcf} -o {output.gvcf}
-                bcftools index --tbi {output.gvcf}
-            else
-                touch {output.gvcf}
-                touch {output.gvcf_tbi}
-            fi
         fi
         """
 
@@ -167,7 +162,8 @@ rule extract_exomes_dv:
     params: java_options=DEFAULT_JAVA_OPTIONS,
             interval = lambda wildcards: region_to_file(region = wildcards.region, extension="interval_list"),
             padding = 500,
-            skipsex= lambda wildcards,input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y'))
+            skipsex= lambda wildcards,input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
+            check = CHECKEMPTY
     resources: n= "1.0",
                mem_mb= 1500,
 
@@ -178,6 +174,8 @@ rule extract_exomes_dv:
             gatk --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" SelectVariants \
             -V {input.gvcf} -O {output.gvcf_exome} \
             -L {params.interval} -ip {params.padding} --seconds-between-progress-updates 120 
+            python {params.check} {output.gvcf_exome} 
+            python {params.check} {output.tbi} 
         else
             touch {output.gvcf_exome}
             touch {output.tbi}

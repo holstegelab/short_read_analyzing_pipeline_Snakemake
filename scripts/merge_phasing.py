@@ -453,12 +453,12 @@ def main():
     nvariants = len(s)
     stats['nvariants_phased'] = nvariants
     blocklength = [max(v) - min(v) for v in variants]
-    idx = numpy.argmax(blocklength)
-    print('BLOCKLENGTH MAX', idx, blocklength[idx], variants[idx])
-    print(blocks[idx])
-    stats['average_phase_block_length'] = numpy.mean(blocklength)
-    stats['median_phase_block_length'] = numpy.median(blocklength)
     if blocklength:
+        idx = numpy.argmax(blocklength)
+        print('BLOCKLENGTH MAX', idx, blocklength[idx], variants[idx])
+        print(blocks[idx])
+        stats['average_phase_block_length'] = numpy.mean(blocklength)
+        stats['median_phase_block_length'] = numpy.median(blocklength)
         stats['max_phase_block_length'] = max(blocklength)
         stats['sum_phase_block_length'] = sum(blocklength)
         stats['average_nvariants_per_block'] = nvariants / len(blocklength)

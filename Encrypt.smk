@@ -1,5 +1,6 @@
 from common import *
 import zlib
+import time
 wildcard_constraints:
     sample="[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
@@ -55,23 +56,35 @@ rule copy_to_dcache:
         target = sample['target']
 
         if target is None:
-            target = sample['study'] + '/' + sample['samplefile'] + '/' + input.cram.split('/')[-1]
+            target = sample['study'] + '/' + sample['samplefile'] 
+
         if target.endswith('/'):
             target = target[:-1]
 
-        shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
-        shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
-        shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/$(basename {input.cram}) | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
+        input_cram = os.path.basename(input['cram'])
+        input_crai = os.path.basename(input['crai'])
+
         with open(input.cram, 'rb') as f:
             data = f.read()
             ADLER32_local = zlib.adler32(data)
-        with open(output.sum, 'r') as sum_file:
-            ADLER32_remote = sum_file.readline().rstrip('\n')
+       
+        ADLER32_remote = ''
+        retry_counter = 0
+        while f'{ADLER32_local:x}' != ADLER32_remote and retry_counter <= 3:
+            shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
+            shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
+            shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
+            with open(output.sum, 'r') as sum_file:
+                ADLER32_remote = sum_file.readline().rstrip('\n')
+            retry_counter += 1
+            if f'{ADLER32_local:x}' != ADLER32_remote:
+                shell("rclone --config {agh_dcache} deletefile agh_processed:{target}/{input_cram}")
+                shell("rclone --config {agh_dcache} deletefile agh_processed:{target}/{input_crai}")
+                time.sleep(60)
+                
+
         if f'{ADLER32_local:x}' != ADLER32_remote:
-            shell("rclone --config {agh_dcache} delete agh_processed:{target}/$(basename {input.cram})")
-            shell("rclone --config {agh_dcache} delete agh_processed:{target}/$(basename {input.crai})")
-            shell("rm {input.cram}")
-            raise ValueError(f"Checksums do not match for {input.cram}. Local: {ADLER32_local:x}, Remote: {ADLER32_remote}")
+            raise ValueError(f"Checksums do not match for {input.cram} after 3 retries. Local: {ADLER32_local:x}, Remote: {ADLER32_remote}")
         else:
             shell("touch {output.copied}")
 

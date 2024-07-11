@@ -261,6 +261,8 @@ def main():
     # Add the PGT format field to the header of the output gVCF file
     for file in [gvcf,out]:
         #file.add_format_to_header({'ID': 'GTW', 'Number': '1', 'Type': 'String', 'Description': 'Alleles phased by a combination of Whatshap (separator |) and GATK physical phasing (separator !). Last 3 digits of position in GVCF, followed by + and the length of the reference allele if it is longer than 1 base, followed by the alleles separated by |.'})
+        
+        #check if format tag is in header
         file.add_format_to_header({'ID': 'PS', 'Number': '1', 'Type': 'Integer', 'Description': 'Phase block ID for phase info in GT.'})
 
 
