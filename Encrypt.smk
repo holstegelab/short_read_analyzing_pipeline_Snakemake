@@ -67,6 +67,7 @@ rule copy_to_dcache:
         with open(input.cram, 'rb') as f:
             data = f.read()
             ADLER32_local = zlib.adler32(data)
+        ADLER32_local = (f"{ADLER32_local:x}").zfill(8)
        
         ADLER32_remote = ''
         retry_counter = 0
@@ -77,7 +78,7 @@ rule copy_to_dcache:
             with open(output.sum, 'r') as sum_file:
                 ADLER32_remote = sum_file.readline().rstrip('\n')
             retry_counter += 1
-            if f'{ADLER32_local:x}' != ADLER32_remote:
+            if f'{ADLER32_local:08x}' != ADLER32_remote:
                 shell("rclone --config {agh_dcache} deletefile agh_processed:{target}/{input_cram}")
                 shell("rclone --config {agh_dcache} deletefile agh_processed:{target}/{input_crai}")
                 time.sleep(60)
