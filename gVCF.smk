@@ -187,24 +187,24 @@ rule HaplotypeCaller:
 
     shell:
         """ 
-        if [ {params.skipsex} -eq 0 ]
+        {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller \
+            -R {params.ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
+            --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
+            --annotate-with-num-discovered-alleles --adaptive-pruning \
+            -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
+            -I {input.bams} -O {output.orig_gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true \
+            --seconds-between-progress-updates 120 \
+            {params.dragen_mode} --dragstr-params-path {input.model}
+
+        {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" GenotypeGVCFs \
+                -R {params.ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} \
+        --seconds-between-progress-updates 120 
+
+
+        mkdir -p `dirname {output.wstats}`
+        if [ {params.ploidy} -eq 2 ]
         then
-            {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller \
-                -R {params.ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
-                --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-                --annotate-with-num-discovered-alleles --adaptive-pruning \
-                -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
-                -I {input.bams} -O {output.orig_gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true \
-                --seconds-between-progress-updates 120 \
-                {params.dragen_mode} --dragstr-params-path {input.model}
-    
-            {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" GenotypeGVCFs \
-                    -R {params.ref} -V {output.orig_gvcf} -O {output.genotyped_vcf} \
-            --seconds-between-progress-updates 120 
-    
-    
-            mkdir -p `dirname {output.wstats}`
-            if [ {params.ploidy} -eq 2 ]
+            if [ {params.skipsex} -eq 0 ]
             then 
                 whatshap unphase  {output.genotyped_vcf} >  {output.tmp_vcf}
                 whatshap phase  --ignore-read-groups --reference {params.ref} {output.tmp_vcf} {input.bams} -o {output.vcf} |tail -n 20
@@ -221,22 +221,17 @@ rule HaplotypeCaller:
                 touch {output.mwstats}
                 touch {output.tmp_gvcf}
                 bcftools view {output.orig_gvcf} -o {output.gvcf}
-            fi  
-            bcftools index --tbi {output.gvcf}
+            fi
         else
-            touch {output.orig_gvcf}
-            touch {output.orig_gvcf_tbi}
-            touch {output.genotyped_vcf}
-            touch {output.genotyped_vcf_tbi} 
             touch {output.tmp_vcf}
             touch {output.vcf}
-            touch {output.vcf_tbi}
-            touch {output.wstats}
+            touch {output.vcf}.tbi
+            whatshap stats {output.genotyped_vcf} > {output.wstats} || true
             touch {output.mwstats}
             touch {output.tmp_gvcf}
-            touch {output.gvcf}
-            touch {output.gvcf_tbi}
-        fi         
+            bcftools view {output.orig_gvcf} -o {output.gvcf}
+        fi  
+        bcftools index --tbi {output.gvcf}      
         """
 
 
@@ -263,7 +258,7 @@ rule reblock_gvcf:
         --keep-all-alts --create-output-variant-index true -D {params.dbsnp} -R {REF_MALE} --do-qual-score-approximation \
          -V {input.gvcf} -O {output.gvcf_reblock}  --seconds-between-progress-updates 120 \
         -GQB 3 -GQB 5 -GQB 8 -GQB 10 -GQB 15 -GQB 20 -GQB 30 -GQB 50 -GQB 70 -GQB 100 \
-        -G StandardAnnotation -G AS_StandardAnnotation
+        -G StandardAnnotation -G AS_StandardAnnotation 
     """
 
 
