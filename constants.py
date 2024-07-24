@@ -75,6 +75,7 @@ gatk_cnv = pj(SOFTWARE, 'gatk_4.4/build/bundle-files-collected/gatk-package-4.4.
 annovar = pj(RESOURCES, "annovar/annovar/table_annovar.pl")
 annovar_db = pj(RESOURCES, "annovar/annovar/humandb/")
 ada = pj(SOFTWARE, 'SpiderScripts/ada/ada')
+bcftools_patched = pj(SOFTWARE, 'bcftools-1.8/bcftools')
 #custom scripts (encapsulate in srcdir())
 BAMMERGE= 'scripts/bam_merge.py'
 BAMSTATS= 'scripts/bam_stats.py'
@@ -109,7 +110,7 @@ NUMTs= pj(RESOURCES, 'databases/NUMT_list_hg38.bed')
 mask_bed= 'Ref_PhiX_Male/hg38_alt_mask.male.bed'
 str_ref= 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.str.zip'
 
-REF_FEMALE = REF
+# REF_FEMALE = REF
 REF_FEMALE_DIR = pj(RESOURCES, 'hg38_phix/female/')
 REF_FEMALE_STR = pj(RESOURCES, str_ref)
 REF_FEMALE_DICT = pj(RESOURCES, 'hg38_phix/female/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.dict')
@@ -141,6 +142,7 @@ DBSNP_INDEL = pj(RESOURCES,'databases/Homo_sapiens_assembly38.known_indels.vcf.g
 # ANNOTATIONS
 REVEL = pj(RESOURCES, 'REVEL/revel_for_bcftools.tab.gz')
 REVEL_header = pj(RESOURCES, 'REVEL/revel.hdr')
+multiallelic_hdr = pj(SOFTWARE, 'bcftools-1.8/multi_allele.hdr')
 
 #path to file with adapters
 ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')

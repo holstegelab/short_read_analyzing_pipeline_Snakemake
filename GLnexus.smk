@@ -254,6 +254,17 @@ use rule check_glnexus_lof_file as check_glnexus_lof_file_2 with:
             log= pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
     output: pj(current_dir,"{genotype_mode}_GLnexus_on_Deepvariant","{region}.vcf_is_ok")  # file to staret annotation {wildcard.region}
 
+
+rule split_multiallelic:
+    input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
+            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi"),
+            logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
+    output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "Splitted" , "{region}_split.vcf"))
+    conda: CONDA_MAIN
+    params: bcftools_patched = bcftools_patched
+
+
+
 rule extract_positions:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
             tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi"),
