@@ -110,7 +110,7 @@ NUMTs= pj(RESOURCES, 'databases/NUMT_list_hg38.bed')
 mask_bed= 'Ref_PhiX_Male/hg38_alt_mask.male.bed'
 str_ref= 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.str.zip'
 
-# REF_FEMALE = REF
+REF_FEMALE = REF
 REF_FEMALE_DIR = pj(RESOURCES, 'hg38_phix/female/')
 REF_FEMALE_STR = pj(RESOURCES, str_ref)
 REF_FEMALE_DICT = pj(RESOURCES, 'hg38_phix/female/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.dict')
