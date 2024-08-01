@@ -143,7 +143,9 @@ DBSNP_INDEL = pj(RESOURCES,'databases/Homo_sapiens_assembly38.known_indels.vcf.g
 REVEL = pj(RESOURCES, 'REVEL/revel_for_bcftools.tab.gz')
 REVEL_header = pj(RESOURCES, 'REVEL/revel.hdr')
 multiallelic_hdr = pj(SOFTWARE, 'bcftools-1.8/multi_allele.hdr')
-
+CLINVAR = pj(RESOURCES, 'databases/clinvar_20240708_renamed_chrs.vcf.gz')
+GNOMAD_4 = pj(RESOURCES, 'databases/gnomad/gnomad4.genomes.full_genome.vcf.gz')
+GNOMAD_2 = pj(RESOURCES, 'databases/gnomad_v2/gnomad.exomes.r2.1.1.sites.liftover_grch38.vcf.gz')
 #path to file with adapters
 ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')
 

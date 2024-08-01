@@ -2,6 +2,7 @@ import os
 from common import *
 current_dir = os.getcwd()
 import concurrent.futures
+# onsuccess: "rm -rf "
 
 wildcard_constraints:
     sample="[\w\d_\-@]+",
@@ -296,15 +297,20 @@ rule annotate_revel:
     resources: n = "4",
             mem_mb = 6000
     log: pj(current_dir,"logs","glnexus","annotate_revel_{region}.{genotype_mode}.{types_of_gl}.log")
-    params: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated.vcf"),
+    params: temp_vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_temp.vcf")),
+            temp_vcf_2 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_2_temp.vcf")),
+            temp_vcf_3 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_3_temp.vcf")),
             temp_dir = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp"),
     shell:
         """
         mkdir -p {params.temp_dir} &&
-
-        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {output.vcf_annotated} --threads {resources.n} 2> {log}
+        bcftools annotate -a {GNOMAD_4} -O v -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
+        bcftools annotate -a {CLINVAR} -O v -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
+        bcftools annotate -a {GNOMAD_2} -c 'INFO/non_neuro_AF' -O v -o {params.temp_vcf_3} {params.temp_vcf} --threads {resources.n} 2>> {log}
+        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {output.vcf_annotated} --threads {resources.n} 2>> {log}
+        
         """
-
+# INFO/non_neuro_AF
 rule annotate_gene:
     input: temp_vcf = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf")
     output: vcf_annotated=temp(pj(current_dir,"{genotype_mode}_" + "{types_of_gl}" + dir_appendix,"ANNOTATED_temp","{region}.annotated.hg38_multianno.vcf")),
@@ -316,7 +322,7 @@ rule annotate_gene:
                 mem_mb = 5000
     shell:
         """
-        perl {annovar} {input.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene -operation g,g -vcfinput -buildver hg38 -thread {resources.n} 2> {log}
+        perl {annovar} {input.temp_vcf} {annovar_db} -out {params.out} -protocol ensGene,refGene,ljb26_all,dbnsfp42c,avsnp150 -operation g,g,f,f,f -vcfinput -buildver hg38 -thread {resources.n} 2> {log}
         """
 
 rule bring_anno_to_samples:
