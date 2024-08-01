@@ -308,8 +308,8 @@ rule annotate_revel:
         tabix -fp vcf {input.vcf}.gz
         bcftools annotate -a {GNOMAD_4} -O v -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
         bcftools annotate -a {CLINVAR} -O v -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
-        bcftools annotate -a {GNOMAD_2} -c 'INFO/non_neuro_AF' -O v -o {params.temp_vcf_3} {params.temp_vcf} --threads {resources.n} 2>> {log}
-        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {input.vcf} -O v -o {output.vcf_annotated} --threads {resources.n} 2>> {log}
+        bcftools annotate -a {GNOMAD_2} -c INFO/non_neuro_AF -O v -o {params.temp_vcf_3} {params.temp_vcf_2} --threads {resources.n} 2>> {log}
+        bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {params.temp_vcf_3} -O v -o {output.vcf_annotated} --threads {resources.n} 2>> {log}
         
         """
 # INFO/non_neuro_AF
