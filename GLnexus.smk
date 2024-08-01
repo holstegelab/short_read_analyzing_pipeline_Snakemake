@@ -285,7 +285,7 @@ rule extract_positions:
     conda: CONDA_MAIN
     shell:
         """
-        tabix -p vcf {input.vcf}
+        tabix -fp vcf {input.vcf}
         
         bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}
         """
@@ -305,7 +305,7 @@ rule annotate_revel:
         """
         mkdir -p {params.temp_dir} &&
         bgzip {input.vcf}
-        tabix -p vcf {input.vcf}.gz
+        tabix -fp vcf {input.vcf}.gz
         bcftools annotate -a {GNOMAD_4} -O v -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
         bcftools annotate -a {CLINVAR} -O v -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
         bcftools annotate -a {GNOMAD_2} -c 'INFO/non_neuro_AF' -O v -o {params.temp_vcf_3} {params.temp_vcf} --threads {resources.n} 2>> {log}
@@ -339,7 +339,7 @@ rule bring_anno_to_samples:
     shell:
         """
         bgzip {input.vcf_annotated}
-        tabix -p vcf {input.vcf_annotated}.gz
+        tabix -fp vcf {input.vcf_annotated}.gz
         bcftools annotate -a {input.vcf_annotated}.gz -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
         """
 
@@ -351,5 +351,5 @@ rule bgzip:
     conda: CONDA_MAIN
     shell:
         """
-        tabix -p vcf {input.vcf_annotated}
+        tabix -fp vcf {input.vcf_annotated}
         """
