@@ -261,7 +261,7 @@ rule split_multiallelic:
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
     output:
         temp_tsv = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}.split.tsv.gz")),
-            vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}.split.vcf"))
+            vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}.split.vcf.gz"))
     conda: CONDA_MAIN
     resources:
         mem_mb=24000,
