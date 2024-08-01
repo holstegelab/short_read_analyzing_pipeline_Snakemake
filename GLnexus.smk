@@ -304,6 +304,8 @@ rule annotate_revel:
     shell:
         """
         mkdir -p {params.temp_dir} &&
+        bgzip {input.vcf}
+        tabix -p vcf {input.vcf}.gz
         bcftools annotate -a {GNOMAD_4} -O v -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
         bcftools annotate -a {CLINVAR} -O v -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
         bcftools annotate -a {GNOMAD_2} -c 'INFO/non_neuro_AF' -O v -o {params.temp_vcf_3} {params.temp_vcf} --threads {resources.n} 2>> {log}
