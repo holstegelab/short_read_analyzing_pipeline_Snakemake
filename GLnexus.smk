@@ -284,7 +284,7 @@ rule extract_positions:
     conda: CONDA_MAIN
     shell:
         """
-        tabix -p vcf {output.vcf}
+        tabix -p vcf {input.vcf}
         
         bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}
         """
