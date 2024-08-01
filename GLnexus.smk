@@ -260,8 +260,8 @@ rule split_multiallelic:
             tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi"),
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
     output:
-        temp_tsv = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}_split.tsv.gz")),
-            vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}_split.vcf"))
+        temp_tsv = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}.split.tsv.gz")),
+            vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}.split.vcf"))
     conda: CONDA_MAIN
     resources:
         mem_mb=24000,
@@ -277,8 +277,8 @@ rule split_multiallelic:
 
 
 rule extract_positions:
-    input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}_split.vcf.gz"),
-            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}_split.vcf.gz.tbi"),
+    input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.split.vcf.gz"),
+            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.split.vcf.gz.tbi"),
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
     output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf"))
     conda: CONDA_MAIN
@@ -316,7 +316,7 @@ rule annotate_gene:
 
 rule bring_anno_to_samples:
     input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp", "{region}.annotated.hg38_multianno.vcf"),
-            samples_vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}_split.vcf.gz"),
+            samples_vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.split.vcf.gz"),
     output: vcf_anno_samples = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
             # tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_MAIN
