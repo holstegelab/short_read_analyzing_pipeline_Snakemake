@@ -278,11 +278,16 @@ rule split_multiallelic:
 
 rule extract_positions:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.split.vcf.gz"),
-            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.split.vcf.gz.tbi"),
+            # tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.split.vcf.gz.tbi"),
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
     output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf"))
     conda: CONDA_MAIN
-    shell: "bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}"
+    shell:
+        """
+        tabix -p vcf {output.vcf}
+        
+        bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}
+        """
 
 rule annotate_revel:
     input: vcf = pj(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf")),
