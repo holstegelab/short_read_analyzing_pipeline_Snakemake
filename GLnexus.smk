@@ -259,15 +259,26 @@ rule split_multiallelic:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
             tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi"),
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
-    output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "Splitted" , "{region}_split.vcf"))
+    output:
+        temp_tsv = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}_split.tsv.gz")),
+            vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "{region}_split.vcf"))
     conda: CONDA_MAIN
-    params: bcftools_patched = bcftools_patched
+    resources:
+        mem_mb=24000,
+        n=12
+    shell:
+        """
+        {bcftools_patched} view -U -c1:nonmajor {input.vcf}  --threads {resources.n} -Ou | {bcftools_patched} query -f '%CHROM\t%POS\t%REF\t%ALT\t%AS_FilterStatus\t%AC\t%AN\n' | awk '{{l2=split($4,a,","); if(l2 > 1 && $7 > 0) {{split($6,ac,","); ref=1.0; for (i in ac) ref-= (ac[i]/$7); failcount=0; for (i in ac) failcount+=(ref<(ac[i]/$7)); OFS="\t"; print $1, $2, $3, $4, $4, $5, l2, $6, ref, failcount}}}}' | bgzip --threads {resources.n}  > {output.temp_tsv}
+        tabix -s1 -b2 -e2 {output.temp_tsv}
+        {bcftools_patched} view -U -c1:nonmajor {input.vcf} --threads {resources.n} -Ou | {bcftools_patched} annotate -a {output.temp_tsv} -h {multiallelic_hdr} -c CHROM,POS,REF,ALT,MA_ALT,MA_FILTER,NMA_ALT,MA_ALT_AC,MA_REF_AF,MA_REFLOW_COUNT --threads {resources.n} -Ov | {bcftools_patched} norm -f {REF} -m- -c w --thread {resources.n} -o {output.vcf} --output-type z
+        """
+
 
 
 
 rule extract_positions:
-    input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
-            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.vcf.gz.tbi"),
+    input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}_split.vcf.gz"),
+            tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}_split.vcf.gz.tbi"),
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
     output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf"))
     conda: CONDA_MAIN
@@ -305,7 +316,7 @@ rule annotate_gene:
 
 rule bring_anno_to_samples:
     input: vcf_annotated = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp", "{region}.annotated.hg38_multianno.vcf"),
-            samples_vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.vcf.gz"),
+            samples_vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}_split.vcf.gz"),
     output: vcf_anno_samples = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
             # tbi = ensure(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"), non_empty=True)
     conda: CONDA_MAIN
