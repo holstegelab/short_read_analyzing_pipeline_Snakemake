@@ -282,17 +282,20 @@ rule extract_positions:
     input: vcf = pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix +  "/{region}.split.vcf.gz"),
             # tbi= pj(current_dir,"{genotype_mode}_{types_of_gl}" + dir_appendix + "/{region}.split.vcf.gz.tbi"),
             logcheck=pj(current_dir, "{genotype_mode}_{types_of_gl}", "{region}.vcf_is_ok")
-    output: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf"))
+    output: vcfgz = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf.gz"))
     conda: CONDA_MAIN
+    params: vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf"))
     shell:
         """
         tabix -fp vcf {input.vcf}
         
-        bcftools view --drop-genotypes -O v -o {output.vcf} {input.vcf}
+        bcftools view --drop-genotypes -O v -o {params.vcf} {input.vcf}
+        bgzip {params.vcf}
+        tabix -fp vcf {output.vcfgz}
         """
 
 rule annotate_revel:
-    input: vcf = pj(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf")),
+    input: vcf = pj(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf.gz")),
     output: vcf_annotated = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf"))
     conda: CONDA_MAIN
     resources: n = "4",
@@ -305,8 +308,7 @@ rule annotate_revel:
     shell:
         """
         mkdir -p {params.temp_dir} &&
-        bgzip --force {input.vcf} || true
-        tabix -fp vcf {input.vcf}.gz
+
         bcftools annotate -a {GNOMAD_4} -O z -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
         tabix -fp vcf {params.temp_vcf}
         bcftools annotate -a {CLINVAR} -O z -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
