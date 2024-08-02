@@ -27,7 +27,7 @@ rule kraken:
     conda: CONDA_KRAKEN
     resources:
         n="1",
-        mem_mb=73000
+        mem_mb=60000
     shell: """
         kraken2 --db {KRAKEN_DB} --threads 8 --report-minimizer-data --report {output.report} --output {output.read_cls} --paired {input.fastq1} {input.fastq2}
     """

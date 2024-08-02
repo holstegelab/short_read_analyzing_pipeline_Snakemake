@@ -176,7 +176,7 @@ rule gather_coverage:
         hdf5=pj('{samplefile}.coverage.hdf5')
     resources:
         n="1.0",
-        mem_mb=5000
+        mem_mb=4700
     run:
         samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
         samples.sort()

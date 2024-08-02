@@ -610,7 +610,7 @@ rule get_validated_sex:
         auto=temp(pj(KMER,"{sample}.auto.tsv"))
     resources:
         n="1",
-        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * 9000 + 9000 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else (attempt - 1) * 0.5 * 4500 + 4500
+        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * 9000 + 5000 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else (attempt - 1) * 0.5 * 4500 + 2700
     params:
         kmerdir=KMER,
         process_sex=srcdir('scripts/process_sex.py')

@@ -180,7 +180,7 @@ rule glnexus_HC:
     resources:
         n = "64",
         mem_mb = 120000,
-        active_use_add= 500
+        active_use_add= 100
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
         cmds = [run_bcftools_HC(i, params.bed, wildcards.region) for i in input]
@@ -197,7 +197,8 @@ rule index_deep:
     output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz.tbi")
     conda: CONDA_VCF
     resources: n = "1",
-            active_use_remove = 500
+            active_use_remove = 500,
+            mem_mb = 2500
     shell: "gatk IndexFeatureFile -I {input}"
 
 
@@ -221,7 +222,7 @@ rule glnexus_DV:
     resources:
         n = "64",
         mem_mb = 120000,
-        active_use_add= 500
+        active_use_add= 100
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_DV")
         cmds = [run_bcftools_DV(i, params.bed, wildcards.region) for i in input]
@@ -297,18 +298,21 @@ rule annotate_revel:
     resources: n = "4",
             mem_mb = 6000
     log: pj(current_dir,"logs","glnexus","annotate_revel_{region}.{genotype_mode}.{types_of_gl}.log")
-    params: temp_vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_temp.vcf")),
-            temp_vcf_2 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_2_temp.vcf")),
-            temp_vcf_3 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_3_temp.vcf")),
+    params: temp_vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_temp.vcf.gz")),
+            temp_vcf_2 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_2_temp.vcf.gz")),
+            temp_vcf_3 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_3_temp.vcf.gz")),
             temp_dir = pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp"),
     shell:
         """
         mkdir -p {params.temp_dir} &&
-        bgzip {input.vcf}
+        bgzip --force {input.vcf} || true
         tabix -fp vcf {input.vcf}.gz
-        bcftools annotate -a {GNOMAD_4} -O v -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
-        bcftools annotate -a {CLINVAR} -O v -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
-        bcftools annotate -a {GNOMAD_2} -c INFO/non_neuro_AF -O v -o {params.temp_vcf_3} {params.temp_vcf_2} --threads {resources.n} 2>> {log}
+        bcftools annotate -a {GNOMAD_4} -O z -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
+        tabix -fp vcf {params.temp_vcf}
+        bcftools annotate -a {CLINVAR} -O z -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
+        tabix -fp vcf {params.temp_vcf_2}
+        bcftools annotate -a {GNOMAD_2} -c INFO/non_neuro_AF -O z -o {params.temp_vcf_3} {params.temp_vcf_2} --threads {resources.n} 2>> {log}
+        tabix -fp vcf {params.temp_vcf_3}
         bcftools annotate -a {REVEL} -h {REVEL_header} -c CHROM,POS,REF,ALT,REVEL {params.temp_vcf_3} -O v -o {output.vcf_annotated} --threads {resources.n} 2>> {log}
         
         """
@@ -338,7 +342,7 @@ rule bring_anno_to_samples:
         mem_mb = 6000
     shell:
         """
-        bgzip {input.vcf_annotated}
+        bgzip --force {input.vcf_annotated}
         tabix -fp vcf {input.vcf_annotated}.gz
         bcftools annotate -a {input.vcf_annotated}.gz -c INFO -O z -o {output.vcf_anno_samples} {input.samples_vcf}  
         """
