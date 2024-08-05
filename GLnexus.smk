@@ -172,14 +172,14 @@ rule glnexus_HC:
     log: pj(current_dir,"logs","glnexus","glnexus_HC_{region}.{genotype_mode}.log")
     container: "docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1"
     params: bed = region_to_bed_file,
-            mem_gb = 120,
+            mem_gb = 160,
             scratch_dir =  temp(current_dir + '/' + tmpdir + "/{genotype_mode}_{region}_glnexus_HC.DB"),
             conf_filters = conf_filter,
             generate_gvcf_input_HC_divided = generate_gvcf_input_HC_divided
     threads: 64
     resources:
         n = "64",
-        mem_mb = 120000,
+        mem_mb = 160000,
         active_use_add= 100
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
