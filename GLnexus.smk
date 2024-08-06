@@ -298,8 +298,8 @@ rule annotate_revel:
     input: vcf = pj(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_pos_only.vcf.gz")),
     output: vcf_annotated = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}.annotated_pos_only.vcf"))
     conda: CONDA_MAIN
-    resources: n = "4",
-            mem_mb = 6000
+    resources: n = "6",
+            mem_mb = 8000
     log: pj(current_dir,"logs","glnexus","annotate_revel_{region}.{genotype_mode}.{types_of_gl}.log")
     params: temp_vcf = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_temp.vcf.gz")),
             temp_vcf_2 = temp(pj(current_dir, "{genotype_mode}_" + "{types_of_gl}" + dir_appendix, "ANNOTATED_temp" , "{region}_annotated_2_temp.vcf.gz")),
@@ -309,9 +309,9 @@ rule annotate_revel:
         """
         mkdir -p {params.temp_dir} &&
 
-        bcftools annotate -a {GNOMAD_4} -O z -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
+        bcftools annotate -a {GNOMAD_4} -c "INFO/Gnomad4_AF:=INFO/AF" -O z -o {params.temp_vcf} {input.vcf} --threads {resources.n} 2> {log}
         tabix -fp vcf {params.temp_vcf}
-        bcftools annotate -a {CLINVAR} -O z -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
+        bcftools annotate -a {CLINVAR} -c INFO -O z -o {params.temp_vcf_2} {params.temp_vcf} --threads {resources.n} 2>> {log}
         tabix -fp vcf {params.temp_vcf_2}
         bcftools annotate -a {GNOMAD_2} -c INFO/non_neuro_AF -O z -o {params.temp_vcf_3} {params.temp_vcf_2} --threads {resources.n} 2>> {log}
         tabix -fp vcf {params.temp_vcf_3}
