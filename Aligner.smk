@@ -1,3 +1,5 @@
+import os.path
+
 import read_samples
 from common import *
 import utils
@@ -405,7 +407,7 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
     folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
 
     #check that folder really exists
-    if not os.path.exsits(folder):
+    if not os.path.exists(folder):
         raise ValueError
     return folder
 
