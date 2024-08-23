@@ -365,7 +365,7 @@ rule split_alignments_by_readgroup:
     priority: 99
     params:
         cramref=get_cram_ref,
-        check = pj(READGROUPS, "{sample}.sourcefile.checks_done")
+        check = pj(READGROUPS, "{sample}_split_check")
     run:
         sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
         readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
@@ -436,7 +436,7 @@ rule external_alignments_to_fastq:
     """
     input: # get_aligned_readgroup_folder,
             # rules.split_alignments_by_readgroup.output.checks_done
-        checkdir = pj(READGROUPS, "{sample}.sourcefile.checks_done")
+        checkdir = pj(READGROUPS, "{sample}_split_check")
     output:
         fq1=temp(FQ + "/{sample}.{readgroup}_R1.fastq.gz"),
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
