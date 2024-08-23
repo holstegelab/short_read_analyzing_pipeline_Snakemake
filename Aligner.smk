@@ -357,7 +357,7 @@ rule split_alignments_by_readgroup:
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.
         readgroups=temp(directory(pj(READGROUPS,"{sample}.sourcefile.{filename}"))),
-        checks_done=touch(temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done")))
+        checks_done=touch(temp(pj(READGROUPS,"{sample}.sourcefile.checks_done")))
     resources:
         n="1",
         mem_mb=get_mem_mb_split_alignments
@@ -432,7 +432,7 @@ rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
     input:
-        checkdir = pj(READGROUPS, "{sample}.sourcefile.{filename}.checks_done")
+        checkdir = pj(READGROUPS, "{sample}.sourcefile.checks_done")
     output:
         fq1=temp(FQ + "/{sample}.{readgroup}_R1.fastq.gz"),
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
