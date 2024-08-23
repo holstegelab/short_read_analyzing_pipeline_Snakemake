@@ -432,7 +432,7 @@ def get_extension(wildcards):  #{{{
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
-    input: get_aligned_readgroup_folder,
+    input: # get_aligned_readgroup_folder,
             rules.split_alignments_by_readgroup.output.checks_done
         # checkdir = pj(READGROUPS, "{sample}.sourcefile.{filename}.checks_done")
     output:
