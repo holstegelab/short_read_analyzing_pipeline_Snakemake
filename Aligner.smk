@@ -362,6 +362,7 @@ rule split_alignments_by_readgroup:
         n="1",
         mem_mb=get_mem_mb_split_alignments
     conda: CONDA_MAIN
+    priority: 99
     params:
         cramref=get_cram_ref
     run:
