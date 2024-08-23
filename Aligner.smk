@@ -356,7 +356,8 @@ rule split_alignments_by_readgroup:
         ensure_data_folder
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.
-        readgroups=temp(directory(pj(READGROUPS,"{sample}.sourcefile.{filename}")))
+        readgroups=temp(directory(pj(READGROUPS,"{sample}.sourcefile.{filename}"))),
+        checks_done=touch(temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done")))
     resources:
         n="1",
         mem_mb=get_mem_mb_split_alignments
@@ -431,7 +432,8 @@ rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
     input:
-        get_aligned_readgroup_folder
+
+        check = pj(READGROUPS, "{sample}.sourcefile.{filename}.checks_done")
     output:
         fq1=temp(FQ + "/{sample}.{readgroup}_R1.fastq.gz"),
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
@@ -446,7 +448,8 @@ rule external_alignments_to_fastq:
         cramref=get_cram_ref,
         extension=get_extension,
         temp_sort=pj("external_sort_temporary_{sample}_{readgroup}_"),
-        memory_per_core=6000
+        memory_per_core=6000,
+        dir= get_aligned_readgroup_folder,
     priority: 10
     conda: CONDA_MAIN
     #replaced samtools collate with samtools sort due to weird memory usage behaviour of collate.
@@ -454,7 +457,7 @@ rule external_alignments_to_fastq:
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)
     shell:
         """
-            samtools view -@ 2 -u -h {params.cramref} {input}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\
+            samtools view -@ 2 -u -h {params.cramref} {params.dir}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\
             samtools reset -@ 2 --output-fmt BAM,level=0 --no-PG --no-RG --keep-tag OQ  |\
             samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -u -n  -m {params.memory_per_core}M | \
             samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq}
