@@ -408,6 +408,7 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
 
     #check that folder really exists
     if not os.path.exists(folder):
+        print("Folder does not exist: " + folder)
         raise ValueError
     return folder
 
