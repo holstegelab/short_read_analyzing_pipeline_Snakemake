@@ -356,8 +356,8 @@ rule split_alignments_by_readgroup:
         ensure_data_folder
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.
-        readgroups=temp(directory(pj(READGROUPS,"{sample}.sourcefile.{filename}"))),
-        checks_done=touch(temp(pj(READGROUPS,"{sample}.sourcefile.checks_done")))
+        readgroups=directory(pj(READGROUPS,"{sample}.sourcefile.{filename}")),
+        # checks_done=touch(temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done")))
     resources:
         n="1",
         mem_mb=get_mem_mb_split_alignments
@@ -390,7 +390,7 @@ rule split_alignments_by_readgroup:
                 extension = 'bam'
 
             cmd = """
-                mkdir -p {output}
+                mkdir -p {output.readgroups}
                 samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
 
                 """
@@ -423,16 +423,17 @@ def get_extension(wildcards):  #{{{
     res = os.path.splitext(readgroup['file'])[1][1:].lower()
 
     return res
-
-
 #}}}
+
+
 
 
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
-    input:
-        checkdir = pj(READGROUPS, "{sample}.sourcefile.checks_done")
+    input: get_aligned_readgroup_folder,
+            rules.split_alignments_by_readgroup.output.readgroups
+        # checkdir = pj(READGROUPS, "{sample}.sourcefile.{filename}.checks_done")
     output:
         fq1=temp(FQ + "/{sample}.{readgroup}_R1.fastq.gz"),
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
