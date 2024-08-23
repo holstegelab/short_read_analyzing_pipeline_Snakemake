@@ -432,8 +432,7 @@ rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
     input:
-
-        check = pj(READGROUPS, "{sample}.sourcefile.{filename}.checks_done")
+        checkdir = pj(READGROUPS, "{sample}.sourcefile.{filename}.checks_done")
     output:
         fq1=temp(FQ + "/{sample}.{readgroup}_R1.fastq.gz"),
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
