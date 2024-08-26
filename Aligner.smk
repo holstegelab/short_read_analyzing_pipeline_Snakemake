@@ -411,9 +411,9 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
     folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
 
     #check that folder really exists
-    if not os.path.exists(folder):
-        print("Folder does not exist: " + folder)
-        raise ValueError
+    # if not os.path.exists(folder):
+    #     print("Folder does not exist: " + folder)
+    #     raise ValueError
     return folder
 #}}}
 
@@ -447,8 +447,7 @@ def get_extension(wildcards):  #{{{
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
-    input: expand(pj(READGROUPS,"{sample}.sourcefile.{filename}"), filename=get_filename, allow_missing = True)
-        # get_aligned_readgroup_folder,
+    input: get_aligned_readgroup_folder,
             # rules.split_alignments_by_readgroup.output.checks_done
         # checkdir = pj(READGROUPS, "{sample}_split_check")
     output:
