@@ -376,9 +376,9 @@ rule split_alignments_by_readgroup:
             readgroup_id = readgroups[0]['info']['ID']
 
             cmd = """
-                mkdir -p {output}
+                mkdir -p {output.readgroups}
                 #switching to cp instead of hard link as hard links als update modification time of input[0]
-                cp {input[0]} {output}/{wildcards.sample}.{readgroup_id}.{extension}
+                cp {input[0]} {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension}
                 touch {params.check}
                 """
             shell(cmd)
@@ -394,7 +394,7 @@ rule split_alignments_by_readgroup:
 
             cmd = """
                 mkdir -p {output.readgroups}
-                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output}/{wildcards.sample}.%!.{extension}"
+                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
                 touch {params.check}
                 """
             shell(cmd)
@@ -416,6 +416,12 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
         raise ValueError
     return folder
 #}}}
+
+def get_filename(wildcards):
+    """Utility function to get the filename for a sample."""
+    sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
+    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    return os.path.basename(readgroup['file'])
 
 def get_checks_split(wildcards):
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
@@ -441,7 +447,7 @@ def get_extension(wildcards):  #{{{
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
-    input: get_checks_split
+    input: expand(pj(READGROUPS,"{sample}.sourcefile.{filename}"), filename=get_filename, allow_missing = True)
         # get_aligned_readgroup_folder,
             # rules.split_alignments_by_readgroup.output.checks_done
         # checkdir = pj(READGROUPS, "{sample}_split_check")
