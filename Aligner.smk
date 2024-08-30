@@ -693,7 +693,7 @@ rule align_reads:
         ref_dir=get_refdir_by_validated_sex,
         dragmap=pj(SOFTWARE,dragmap),
         rg_params=get_readgroup_params
-    conda:  CONDA_MAIN
+    conda:  CONDA_DRAGMAP
     priority: 15
     resources:
         n="22.75",#reducing thread count, as first part of dragmap is single threaded
