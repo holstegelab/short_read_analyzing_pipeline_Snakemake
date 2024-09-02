@@ -66,7 +66,7 @@ rule copy_to_dcache:
 
         with open(input.cram, 'rb') as f:
             data = f.read()
-            ADLER32_local = str(zlib.adler32(data))
+            ADLER32_local = f'{zlib.adler32(data):08x}'
        
         ADLER32_remote = ''
         retry_counter = 0
