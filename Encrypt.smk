@@ -66,11 +66,11 @@ rule copy_to_dcache:
 
         with open(input.cram, 'rb') as f:
             data = f.read()
-            ADLER32_local = f'{zlib.adler32(data):08x}'
+            ADLER32_local = zlib.adler32(data)
        
         ADLER32_remote = ''
         retry_counter = 0
-        while f'{ADLER32_local:x}' != ADLER32_remote and retry_counter <= 3:
+        while f'{ADLER32_local:08x}' != ADLER32_remote and retry_counter <= 3:
             shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
             shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
             shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
@@ -83,7 +83,7 @@ rule copy_to_dcache:
                 time.sleep(60)
                 
 
-        if f'{ADLER32_local:x}' != ADLER32_remote:
+        if f'{ADLER32_local:08x}' != ADLER32_remote:
             raise ValueError(f"Checksums do not match for {input.cram} after 3 retries. Local: {ADLER32_local:x}, Remote: {ADLER32_remote}")
         else:
             shell("touch {output.copied}")
