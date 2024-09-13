@@ -67,7 +67,6 @@ rule copy_to_dcache:
         with open(input.cram, 'rb') as f:
             data = f.read()
             ADLER32_local = zlib.adler32(data)
-        ADLER32_local = (f"{ADLER32_local:x}").zfill(8)
        
         ADLER32_remote = ''
         retry_counter = 0
@@ -85,7 +84,7 @@ rule copy_to_dcache:
                 
 
         if f'{ADLER32_local:08x}' != ADLER32_remote:
-            raise ValueError(f"Checksums do not match for {input.cram} after 3 retries. Local: {ADLER32_local:x}, Remote: {ADLER32_remote}")
+            raise ValueError(f"Checksums do not match for {input.cram} after 3 retries. Local: {ADLER32_local:08x}, Remote: {ADLER32_remote}")
         else:
             shell("touch {output.copied}")
 

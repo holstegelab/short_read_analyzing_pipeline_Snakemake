@@ -10,6 +10,8 @@ INTERVALS_DIR = pj(RESOURCES,'intervals')
 MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'merged_capture_kits_cds.bed')
 MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'merged_capture_kits_cds.interval_list')
 MERGED_CAPTURE_KIT_IVL_CNV = pj(INTERVALS_DIR, 'preprocessed_intervals_for_GATK_CNV', 'merged_capture_kits_cds.interval_list')
+INTERSECT_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'intersect_non_focused_capture_kits.bed')
+INTERSECT_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'intersect_non_focused_capture_kits.interval_list')
 HARD_MAPPABILITY_TRACK = pj(RESOURCES, 'k24.umap.bed.gz')
 TARGETS_BED = pj(INTERVALS_DIR,'gencode_43_cds.bed')
 TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
@@ -79,6 +81,7 @@ ada = pj(SOFTWARE, 'SpiderScripts/ada/ada')
 bcftools_patched = pj(SOFTWARE, 'bcftools-1.8/bcftools')
 #custom scripts (encapsulate in srcdir())
 BAMMERGE= 'scripts/bam_merge.py'
+BAMCHECK='scripts/bam_check_fastq.py'
 BAMSTATS= 'scripts/bam_stats.py'
 DECHIMER= 'scripts/bam_dechimer.py'
 DECHIMER_THRESHOLD= 0.005

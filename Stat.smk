@@ -132,7 +132,7 @@ rule tar_stats_per_sample:
 
 
 rule coverage:
-    """Estimates contamination in a sample using the verifybamid2 tool"""
+    """Estimates coverage using the mosdepth tool"""
     input:
         bam=pj(BAM, "{sample}.markdup.bam"),
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
@@ -219,7 +219,10 @@ def get_capture_kit_interval_list(wildcards):  #{{{
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
         capture_kit = MERGED_CAPTURE_KIT_IVL
     else:
-        capture_kit = pj(INTERVALS_DIR,SAMPLEINFO[wildcards['sample']]['capture_kit'] + '.interval_list')
+        if SAMPLEINFO[wildcards['sample']]['capture_kit']  == '':
+            capture_kit = INTERSECT_CAPTURE_KIT_IVL
+        else: 
+            capture_kit = pj(INTERVALS_DIR,SAMPLEINFO[wildcards['sample']]['capture_kit'] + '.interval_list')
     return capture_kit  #}}}
 
 

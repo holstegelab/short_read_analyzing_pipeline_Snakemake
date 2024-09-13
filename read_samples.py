@@ -237,6 +237,7 @@ def read_samplefile(filename, prefixpath=None):
             if len(cpref) > 8:
                 alternative_names.add(cpref)
 
+            cram_refs = []
             if file_type == 'fastq_paired':
                 warning(len(filenames1) > 0, 'No filename given for sample ' + sample_id)
                 if len(filenames2) == 0:
@@ -254,14 +255,16 @@ def read_samplefile(filename, prefixpath=None):
             elif file_type == 'cram' or file_type == 'recalibrated_cram' or file_type == 'extracted_cram':
                 error(len(filenames2) == 1 and (filenames2[0].endswith('fa') or filenames2[0].endswith('fasta')),
                       'Second filename for CRAM filetype should be fasta reference file')
-                
+                cram_refs = filenames2
+                filenames2 = []
             else:
                 warning(len(filenames2) == 0, 'No second filename can be given for bam files: ' + sample_id)
 
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
                     'target':targetpath,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
-                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 'no_dedup':sample_config.get('no_dedup',False)}
+                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 'no_dedup':sample_config.get('no_dedup',False), 'cram_refs':cram_refs}
+                
             all_files = [append_prefix(prefixpath,f) for f in itertools.chain(filenames1,filenames2)] 
             protocols = set([f.split(':')[0] for f in all_files if ':' in f])
 
@@ -409,14 +412,14 @@ def get_readgroups(sample, sourcedir):
         for filename in [e for e in filenames1 if not e.endswith('crai') or e.endswith('bai')]:
             fstat = os.stat(filename)
             if 'cram' in file_type: #need fasta reference file
-                if len(sample['file2']) > 0:
-                    assert len(sample['file2']) == 1, 'No support (yet) for multiple cram reference files in "file2" column'
-                    reference_file = sample['file2'][0]
+                if len(sample['cram_refs']) > 0:
+                    assert len(sample['cram_refs']) == 1, 'No support (yet) for multiple cram reference files in "file2" column'
+                    reference_file = sample['cram_refs'][0]
                 else:                    
                     reference_file = "GRCh38_full_analysis_set_plus_decoy_hla.fa"  #default reference file
 
                 if not reference_file.startswith('/'): #relative path, look in cram reference folder
-                    reference_file = pj(CRAMREFS, sample['file2'][0])
+                    reference_file = pj(CRAMREFS, sample['cram_refs'][0])
             else:
                 reference_file = None
 

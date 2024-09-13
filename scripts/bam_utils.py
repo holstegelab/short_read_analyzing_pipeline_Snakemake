@@ -47,6 +47,11 @@ class BamRecord:
         record = header + '\n' + self.seq + '\n+\n' + self.qual + '\n'
         return record
 
+    
+    def toFastqChecksum(self):
+        self = self.unmap(True, orig_orientation=True)
+        return (hash(self.seq), hash(self.qual))
+
     def getTagValue(self, name, default=''):
         return self.tags.get(name, default)
 

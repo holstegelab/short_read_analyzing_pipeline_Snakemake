@@ -231,7 +231,6 @@ rule archive_to_active:
 
     """
     input:
-        retrieve_batch,
         ancient(pj(SOURCEDIR,"{sample}.started"))
     resources:
         arch_use_remove=lambda wildcards: SAMPLEINFO[wildcards['sample']]['filesize'],
@@ -290,7 +289,7 @@ def get_cram_ref(wildcards):  #{{{
 
 #}}}
 
-def get_source_aligned_file(wildcards):  #{{{
+def ensure_source_aligned_file(wildcards):  #{{{
     """utility function to get the path to the source file for a sample.
 
     Takes the wildcard filename and looks up the path to that filename in the sampleinfo dictionary.
@@ -307,27 +306,16 @@ def get_source_aligned_file(wildcards):  #{{{
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']][0]
 
     #raise error if file does not exist
-    if not os.path.exists(readgroup['file']):
-        raise ValueError
-
-    return readgroup['file']
-
-
-#}}}
-
-def ensure_data_folder(wildcards):  #{{{
-    """Checks that if the source file is on tape, it has been retrieved, and the data folder exists.
-    Note that we usually do not need the path as it is available in the readgroup dictionary.
-    However, snakemake only know about the data folder, and therefore would otherwise delete the folder
-    when it determines no job needs it anymore.
-    """
-    sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
-
+    result = []
     if sinfo['from_external']:
-        return [ancient(pj(SOURCEDIR,wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')),
-                ancient(pj(SOURCEDIR,wildcards['sample'] + '.data'))]
-    else:
-        return []
+        result.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')))
+        result.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.data')))
+
+
+    if not os.path.exists(readgroup['file']):
+        if not sinfo['from_external'] or (sinfo['from_external'] and os.path.exists(result[0])):
+            raise ValueError("File does not exist: " + readgroup['file'])
+    return result
 
 
 #}}}
@@ -351,13 +339,12 @@ rule split_alignments_by_readgroup:
     The filenames in this folder are equal <sample>.<readgroup_id>.<extension>
     """
     input:
-        get_source_aligned_file,
         ancient(pj(SOURCEDIR,"{sample}.started")),
-        ensure_data_folder
+        ensure_source_aligned_file
     output:
         #there can be multiple read groups in 'filename'. Store them in this folder.
-        readgroups=directory(pj(READGROUPS,"{sample}.sourcefile.{filename}")),
-        checks_done=touch(temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done")))
+        readgroups=temp(directory(pj(READGROUPS,"{sample}.sourcefile.{filename}"))),
+        done=temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done"))
     resources:
         n="1",
         mem_mb=get_mem_mb_split_alignments
@@ -365,21 +352,21 @@ rule split_alignments_by_readgroup:
     priority: 99
     params:
         cramref=get_cram_ref,
-        check = pj(READGROUPS, "{sample}_split_check")
     run:
         sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
         readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
 
+        readfile = readgroups[0]['file']
+
         n = len(readgroups)
         if n == 1:  #nothing to split, single readgroup, just link the source file
-            extension = os.path.splitext(input[0])[1][1:].lower()
+            extension = os.path.splitext(readfile)[1][1:].lower()
             readgroup_id = readgroups[0]['info']['ID']
 
             cmd = """
                 mkdir -p {output.readgroups}
-                #switching to cp instead of hard link as hard links als update modification time of input[0]
-                cp {input[0]} {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension}
-                touch {params.check}
+                ln {readfile} {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension}
+                touch {output.done}
                 """
             shell(cmd)
         else:
@@ -394,8 +381,8 @@ rule split_alignments_by_readgroup:
 
             cmd = """
                 mkdir -p {output.readgroups}
-                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {input[0]} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
-                touch {params.check}
+                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {readfile} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
+                touch {output.done}
                 """
             shell(cmd)
 
@@ -409,27 +396,10 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
     folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
+    checkfile = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile + '.checks_done')
 
-    #check that folder really exists
-    # if not os.path.exists(folder):
-    #     print("Folder does not exist: " + folder)
-    #     raise ValueError
-    return folder
+    return [folder, checkfile]
 #}}}
-
-def get_filename(wildcards):
-    """Utility function to get the filename for a sample."""
-    sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
-    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
-    return os.path.basename(readgroup['file'])
-
-def get_checks_split(wildcards):
-    sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
-    readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
-    sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
-    folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
-    checkfile = pj(READGROUPS, wildcards['sample'] + '.sourcefile.' + sfile + '.checks_done')
-    return checkfile
 
 
 def get_extension(wildcards):  #{{{
@@ -447,9 +417,7 @@ def get_extension(wildcards):  #{{{
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
-    input: get_aligned_readgroup_folder,
-            # rules.split_alignments_by_readgroup.output.checks_done
-        # checkdir = pj(READGROUPS, "{sample}_split_check")
+    input: get_aligned_readgroup_folder
     output:
         fq1=temp(FQ + "/{sample}.{readgroup}_R1.fastq.gz"),
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
@@ -458,14 +426,12 @@ rule external_alignments_to_fastq:
         n="1.5",
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 13000 * 0.5 + 13000,
         tmpdir=tmpdir
-    log:
-        fastq=pj(LOG,"Aligner","{sample}.{readgroup}.align2fq.log"),
     params:
         cramref=get_cram_ref,
         extension=get_extension,
         temp_sort=pj("external_sort_temporary_{sample}_{readgroup}_"),
         memory_per_core=6000,
-        dir= get_aligned_readgroup_folder,
+        dir=lambda wildcards: get_aligned_readgroup_folder(wildcards)[0],
     priority: 10
     conda: CONDA_MAIN
     #replaced samtools collate with samtools sort due to weird memory usage behaviour of collate.
@@ -476,7 +442,7 @@ rule external_alignments_to_fastq:
             samtools view -@ 2 -u -h {params.cramref} {params.dir}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\
             samtools reset -@ 2 --output-fmt BAM,level=0 --no-PG --no-RG --keep-tag OQ  |\
             samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -u -n  -m {params.memory_per_core}M | \
-            samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons}  2> {log.fastq}
+            samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons} 
         """
 
 
@@ -822,6 +788,37 @@ def get_readgroups_bai(wildcards):  #{{{
 
 #}}}
 
+
+rule check_rg_bam:
+    input:
+        bam=rules.sort_bam_alignment.output.bam,
+        bai=rules.sort_bam_alignment.output.bai,
+        fastq=get_fastqpaired
+    output:
+        checked=temp(pj(BAM,"{sample}.{readgroup}.bam_checked")),
+    conda: CONDA_PYPY
+    resources:
+        n="1",
+        mem_mb=150
+    params:
+        bam_check=srcdir(BAMCHECK),
+        stats=pj(STAT,"{sample}.{readgroup}.bam_check_stats.tsv")
+    shell:
+        """
+         samtools view -h --threads 2 {input.bam} | pypy {params.bam_check} --f1  {input.fastq[0]} --f2 {input.fastq[1]}  -s {params.stats}  -c {output.checked}
+        """
+
+
+def get_readgroup_checks(wildcards):
+    sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
+    readgroups_b = sinfo['readgroups']
+    files = []
+    for readgroup in readgroups_b:
+        files.append(pj(BAM,wildcards['sample'] + '.' + readgroup['info']['ID'] + '.bam_checked'))
+    return files
+
+
+
 # merge different readgroups bam files for same sample
 rule merge_rgs:
     """Merge bam files for different readgroups of the same sample.
@@ -829,6 +826,7 @@ rule merge_rgs:
     input:
         bam=get_readgroups_bam,
         bai=get_readgroups_bai,
+        checks=get_readgroup_checks
     output:
         mer_bam=temp(pj(BAM,"{sample}.merged.bam"))
     log: pj(LOG,"Aligner","{sample}.mergereadgroups.log")
