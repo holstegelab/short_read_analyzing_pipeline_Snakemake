@@ -187,7 +187,7 @@ def fastqtosam(fastqrecord, rg, stats):
     flag2 = 0x1 | 0x4 | 0x8| 0x80 | 0x200  #(PAIRED | UNMAP | MUNMAP | READ2 | QCFAIL)
     querygroup = []
     read1 = BamRecord([name, str(flag1), '*', '0', '0', '*', '*', '0', '0', seq1, qual1])
-    read2 = BamRecord([name, str(flag2), '*', '0', '0', '*', '*', '0', '0', seq1, qual1])
+    read2 = BamRecord([name, str(flag2), '*', '0', '0', '*', '*', '0', '0', seq2, qual2])
     if not rg is None:
         read1.setTagValues(RG=rg)
         read2.setTagValues(RG=rg)

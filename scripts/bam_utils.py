@@ -38,6 +38,7 @@ class BamRecord:
         return '\t'.join([self.qname, str(self.flag), self.rname, self.pos, self.mapq, self.cigar, self.rnext, self.pnext, self.tlen, self.seq, self.qual] + tags)
 
     def toFastqRecord(self, restore_seq=True, readgroup_name=None):
+        
         self = self.unmap(restore_seq, orig_orientation=True)
         readnr = 1 if self.flag & 0x40 else 2
         if readgroup_name is not None:
@@ -50,7 +51,10 @@ class BamRecord:
     
     def toFastqChecksum(self):
         self = self.unmap(True, orig_orientation=True)
-        return (hash(self.seq), hash(self.qual))
+
+        xqual = self.qual.replace('#','!') #Dragmap sometimes replaces # with ! in quality. This is a hack to make sure that the checksums are the same
+
+        return (self, hash(self.seq), hash(xqual))
 
     def getTagValue(self, name, default=''):
         return self.tags.get(name, default)

@@ -47,6 +47,7 @@ if __name__ == '__main__':
         in_process = subprocess.Popen(['samtools','view','-h', args.i],stdout=subprocess.PIPE, universal_newlines=True)
         pipe_in = in_process.stdout
 
+
     with pipe_in as f:
         reader = csv.reader(f,delimiter='\t', quoting=csv.QUOTE_NONE)
 
@@ -65,7 +66,8 @@ if __name__ == '__main__':
         compare_fastq1_checksum_qual = 0
         compare_fastq2_checksum_qual = 0
         compare_fastq_nrow = 0
-        compare_fastq_nbases = 0
+        compare_fastq_nbases1 = 0
+        compare_fastq_nbases2 = 0
 
         for row in reader:
             alignment_counter += 1
@@ -79,22 +81,26 @@ if __name__ == '__main__':
             row = BamRecord(row)
             if row.flag & 0x100 or row.flag & 0x800: #skip supplementary/secondary
                 continue
-            cseq, cqual = row.toFastqChecksum()
+            row, cseq, cqual = row.toFastqChecksum()
             if row.flag & 0x40:   #read 1 
                 fastq1_checksum_seq ^= cseq
                 fastq1_checksum_qual ^= cqual
                 fastq1_nrow += 1
                 fastq1_nbases += len(row.seq)
 
+
                 #intersperse fastq reading for speed
                 try:
                     fread_name, fread_seq1, fread_seq2, fread_qual1,fread_qual2 = freader.retrieveRead()
+                    fread_qual1 = fread_qual1.replace('#', '!') #dragmap sometimes replaces '#' with '!'
+                    fread_qual2 = fread_qual2.replace('#', '!')
                     compare_fastq1_checksum_seq ^= hash(fread_seq1)
                     compare_fastq1_checksum_qual ^= hash(fread_qual1)
                     compare_fastq2_checksum_seq ^= hash(fread_seq2)
                     compare_fastq2_checksum_qual ^= hash(fread_qual2)
                     compare_fastq_nrow += 1
-                    compare_fastq_nbases += len(fread_seq1) + len(fread_seq2)
+                    compare_fastq_nbases1 += len(fread_seq1)
+                    compare_fastq_nbases2 += len(fread_seq2)
                 except StopIteration:
                     pass
 
@@ -103,34 +109,43 @@ if __name__ == '__main__':
                 fastq2_checksum_qual ^= cqual
                 fastq2_nrow += 1
                 fastq2_nbases += len(row.seq)
+
                 #read 2
 
         #finish reading fastq
         while True:
             try:
                 fread_name, fread_seq1, fread_seq2, fread_qual1,fread_qual2 = freader.retrieveRead()                
+                fread_qual1 = fread_qual1.replace('#', '!') #dragmap sometimes replaces '#' with '!'
+                fread_qual2 = fread_qual2.replace('#', '!')
                 compare_fastq1_checksum_seq ^= hash(fread_seq1)
                 compare_fastq1_checksum_qual ^= hash(fread_qual1)
                 compare_fastq2_checksum_seq ^= hash(fread_seq2)
                 compare_fastq2_checksum_qual ^= hash(fread_qual2)
                 compare_fastq_nrow += 1
-                compare_fastq_nbases += len(fread_seq1) + len(fread_seq2)
+                compare_fastq_nbases1 += len(fread_seq1)
+                compare_fastq_nbases2 += len(fread_seq2)
             except StopIteration:
                 break   
 
 
         stats = {'fastq1_checksum_seq':fastq1_checksum_seq, 'fastq1_checksum_qual':fastq1_checksum_qual, 'fastq1_nrow':fastq1_nrow, 'fastq2_checksum_seq':fastq2_checksum_seq, 'fastq2_checksum_qual':fastq2_checksum_qual, 'fastq2_nrow':fastq2_nrow}
+        stats.update({'fastq1_nbases':fastq1_nbases, 'fastq2_nbases':fastq2_nbases})
         stats.update({'compare_fastq1_checksum_seq':compare_fastq1_checksum_seq, 'compare_fastq1_checksum_qual':compare_fastq1_checksum_qual, 'compare_fastq2_checksum_seq':compare_fastq2_checksum_seq, 'compare_fastq2_checksum_qual':compare_fastq2_checksum_qual})
-        stats.update({'compare_fastq_nrow':compare_fastq_nrow, 'compare_fastq_nbases':compare_fastq_nbases})
+        stats.update({'compare_fastq_nrow':compare_fastq_nrow, 'compare_fastq_nbases1':compare_fastq_nbases1, 'compare_fastq_nbases2':compare_fastq_nbases2})
+
+
+        for k,v in stats.items():
+            sys.stderr.write('%s\t%d\n' % (k,v))
+        sys.stderr.flush()
 
         stats['seq1_compare'] = fastq1_checksum_seq == compare_fastq1_checksum_seq
         stats['qual1_compare'] = fastq1_checksum_qual == compare_fastq1_checksum_qual
         stats['seq2_compare'] = fastq2_checksum_seq == compare_fastq2_checksum_seq
-        stats['qual2_compare'] = fastq2_checksum_qual == compare_fastq2_checksum
+        stats['qual2_compare'] = fastq2_checksum_qual == compare_fastq2_checksum_qual
         stats['nrow1_compare'] = fastq1_nrow == compare_fastq_nrow
         stats['nrow2_compare'] = fastq2_nrow == compare_fastq_nrow
         stats['compare_all'] = stats['seq1_compare'] and stats['qual1_compare'] and stats['seq2_compare'] and stats['qual2_compare'] and stats['nrow1_compare'] and stats['nrow2_compare']
-
 
         sys.stderr.write('Writing statistics\n')
         sys.stderr.flush()
@@ -153,5 +168,3 @@ if __name__ == '__main__':
         else:
             sys.stdout.write('Checksums match\n')
         sys.stdout.flush()
-        sys.exit(1)
-
