@@ -104,10 +104,59 @@ class PairedFastQReader(threading.Thread):
                 
             self.read_found_or_buffer_full.clear()
             self.search_read = True
-            self.read_found_or_buffer_full.wait(timeout=15)
+            self.read_found_or_buffer_full.wait()
             if not self.buffer:
                 assert self.file_finished
                 raise StopIteration()
 
         return self.buffer.popitem()[1]
+
+
+class PairedFastQReaderSimple:
+    def __init__(self, filea,fileb):
+        self.filea = filea
+        self.fileb = fileb
+        self.splitchar = None
+
+        self.file_finished = False
+        self.search_read = None
+
+
+    def retrieveRead(self):
+        with os.popen('pigz -dc ' + self.filea) as f1:
+            with os.popen('pigz -dc ' + self.fileb) as f2:
+                try:
+                    f1 = iter(f1)
+                    f2 = iter(f2)
+                    while True:
+                        header1 = f1.__next__().strip()
+                        seq1 = f1.__next__().strip()
+                        dummy = f1.__next__()
+                        qual1 = f1.__next__().strip()
+                        header2 = f2.__next__().strip()
+                        seq2 = f2.__next__().strip()
+                        dummy = f2.__next__()
+                        qual2 = f2.__next__().strip()
+                        assert header1.startswith('@'), 'Parsing error'
+                        assert header2.startswith('@'), 'Parsing error'
+                        if self.splitchar is None:
+                            if ' ' in header1:
+                                self.splitchar = ' '
+                            elif '/' in header1:
+                                self.splitchar = '/'
+                            else:
+                                raise RuntimeError('Cannot determine FastQ header split character')
+                                
+                        name1, r1 = header1.split(self.splitchar)
+                        name2, r2 = header2.split(self.splitchar)
+                        name1 = name1[1:] #strip '@'
+                        name2 = name2[1:] #strip '@'
+
+                        assert name1 == name2, 'FastQ input files not in same read order'
+
+                        yield (name1, seq1, seq2, qual1, qual2)
+
+                except StopIteration:
+                    pass
+
 

@@ -799,13 +799,13 @@ rule check_rg_bam:
     conda: CONDA_PYPY
     resources:
         n="1",
-        mem_mb=150
+        mem_mb=250
     params:
         bam_check=srcdir(BAMCHECK),
         stats=pj(STAT,"{sample}.{readgroup}.bam_check_stats.tsv")
     shell:
         """
-         samtools view -h --threads 2 {input.bam} | pypy {params.bam_check} --f1  {input.fastq[0]} --f2 {input.fastq[1]}  -s {params.stats}  -c {output.checked}
+         python {params.bam_check} --f1  {input.fastq[0]} --f2 {input.fastq[1]}  -s {params.stats}  -c {output.checked} -i {input.bam}
         """
 
 

@@ -38,8 +38,7 @@ if __name__ == '__main__':
     alignment_counter = 0
     last_time = time.time()
     
-    freader = PairedFastQReader(args.f1, args.f2)
-    freader.start()
+    freader = PairedFastQReaderSimple(args.f1, args.f2)
 
     if args.i == '-':
         pipe_in = sys.stdin
@@ -69,6 +68,24 @@ if __name__ == '__main__':
         compare_fastq_nbases1 = 0
         compare_fastq_nbases2 = 0
 
+        #finish reading fastq
+        fastq_counter = 0        
+        for fread_name, fread_seq1, fread_seq2, fread_qual1, fread_qual2 in freader.retrieveRead():
+            if (fastq_counter % 100000) == 0:
+                sys.stderr.write('%d fastq reads done at %d reads/sec\n' % (alignment_counter, int(100000.0 / (time.time() - last_time))))
+            fastq_counter += 1
+            fread_qual1 = fread_qual1.replace('#', '!') #dragmap sometimes replaces '#' with '!'
+            fread_qual2 = fread_qual2.replace('#', '!')
+            compare_fastq1_checksum_seq ^= hash(fread_seq1)
+            compare_fastq1_checksum_qual ^= hash(fread_qual1)
+            compare_fastq2_checksum_seq ^= hash(fread_seq2)
+            compare_fastq2_checksum_qual ^= hash(fread_qual2)
+            compare_fastq_nrow += 1
+            compare_fastq_nbases1 += len(fread_seq1)
+            compare_fastq_nbases2 += len(fread_seq2)
+
+        sys.stderr.write('End of fastq loop\n')
+        sys.stderr.flush()
         for row in reader:
             alignment_counter += 1
             if (alignment_counter % 100000) == 0:
@@ -87,23 +104,6 @@ if __name__ == '__main__':
                 fastq1_checksum_qual ^= cqual
                 fastq1_nrow += 1
                 fastq1_nbases += len(row.seq)
-
-
-                #intersperse fastq reading for speed
-                try:
-                    fread_name, fread_seq1, fread_seq2, fread_qual1,fread_qual2 = freader.retrieveRead()
-                    fread_qual1 = fread_qual1.replace('#', '!') #dragmap sometimes replaces '#' with '!'
-                    fread_qual2 = fread_qual2.replace('#', '!')
-                    compare_fastq1_checksum_seq ^= hash(fread_seq1)
-                    compare_fastq1_checksum_qual ^= hash(fread_qual1)
-                    compare_fastq2_checksum_seq ^= hash(fread_seq2)
-                    compare_fastq2_checksum_qual ^= hash(fread_qual2)
-                    compare_fastq_nrow += 1
-                    compare_fastq_nbases1 += len(fread_seq1)
-                    compare_fastq_nbases2 += len(fread_seq2)
-                except StopIteration:
-                    pass
-
             else:
                 fastq2_checksum_seq ^= cseq
                 fastq2_checksum_qual ^= cqual
@@ -111,22 +111,9 @@ if __name__ == '__main__':
                 fastq2_nbases += len(row.seq)
 
                 #read 2
+        sys.stderr.write('End of BAM loop\n')
+        sys.stderr.flush()
 
-        #finish reading fastq
-        while True:
-            try:
-                fread_name, fread_seq1, fread_seq2, fread_qual1,fread_qual2 = freader.retrieveRead()                
-                fread_qual1 = fread_qual1.replace('#', '!') #dragmap sometimes replaces '#' with '!'
-                fread_qual2 = fread_qual2.replace('#', '!')
-                compare_fastq1_checksum_seq ^= hash(fread_seq1)
-                compare_fastq1_checksum_qual ^= hash(fread_qual1)
-                compare_fastq2_checksum_seq ^= hash(fread_seq2)
-                compare_fastq2_checksum_qual ^= hash(fread_qual2)
-                compare_fastq_nrow += 1
-                compare_fastq_nbases1 += len(fread_seq1)
-                compare_fastq_nbases2 += len(fread_seq2)
-            except StopIteration:
-                break   
 
 
         stats = {'fastq1_checksum_seq':fastq1_checksum_seq, 'fastq1_checksum_qual':fastq1_checksum_qual, 'fastq1_nrow':fastq1_nrow, 'fastq2_checksum_seq':fastq2_checksum_seq, 'fastq2_checksum_qual':fastq2_checksum_qual, 'fastq2_nrow':fastq2_nrow}
