@@ -264,8 +264,10 @@ rule reblock_gvcf:
 
 rule extract_exomes_gvcf:
     input:
-        gvcf = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"),
-        tbi = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        gvcf = rules.HaplotypeCaller.output.gvcf,
+        tbi = rules.HaplotypeCaller.output.gvcf_tbi
+        # gvcf = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"),
+        # tbi = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
     output:
         gvcf_exome = ensure( pj(GVCF, "exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi = ensure( pj(GVCF, "exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),

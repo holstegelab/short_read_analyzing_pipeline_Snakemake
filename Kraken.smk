@@ -35,7 +35,8 @@ rule kraken:
 
 rule bracken:
     input:
-        report=pj(KRAKEN, "{sample}.report.tsv")
+        report = rules.kraken.output.report
+        # report=pj(KRAKEN, "{sample}.report.tsv")
     output:
         report=pj(KRAKEN, "{sample}.bracken_report.tsv")
     resources:

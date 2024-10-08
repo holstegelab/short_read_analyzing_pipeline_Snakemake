@@ -152,8 +152,10 @@ rule DVWhatshapPhasingMerge:
 
 rule extract_exomes_dv:
     input:
-        gvcf = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
-        tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        gvcf = rules.deepvariant.output.gvcf,
+        tbi = rules.deepvariant.output.gvcf_tbi,
+        # gvcf = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
+        # tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
         gvcf_exome = pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"),
