@@ -3,17 +3,16 @@ from common import *
 import utils
 onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    extension='sam|bam|cram',
-    filetype = 'fq|fastq',
-    batchnr='[\d]+',
-    readid='R1|R2'
+    sample=r"[\w\d_\-@]+",
+    extension=r'sam|bam|cram',
+    filetype = r'fq|fastq',
+    batchnr=r'[\d]+',
+    readid=r'R1|R2'
     # readgroup="[\w\d_\-@]+"
 
 rule kraken_all:
     input:
-        expand("{kraken}/{sample}.report.tsv",sample=sample_names,kraken =KRAKEN),
-        rules.Aligner_all.input
+        expand("{kraken}/{sample}.report.tsv",sample=sample_names,kraken =KRAKEN)
     default_target: True
 
 

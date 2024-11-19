@@ -2,7 +2,7 @@ from common import *
 onsuccess: shell("rm -fr logs/gVCF/*")
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
+    sample=r"[\w\d_\-@]+",
 
 module Tools:
     snakefile:

@@ -5,7 +5,7 @@ import utils
 onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+"
+    sample=r"[\w\d_\-@]+"
 
 
 

@@ -13,3 +13,5 @@ dependencies:
   - pandas
   - mamba
   - pyyaml
+  - poetry
+  - h5py

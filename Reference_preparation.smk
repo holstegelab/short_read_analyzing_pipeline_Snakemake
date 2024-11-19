@@ -4,12 +4,12 @@ import os
 import getpass
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    extension='sam|bam|cram',
-    filetype = 'fq|fastq',
-    sex = 'male|female',
-    batchnr='[\d]+',
-    sex_ref = 'ref_male|ref_female',
+    sample=r"[\w\d_\-@]+",
+    extension=r'sam|bam|cram',
+    filetype = r'fq|fastq',
+    sex = r'male|female',
+    batchnr=r'[\d]+',
+    sex_ref = r'ref_male|ref_female',
     sex_ref_hash = ''
     # readgroup="[\w\d_\-@]+"
 

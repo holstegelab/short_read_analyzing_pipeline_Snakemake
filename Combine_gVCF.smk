@@ -1,6 +1,6 @@
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+",
+    sample=r"[\w\d_\-@]+",
+    readgroup=r"[\w\d_\-@]+",
 
 from common import *
 

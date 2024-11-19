@@ -7,7 +7,7 @@ from common import *
 onsuccess: shell("rm -fr logs/chrM/*")
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
+    sample=r"[\w\d_\-@]+",
 
 
 

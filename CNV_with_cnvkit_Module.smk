@@ -13,7 +13,7 @@ MERGED_CAPTURE_KIT = config['MERGED_CAPTURE_KIT']
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
+    sample=r"[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
 
 

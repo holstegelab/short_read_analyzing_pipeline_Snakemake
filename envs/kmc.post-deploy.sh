@@ -8,24 +8,49 @@ mkdir -p ${CONDA_PREFIX}/software
 git clone --recurse-submodules https://github.com/refresh-bio/KMC ${CONDA_PREFIX}/software/kmc
 cd ${CONDA_PREFIX}/software/kmc
 
-echo '--- Makefile	2023-09-06 12:06:55.211683000 +0200
-+++ Makefile.2	2023-09-06 12:14:27.316297000 +0200
+echo '--- Makefile
++++ Makefile.2
 @@ -1,4 +1,4 @@
 -all: kmc kmc_dump kmc_tools py_kmc_api
 +all: kmc kmc_dump kmc_tools
  
- UNAME_S := $(shell uname -s)
- UNAME_M := $(shell uname -m)
-@@ -68,7 +68,7 @@
+ dummy := $(shell git submodule update --init --recursive)
  
+@@ -62,8 +62,8 @@ else
+ 		STATIC_LFLAGS = -static-libgcc -static-libstdc++ -pthread	
+ 	else
+ 		CPU_FLAGS = -m64
+-		STATIC_CFLAGS = -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
+-		STATIC_LFLAGS = -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
++		STATIC_CFLAGS = -lpthread 
++		STATIC_LFLAGS = -lpthread
+ 	endif
+ 	PY_FLAGS = -fPIC
+ endif
+@@ -151,11 +151,11 @@ $(KMC_CLI_OBJS) $(KMC_CORE_OBJS) $(KMC_DUMP_OBJS) $(KMC_API_OBJS) $(KFF_OBJS) $(
+ 	$(CC) $(CFLAGS) -I 3rd_party/cloudflare -c $< -o $@
  
- CFLAGS	= -Wall -O3 -fsigned-char $(CPU_FLAGS) $(STATIC_CFLAGS) -std=c++14
--CLINK	= -lm $(STATIC_LFLAGS) -O3 -std=c++14
-+CLINK	= -lm -lpthread -O3 -std=c++14
- PY_KMC_API_CFLAGS = $(PY_FLAGS) -Wall -shared -std=c++14 -O3
+ $(KMC_MAIN_DIR)/raduls_sse2.o: $(KMC_MAIN_DIR)/raduls_sse2.cpp
+-	$(CC) $(CFLAGS) -msse2 -c $< -o $@
++	$(CC) $(CFLAGS) -msse2 -mno-sse4 -mno-avx -mno-avx2 -c $< -o $@
+ $(KMC_MAIN_DIR)/raduls_sse41.o: $(KMC_MAIN_DIR)/raduls_sse41.cpp
+-	$(CC) $(CFLAGS) -msse4.1 -c $< -o $@
++	$(CC) $(CFLAGS) -msse4.1 -mno-avx -mno-avx2 -c $< -o $@
+ $(KMC_MAIN_DIR)/raduls_avx.o: $(KMC_MAIN_DIR)/raduls_avx.cpp
+-	$(CC) $(CFLAGS) -mavx -c $< -o $@
++	$(CC) $(CFLAGS) -mavx -mno-avx2 -c $< -o $@
+ $(KMC_MAIN_DIR)/raduls_avx2.o: $(KMC_MAIN_DIR)/raduls_avx2.cpp
+ 	$(CC) $(CFLAGS) -mavx2 -c $< -o $@
  
- KMC_CLI_OBJS = \
-' > kmc_make.patch
+@@ -169,7 +169,7 @@ $(LIB_KMC_CORE): $(KMC_CORE_OBJS) $(RADULS_OBJS) $(KMC_API_OBJS) $(KFF_OBJS)
+ 	-mkdir -p $(OUT_BIN_DIR)
+ 	ar rcs $@ $^
+ 
+-kmc: $(KMC_CLI_OBJS) $(LIB_KMC_CORE) $(LIB_ZLIB)
++kmc: $(RADULS_OBJS) $(KMC_CLI_OBJS) $(KMC_CORE_OBJS) $(KMC_API_OBJS) $(KFF_OBJS) $(LIB_ZLIB)
+ 	-mkdir -p $(OUT_BIN_DIR)
+ 	$(CC) $(CLINK) -o $(OUT_BIN_DIR)/$@ $^' > kmc_make.patch
+
 
 patch < kmc_make.patch
 make -j32

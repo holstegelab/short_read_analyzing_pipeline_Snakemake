@@ -197,7 +197,16 @@ def process_record(grecord, vrecord, gphase_blocks, wphase_blocks):
         delim = '|'
         vreflen = len(vrecord.REF) 
 
-    block_id = int(str(phase_block.id).split(':')[1]) #output phase block id
+    try:
+        block_id = int(str(phase_block.id).split(':')[1]) #output phase block id
+    except:
+        print(phase_block.id)
+        print(phase_block)
+        print(grecord)
+        print(vrecord)
+        print(gphase_block)
+        print(wphase_block)
+        raise
     v_allele1, v_allele2 = variant.split('|')  #get the alleles
     if not phase_block.correct_orientation: #if the phase block is in the wrong orientation, swap the alleles
         v_allele1, v_allele2 = v_allele2, v_allele1

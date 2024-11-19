@@ -3,8 +3,8 @@ from common import *
 import yaml
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    mode = "WES|WGS"
+    sample=r"[\w\d_\-@]+",
+    mode = r"WES|WGS"
 
 
 module Tools:

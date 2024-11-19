@@ -2,7 +2,7 @@ from common import *
 import zlib
 import time
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
+    sample=r"[\w\d_\-@]+",
     # readgroup="[\w\d_\-@]+"
 
 module Aligner:

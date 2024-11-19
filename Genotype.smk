@@ -1,11 +1,11 @@
 import os
 from itertools import repeat
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    genotype_level="[2|3|4]",
-    region="[0-9XYAFOH]+",
-    genotype_alg="(GenotypeGVCFs|GnarlyGenotyper)",
-    genotype_mode="(WES|WGS)"
+    sample=r"[\w\d_\-@]+",
+    genotype_level=r"[2|3|4]",
+    region=r"[0-9XYAFOH]+",
+    genotype_alg=r"(GenotypeGVCFs|GnarlyGenotyper)",
+    genotype_mode=r"(WES|WGS)"
 
 from common import *
 

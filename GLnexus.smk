@@ -5,10 +5,10 @@ import concurrent.futures
 # onsuccess: "rm -rf "
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    chr = "[\w\d]+",
-    region = "[\w\d]+",
-    genotype_mode = "WES|WGS",
+    sample=r"[\w\d_\-@]+",
+    chr = r"[\w\d]+",
+    region = r"[\w\d]+",
+    genotype_mode = r"WES|WGS",
     # readgroup="[\w\d_\-@]+"
 
 gvcf_caller = config.get("caller", "BOTH")

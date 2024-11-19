@@ -4,9 +4,9 @@ import numpy as np
 
 onsuccess: shell("rm -fr logs/gCNV_gatk/*")
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    cohorts = "[\d]",
-    index = "(\d+)"
+    sample=r"[\w\d_\-@]+",
+    cohorts = r"[\d]",
+    index = r"(\d+)"
 
 module Aligner:
     snakefile: 'Aligner.smk'

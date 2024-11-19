@@ -13,8 +13,8 @@ verifybamid2 = config['verifybamid2']
 ref = config['RES'] + config['ref']
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    readgroup="[\w\d_\-@]+"
+    sample=r"[\w\d_\-@]+",
+    readgroup=r"[\w\d_\-@]+"
 
 
 from read_samples import *

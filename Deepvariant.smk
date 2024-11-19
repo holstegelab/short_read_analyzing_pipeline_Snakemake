@@ -1,6 +1,6 @@
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    region = "[\w\d]+",
+    sample=r"[\w\d_\-@]+",
+    region = r"[\w\d]+",
     # readgroup="[\w\d_\-@]+"
 onsuccess: shell("rm -fr logs/Deepvariant/*")
 from common import *

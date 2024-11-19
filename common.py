@@ -4,7 +4,7 @@ import csv
 
 from constants import *
 from read_samples import *
-
+from pathlib import Path
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -53,7 +53,26 @@ main_chrs_ploidy_female = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7
 # of  levelX_regions_so lists, and enable the 'classic=True' on the region_to_file function.
 
 
-
+#redefine the srcdir function to use the workflow.basedir
+#(was removed from snakemake)
+import inspect
+def srcdir(path):
+    
+    frame = inspect.currentframe()
+    try:
+        # Walk back to the caller's frame (1 level up)
+        caller_frame = frame.f_back
+        # Access the 'workflow' variable from the caller's local variables
+        workflow = caller_frame.f_globals.get("workflow")
+        if workflow is None:
+            raise ValueError("Could not find 'workflow' in the calling frame.")
+        return Path(workflow.basedir) / Path(path)    
+        # Add logic that uses the workflow variable
+    finally:
+        # Clean up the frame reference to avoid reference cycles
+        del frame
+        del caller_frame
+    
 
 
 level0_range = [('F', 0,0,2), ('X',0,0, 1), ('Y', 0,0, 1)]

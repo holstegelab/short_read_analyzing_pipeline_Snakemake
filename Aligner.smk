@@ -7,11 +7,11 @@ import utils
 onsuccess: shell("rm -fr logs/Aligner/*")
 
 wildcard_constraints:
-    sample="[\w\d_\-@]+",
-    extension='sam|bam|cram',
-    filetype='fq|fastq',
-    batchnr='[\d]+',
-    readid='R1|R2'
+    sample=r"[\w\d_\-@]+",
+    extension=r'sam|bam|cram',
+    filetype=r'fq|fastq',
+    batchnr=r'[\d]+',
+    readid=r'R1|R2'
 
 # readgroup="[\w\d_\-@]+"
 

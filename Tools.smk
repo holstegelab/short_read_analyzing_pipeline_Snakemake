@@ -45,7 +45,7 @@ rule CreateBinsFullGenome:
     resources:
         n="1.0",
         mem_mb=250
-    shell: """
+    shell: r"""
         mkdir -p {output}
         cd {output}
         bedtools sort -i {input.merged_kit} > {input.merged_kit}.sorted.bed
@@ -185,7 +185,7 @@ rule CreateBinsExome:
     resources:
         n="1.0",
         mem_mb=250
-    shell: """
+    shell: r"""
         mkdir -p {output}
         cd {output}
         bedtools slop -i {input.merged_kit} -g {input.fai} -b 300 | bedtools merge | bedtools sort > {input.merged_kit}.padded.bed
