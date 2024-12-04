@@ -187,4 +187,9 @@ rule checking:
     input: vcf = "{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz"
     output: vcf = "{genotype_alg}/{VCF}/ANNOTATED/{region}_{genotype_mode}.annotated.vcf.gz.tbi"
     conda: CONDA_MAIN
-    shell: "tabix -p vcf {input.vcf}"
+    shell:
+        """
+        
+        tabix -p vcf {input.vcf}
+        rm -rf {genotype_alg}/{VCF}/ANNOTATED_temp/{region}_{genotype_mode}*
+        """

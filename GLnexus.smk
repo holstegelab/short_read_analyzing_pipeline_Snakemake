@@ -358,4 +358,5 @@ rule bgzip:
     shell:
         """
         tabix -fp vcf {input.vcf_annotated}
+        rm -rf {wildcards.genotype_mode}_{wildcards.types_of_gl}{dir_appendix}/ANNOTATED_temp/{wildcards.region}*
         """
