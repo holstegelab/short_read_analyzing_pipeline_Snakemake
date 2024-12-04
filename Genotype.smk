@@ -122,7 +122,7 @@ rule split_multiallelic:
         n=12
     shell:
         """
-        {bcftools_patched} view -U -c1:nonmajor {input.vcf}  --threads {resources.n} -Ou | {bcftools_patched} query -f '%CHROM\t%POS\t%REF\t%ALT\t%AS_FilterStatus\t%AC\t%AN\n' | awk '{{l2=split($4,a,","); if(l2 > 1 && $7 > 0) {{split($6,ac,","); ref=1.0; for (i in ac) ref-= (ac[i]/$7); failcount=0; for (i in ac) failcount+=(ref<(ac[i]/$7)); OFS="\t"; print $1, $2, $3, $4, $4, $5, l2, $6, ref, failcount}}}}' | bgzip --threads {resources.n}  > {output.temp_tsv}
+        {bcftools_patched} view -U -c1:nonmajor {input.vcf}  --threads {resources.n} -Ou | {bcftools_patched} query -f '%CHROM\t%POS\t%REF\t%ALT\t[ %AS_FS]\t%AC\t%AN\n' | awk '{{l2=split($4,a,","); if(l2 > 1 && $7 > 0) {{split($6,ac,","); ref=1.0; for (i in ac) ref-= (ac[i]/$7); failcount=0; for (i in ac) failcount+=(ref<(ac[i]/$7)); OFS="\t"; print $1, $2, $3, $4, $4, $5, l2, $6, ref, failcount}}}}' | bgzip --threads {resources.n}  > {output.temp_tsv}
         tabix -s1 -b2 -e2 {output.temp_tsv}
         {bcftools_patched} view -U -c1:nonmajor {input.vcf} --threads {resources.n} -Ou | {bcftools_patched} annotate -a {output.temp_tsv} -h {multiallelic_hdr} -c CHROM,POS,REF,ALT,MA_ALT,MA_FILTER,NMA_ALT,MA_ALT_AC,MA_REF_AF,MA_REFLOW_COUNT --threads {resources.n} -Ov | {bcftools_patched} norm -f {REF} -m- -c w --thread {resources.n} -o {output.vcf} --output-type z
         """
