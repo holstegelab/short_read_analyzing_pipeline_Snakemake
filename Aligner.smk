@@ -654,6 +654,7 @@ rule align_reads:
         validated_sex=rules.get_validated_sex.output.yaml
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.aligned.bam")),
+    log:
         dragmap_log=pj(STAT,"{sample}.{readgroup}.dragmap.log")
     params:
         ref_dir=get_refdir_by_validated_sex,
