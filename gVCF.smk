@@ -184,13 +184,16 @@ rule HaplotypeCaller:
     # Here we use whatshap to phase the gatk called variants, and then merge the whatshap phased variants with the gatk phased variants.
     # This way we get the best of both worlds: the gatk phasing is used for short distance phasing also of variants with low read
     # support (which might become full variants during multi-sample genotyping), and the whatshap phasing is used for long distance phasing.
+    
+
+    #--adaptive-pruning \
 
     shell:
         """ 
         {gatk} --java-options "-Xmx{resources.mem_mb}M  {params.java_options}" HaplotypeCaller \
             -R {params.ref} -L {input.interval} -ip {params.padding} -D {params.dbsnp} -ERC GVCF --contamination {params.contam_frac} \
             --ploidy {params.ploidy} -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
-            --annotate-with-num-discovered-alleles --adaptive-pruning \
+            --annotate-with-num-discovered-alleles \
             -A StrandBiasBySample -A AssemblyComplexity -A FragmentLength \
             -I {input.bams} -O {output.orig_gvcf}  --native-pair-hmm-threads 2  --create-output-variant-index true \
             --seconds-between-progress-updates 120 \
@@ -264,10 +267,8 @@ rule reblock_gvcf:
 
 rule extract_exomes_gvcf:
     input:
-        gvcf = rules.HaplotypeCaller.output.gvcf,
-        tbi = rules.HaplotypeCaller.output.gvcf_tbi
-        # gvcf = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz"),
-        # tbi = pj(GVCF, "reblock/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        gvcf = rules.reblock_gvcf.output.gvcf_reblock,
+        tbi = rules.reblock_gvcf.output.tbi 
     output:
         gvcf_exome = ensure( pj(GVCF, "exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
         tbi = ensure( pj(GVCF, "exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True),

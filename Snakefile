@@ -81,6 +81,7 @@ module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
 END_RULE = []
+CLEAN_RULE = []
 gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
 gvcf_caller = config.get("caller","BOTH")
@@ -101,6 +102,8 @@ if end_point == "gVCF":
         use rule * from Aligner
 
         use rule * from Kraken
+        
+        use rule * from Stat
 
         rule finished_sample:
             """Finish processing a sample. 
@@ -124,7 +127,8 @@ if end_point == "gVCF":
                 touch {output}
                 """
 
-        END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
+
+
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller and Deepvariant (both=default). \n"
               "To change gVCF caller selection pass '--config caller=Deepvariant' or '--config caller=HaplotypeCaller'")
     elif gvcf_caller == "HaplotypeCaller":
@@ -154,7 +158,6 @@ if end_point == "gVCF":
                 touch {output}
                 """
 
-        END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
@@ -184,9 +187,11 @@ if end_point == "gVCF":
                 touch {output}
             """
 
-        END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. \n"
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
+
+    END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
+    CLEAN_RULE = [expand(pj(STAT,"{sample}.stats.tar.gz"),sample=sample_names)]
 
 elif end_point == 'PrepareRef':
     use rule * from Reference_preparation
@@ -409,15 +414,21 @@ else:
         "Invalid option provided to 'END_POINT'; please choose either 'gVCF(default)', 'Align', 'Genotype' or 'Combine'."
     )
 
-rule all:
+rule pipeline:
     input:
         END_RULE,
         rules.chrM_analysis_all.input,
         #SV_rule,
         #CNV_rule,
         rules.Encrypt_all.input,
-    default_target: True
+    output:
+        done=touch('pipeline.done')
 
+rule all:
+    input:
+        CLEAN_RULE,
+        rules.pipeline.output.done
+    default_target: True        
 
 
 

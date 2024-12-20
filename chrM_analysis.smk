@@ -54,7 +54,7 @@ rule realign_to_orig_ref:
             bai = temp(pj(chrM,'{sample}_chrM_orig.reads.bai')),
             bam_shifted= temp(pj(chrM,'{sample}_chrM_shifted.reads.bam')),
             bai_shifted=temp(pj(chrM,'{sample}_chrM_shifted.reads.bai'))
-    conda: "envs/dragmap_chrm.yaml"
+    conda: CONDA_DRAGMAP
     params:
         ref_dir=pj(ORIG_MT),
         threads_per_task = 4
@@ -190,7 +190,7 @@ rule align_NUMT_to_chrM:
             bai = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.realign.bai')),
             bam_shifted= temp(pj(chrM,"NUMTs",'{sample}_NUMTs_shifted.reads.bam')),
             bai_shifted=temp(pj(chrM,"NUMTs",'{sample}_NUMTs_shifted.reads.bai'))
-    conda: "envs/dragmap_chrm.yaml"
+    conda: CONDA_DRAGMAP
     params:
         ref_dir=pj(ORIG_MT),
         threads_per_task = 4,
