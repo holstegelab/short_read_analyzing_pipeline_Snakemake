@@ -82,6 +82,13 @@ module Reference_preparation:
     config: config
 END_RULE = []
 CLEAN_RULE = []
+chrM = config.get("chrM","No")
+if chrM == "Yes":
+    use rule * from chrM_analysis
+
+    chrM_rule = rules.chrM_analysis_all.input
+else:
+    chrM_rule = []
 gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
 gvcf_caller = config.get("caller","BOTH")
@@ -417,7 +424,7 @@ else:
 rule pipeline:
     input:
         END_RULE,
-        rules.chrM_analysis_all.input,
+        chrM_rule,
         #SV_rule,
         #CNV_rule,
         rules.Encrypt_all.input,
