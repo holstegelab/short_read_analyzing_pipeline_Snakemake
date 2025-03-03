@@ -3,16 +3,18 @@ import read_stats
 import itertools
 import os
 
+sample_names = SAMPLEINFO.keys()
+sample_pattern = "|".join(sample_names)
 onsuccess: shell("rm -f zslurm-*"
                  "rm -rf logs"
                  "rm -rf tmp")
 onerror:
-        shell(f"""
-        grep 'Error in rule' zslurm-* | awk '{{print $4}}' | sed 's/://g' > error_rules.txt
-        grep -A 2 'Error in rule' zslurm-* | grep 'input' | grep '{sample_names}' | awk '{{print $2}}' > error_samples.txt
-        paste error_rules.txt error_samples.txt > error.log
-        rm error_rules.txt error_samples.txt
-        """)
+            shell(f"""
+            grep 'Error in rule' zslurm-* | awk '{{print $$4}}' | sed 's/://g' > error_rules.txt
+            grep -A 2 'Error in rule' zslurm-* | grep 'input' | grep -E '{sample_pattern}' | awk '{{print $$2}}' > error_samples.txt
+            paste error_rules.txt error_samples.txt > error.log
+            rm error_rules.txt error_samples.txt
+            """)
 
 wildcard_constraints:
     sample=r"[\w\d_\-@]+",
