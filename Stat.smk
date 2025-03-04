@@ -505,7 +505,7 @@ rule gathersexstats:
         read_stats.write_tsv(str(output),header,data)
 
 rule get_capture_kit:
-    input: bam = rules.markdup.output.mdbams,
+    input: bam = pj(BAM,"{sample}.markdup.bam"),
             precomputed_data = PRECOMPUTEED_BED,
     output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv")
     params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit']
