@@ -9,4 +9,5 @@ dependencies:
   - numpy=1.23.5
   - python
   - pybedtools
+  - pandas
 name: capture_kit_finder

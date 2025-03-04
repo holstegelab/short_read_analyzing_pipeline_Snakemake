@@ -39,6 +39,7 @@ import logging
 import json
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+import pandas as pd
 
 # Set up logging
 logging.basicConfig(
