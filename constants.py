@@ -91,7 +91,7 @@ MERGEPHASE = 'scripts/merge_phasing.py'
 MERGEPHASEDIRECT = 'scripts/merge_phasing_direct.py'
 CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
 SLOPSCRIPT = 'scripts/slop_start_stop.py'
-CAPTURE_KIT_CHECKER = 'scripts/capture_kit_checker.py'
+CAPTURE_KIT_CHECKER = 'scripts/capture_kit_cheker.py'
 
 
 #path to kmer files
