@@ -39,6 +39,7 @@ import logging
 import json
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -391,19 +392,19 @@ def process_kit_precomputed(args):
         }
 
 
-def generate_tsv_output(results, output_file, expected_kit=None):
+def generate_tsv_output(results, output_prefix, expected_kit=None):
     """Generate a simple TSV file with kit comparison results for pipeline integration"""
     logger.info("Generating TSV output file")
 
-    # # Create output directory if it doesn't exist
-    # output_dir = os.path.dirname(output_prefix)
-    # if output_dir and not os.path.exists(output_dir):
-    #     os.makedirs(output_dir)
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(output_prefix)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     if not results or len(results) == 0:
         logger.warning("No results to output")
         # Create empty file
-        with open(f"{output_file}", 'w') as f:
+        with open(f"{output_prefix}.tsv", 'w') as f:
             f.write("No capture kits met the criteria\n")
         return "VALIDATION_FAILED"
 
@@ -491,6 +492,7 @@ def generate_tsv_output(results, output_file, expected_kit=None):
             f"Kit validation status: {kit_validation_status} (Expected: {expected_kit}, Identified: {identified_kit})")
 
     # Save to TSV file
+    output_file = f"{output_prefix}.tsv"
     output_df.write_csv(output_file, separator='\t')
 
     logger.info(f"Results saved to {output_file}")
@@ -505,16 +507,31 @@ def main():
     # Parse command line arguments
     args = parse_arguments()
 
-    # Set the number of threads for Polars
-    pl.Config.set_global_opt("use_temporal_batching", True)
-    pl.Config.set_streaming_chunk_size(1 << 20)  # 1MB chunks
-
-    # If threading is available, use it
+    # Set the number of threads for Polars if possible
+    # This is compatible with different Polars versions
     try:
-        pl.ThreadPool.set_num_threads(args.threads)
-        logger.info(f"Set Polars to use {args.threads} threads")
+        # Try newer Polars API first
+        try:
+            import polars as pl
+            pl.Config.set_threading_enabled(True)
+            logger.info(f"Set Polars threading to enabled")
+        except AttributeError:
+            # Try alternative API for older Polars versions
+            try:
+                pl.set_threading_enabled(True)
+                logger.info(f"Set Polars threading to enabled (using alternative API)")
+            except:
+                pass
+
+        # Try to set number of threads if that API exists
+        try:
+            pl.ThreadPool.set_num_threads(args.threads)
+            logger.info(f"Set Polars to use {args.threads} threads")
+        except (AttributeError, NameError):
+            logger.info(f"Polars thread count configuration not available in this version")
+
     except Exception as e:
-        logger.warning(f"Could not set Polars thread count: {str(e)}")
+        logger.warning(f"Could not configure Polars threading: {str(e)}")
 
     # Check if we're running in precomputation mode
     if args.precompute_mode:
