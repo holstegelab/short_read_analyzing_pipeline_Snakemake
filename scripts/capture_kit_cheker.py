@@ -90,6 +90,69 @@ def check_bam_index(bam_file):
     return True
 
 
+def process_bed_file(args):
+    """Process a single BED file to extract information for precomputation
+
+    Args:
+        args: Tuple containing (bed_file, genome_file, output_dir)
+
+    Returns:
+        Tuple of (kit_name, kit_data) or (None, None) if an error occurs
+    """
+    bed_file, genome_file, output_dir = args
+
+    try:
+        kit_name = os.path.basename(bed_file).replace('.bed', '')
+        logger.info(f"Processing kit: {kit_name}")
+
+        # Get absolute path to bed file
+        abs_bed_file = os.path.abspath(bed_file)
+
+        # Create BedTool object
+        bed = BedTool(abs_bed_file)
+
+        # Calculate basic statistics
+        regions = bed.to_dataframe()
+        regions_count = len(regions)
+
+        # Calculate region sizes
+        regions['size'] = regions['end'] - regions['start']
+        total_bases = regions['size'].sum()
+
+        # Generate complement BED file (off-target regions)
+        complement_file = os.path.join(output_dir, f"{kit_name}_complement.bed")
+        complement = bed.complement(g=genome_file)
+        complement.saveas(complement_file)
+
+        # Calculate interval size statistics
+        min_interval = regions['size'].min() if not regions.empty else 0
+        max_interval = regions['size'].max() if not regions.empty else 0
+        mean_interval = regions['size'].mean() if not regions.empty else 0
+
+        # Count regions per chromosome
+        chrom_counts = {}
+        for chrom in regions['chrom'].unique():
+            chrom_counts[chrom] = len(regions[regions['chrom'] == chrom])
+
+        # Store results
+        kit_data = {
+            'bed_file': abs_bed_file,
+            'complement_file': os.path.abspath(complement_file),
+            'regions_count': regions_count,
+            'total_bases': int(total_bases),
+            'min_interval': int(min_interval),
+            'max_interval': int(max_interval),
+            'mean_interval': float(mean_interval),
+            'chrom_counts': chrom_counts
+        }
+
+        return kit_name, kit_data
+
+    except Exception as e:
+        logger.error(f"Error processing {bed_file}: {str(e)}")
+        return None, None
+
+
 def precompute_kit_data(kit_dir, genome_file, output_file, threads=1):
     """Precompute static information about capture kits to speed up future analyses"""
     logger.info(f"Starting precomputation of capture kit data from {kit_dir}")
@@ -110,62 +173,15 @@ def precompute_kit_data(kit_dir, genome_file, output_file, threads=1):
 
     logger.info(f"Processing {len(bed_files)} BED files")
 
-    # Use multiprocessing to speed up precomputation
-    def process_bed_file(bed_file):
-        try:
-            kit_name = os.path.basename(bed_file).replace('.bed', '')
-            logger.info(f"Processing kit: {kit_name}")
-
-            # Get absolute path to bed file
-            abs_bed_file = os.path.abspath(bed_file)
-
-            # Create BedTool object
-            bed = BedTool(abs_bed_file)
-
-            # Calculate basic statistics
-            regions = bed.to_dataframe()
-            regions_count = len(regions)
-
-            # Calculate region sizes
-            regions['size'] = regions['end'] - regions['start']
-            total_bases = regions['size'].sum()
-
-            # Generate complement BED file (off-target regions)
-            complement_file = os.path.join(os.path.dirname(output_file), f"{kit_name}_complement.bed")
-            complement = bed.complement(g=genome_file)
-            complement.saveas(complement_file)
-
-            # Calculate interval size statistics
-            min_interval = regions['size'].min() if not regions.empty else 0
-            max_interval = regions['size'].max() if not regions.empty else 0
-            mean_interval = regions['size'].mean() if not regions.empty else 0
-
-            # Count regions per chromosome
-            chrom_counts = {}
-            for chrom in regions['chrom'].unique():
-                chrom_counts[chrom] = len(regions[regions['chrom'] == chrom])
-
-            # Store results
-            kit_data = {
-                'bed_file': abs_bed_file,
-                'complement_file': os.path.abspath(complement_file),
-                'regions_count': regions_count,
-                'total_bases': int(total_bases),
-                'min_interval': int(min_interval),
-                'max_interval': int(max_interval),
-                'mean_interval': float(mean_interval),
-                'chrom_counts': chrom_counts
-            }
-
-            return kit_name, kit_data
-
-        except Exception as e:
-            logger.error(f"Error processing {bed_file}: {str(e)}")
-            return None, None
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(os.path.abspath(output_file))
+    os.makedirs(output_dir, exist_ok=True)
 
     # Process bed files in parallel
     with ProcessPoolExecutor(max_workers=threads) as executor:
-        results = list(executor.map(process_bed_file, bed_files))
+        # Create arguments for each bed file: (bed_file, genome_file, output_dir)
+        process_args = [(bed_file, genome_file, output_dir) for bed_file in bed_files]
+        results = list(executor.map(process_bed_file, process_args))
 
     # Collect results
     for kit_name, kit_data in results:
@@ -173,7 +189,6 @@ def precompute_kit_data(kit_dir, genome_file, output_file, threads=1):
             precomputed_data[kit_name] = kit_data
 
     # Save precomputed data
-    os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
     with open(output_file, 'w') as f:
         json.dump(precomputed_data, f, indent=2)
 
