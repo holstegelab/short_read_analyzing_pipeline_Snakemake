@@ -508,7 +508,8 @@ rule get_capture_kit:
     input: bam = pj(BAM,"{sample}.markdup.bam"),
             precomputed_data = PRECOMPUTEED_BED,
     output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv")
-    params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit']
+    params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
+            CAPTURE_KIT_CHECKER = srcdir(CAPTURE_KIT_CHECKER)
     conda: CONDA_CK_FINDER
     resources: n = "16",
                mem_mb = 8000
