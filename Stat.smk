@@ -515,7 +515,7 @@ rule get_capture_kit:
                mem_mb = 8000
     shell:
         """
-        python {CAPTURE_KIT_CHECKER}             --bam {input.bam} \
+        python {params.CAPTURE_KIT_CHECKER}             --bam {input.bam} \
             --precomputed {input.precomputed} \
             --output {output.capture_kit_stats} \
             --expected_kit "{params.expected_kit}" \

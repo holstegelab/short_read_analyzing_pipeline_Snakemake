@@ -288,7 +288,7 @@ rule precompute_bed_for_capture_kit_checker:
         mem_mb=8000
     shell:
         """
-        python {CAPTURE_KIT_CHECKER}  --precompute_mode \
+        python {params.CAPTURE_KIT_CHECKER}  --precompute_mode \
             --kit_dir {input.kit_dir} \
             --genome {input.genome} \
             --precompute_output {output.precomputed} \
