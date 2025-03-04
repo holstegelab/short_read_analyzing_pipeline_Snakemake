@@ -443,7 +443,7 @@ onerror:
             shell("""
             sample_pattern="{sample_pattern}"
             grep 'Error in rule' zslurm-* | awk '{{print $1 "\t" $4}}' | awk -F"[/:]" '{{print$1 "\t" $2}}' | awk '{{print$1 "\t" $3}}'>> error_rules.txt
-            grep -A 2 'Error in rule' zslurm-* | grep 'input' | awk -F[,] '{print$1}' | grep -E -o '{sample_pattern}' >> error_samples.txt
+            grep -A 2 'Error in rule' zslurm-* | grep 'input' | awk -F[,] '{{print$1}}' | grep -E -o '{sample_pattern}' >> error_samples.txt
             paste error_rules.txt error_samples.txt > error.log
             """)
 
