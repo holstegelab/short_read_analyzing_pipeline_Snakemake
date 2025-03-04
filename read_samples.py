@@ -164,6 +164,7 @@ def read_samplefile(filename, prefixpath=None):
     
     orig_filename = filename
     filename = os.path.realpath(filename)
+    #TODO: add check for uniq sample names
 
     basename = os.path.splitext(filename)[0] 
     if os.path.exists(basename + '.source'):
@@ -717,4 +718,3 @@ if __name__ == '__main__':
     samplefiles = [os.path.expanduser(sample_file) for sample_file in args.samplefiles]
     for samplefile in samplefiles:
         read_samplefile(samplefile, args.data_root)
-

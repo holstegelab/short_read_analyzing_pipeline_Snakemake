@@ -7,19 +7,20 @@ RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res_v2/'
 
 #region files
 INTERVALS_DIR = pj(RESOURCES,'intervals')
-MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'merged_capture_kits_cds.bed')
-MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'merged_capture_kits_cds.interval_list')
+MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'merged_capture_kits_cds.bed')
+MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'merged_capture_kits_cds.interval_list')
 MERGED_CAPTURE_KIT_IVL_CNV = pj(INTERVALS_DIR, 'preprocessed_intervals_for_GATK_CNV', 'merged_capture_kits_cds.interval_list')
-INTERSECT_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'intersect_non_focused_capture_kits.bed')
-INTERSECT_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'intersect_non_focused_capture_kits.interval_list')
+INTERSECT_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'intersect_non_focused_capture_kits.bed')
+INTERSECT_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'intersect_non_focused_capture_kits.interval_list')
 HARD_MAPPABILITY_TRACK = pj(RESOURCES, 'k24.umap.bed.gz')
-TARGETS_BED = pj(INTERVALS_DIR,'gencode_43_cds.bed')
-TARGETS_IVL = pj(INTERVALS_DIR,'gencode_43_cds.interval_list')
+TARGETS_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'gencode_43_cds.bed')
+TARGETS_IVL = pj(INTERVALS_DIR,'MERGED_INTERSECT', 'gencode_43_cds.interval_list')
 PL_PR_TABLE = pj(RESOURCES, 'ploydi_priors_table_hg38.tsv')
 MAIN_CHRS_BED = pj(RESOURCES, 'only_main_chr.bed')
 #resource folder with cram reference fasta files
 CRAMREFS = pj(RESOURCES,'cram_refs')
-
+GENOME_FILE = pj(INTERVALS_DIR, 'hg38.genome')
+PRECOMPUTEED_BED = pj(INTERVALS_DIR, 'precomputed_kits.json')
 # dir with this file
 SNAKEMAKE_DIR_PATH = os.path.dirname('')
 
@@ -35,6 +36,7 @@ CONDA_PCA = 'envs/PCA.yaml'
 CONDA_GATK_CNV = pj(RESOURCES, 'software', 'gatk_4.4', 'build', 'gatkcondaenv.yml')
 CONDA_ANNOVAR = 'envs/annovar.yaml'
 CONDA_DRAGMAP = 'envs/dragenos.yaml'
+CONDA_CK_FINDER = 'envs/capture_kit_finder.yaml'
 
 DEFAULT_JAVA_OPTIONS = ' -XX:ConcGCThreads=4 -XX:ParallelGCThreads=4 '
 
@@ -89,6 +91,7 @@ MERGEPHASE = 'scripts/merge_phasing.py'
 MERGEPHASEDIRECT = 'scripts/merge_phasing_direct.py'
 CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
 SLOPSCRIPT = 'scripts/slop_start_stop.py'
+CAPTURE_KIT_CHECKER = 'scripts/capture_kit_checker.py'
 
 
 #path to kmer files

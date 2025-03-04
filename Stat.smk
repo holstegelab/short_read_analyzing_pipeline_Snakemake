@@ -50,6 +50,7 @@ rule Stat_all:
         expand("{samplefile}.bam_rg_quality.tab",samplefile=SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab",samplefile=SAMPLE_FILES),
         expand("{samplefile}.coverage.hdf5",samplefile=SAMPLE_FILES),
+        expand(pj(STAT,"{sample}.capture_kit_stats.tsv"), sample=sample_names),
     default_target: True
 
 
@@ -502,3 +503,20 @@ rule gathersexstats:
 
         header, data = read_stats.combine_sex_stats(samples,kmer_stats,sex_reported)
         read_stats.write_tsv(str(output),header,data)
+
+rule get_capture_kit:
+    input: bam = rules.markdup.output.mdbams,
+            precomputed_data = PRECOMPUTEED_BED,
+    output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv")
+    params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit']
+    conda: CONDA_CK_FINDER
+    resources: n = "16",
+               mem_mb = 8000
+    shell:
+        """
+        python {CAPTURE_KIT_CHECKER}             --bam {input.bam} \
+            --precomputed {input.precomputed} \
+            --output {output.capture_kit_stats} \
+            --expected_kit "{params.expected_kit}" \
+            --threads {resources.n} 
+        """

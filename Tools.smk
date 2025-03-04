@@ -274,4 +274,23 @@ rule select_bed_chrom:
         mem_mb=1000
     shell: """
             grep -P '^{wildcards.chrom}\t' {input} > {output}
-          """  
+          """
+
+
+rule precompute_bed_for_capture_kit_checker:
+    input: kit_dir = INTERVALS_DIR,
+            genome = GENOME_FILE
+    output: precomputed = PRECOMPUTEED_BED
+    conda: CONDA_CK_FINDER
+    resources:
+        n="16",
+        mem_mb=8000
+    shell:
+        """
+        python {CAPTURE_KIT_CHECKER}  --precompute_mode \
+            --kit_dir {input.kit_dir} \
+            --genome {input.genome} \
+            --precompute_output {output.precomputed} \
+            --threads {resources.n} \
+        """
+

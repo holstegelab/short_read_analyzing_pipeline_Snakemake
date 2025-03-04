@@ -1,0 +1,12 @@
+channels:
+- conda-forge
+- bioconda
+- default
+- defaults
+dependencies:
+  - pysam
+  - polars
+  - numpy=1.23.5
+  - python
+  - pybedtools
+name: capture_kit_finder
