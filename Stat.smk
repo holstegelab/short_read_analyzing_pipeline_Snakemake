@@ -516,7 +516,7 @@ rule get_capture_kit:
     shell:
         """
         python {params.CAPTURE_KIT_CHECKER}             --bam {input.bam} \
-            --precomputed {input.precomputed} \
+            --precomputed {input.precomputed_data} \
             --output {output.capture_kit_stats} \
             --expected_kit "{params.expected_kit}" \
             --threads {resources.n} 
