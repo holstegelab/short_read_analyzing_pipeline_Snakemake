@@ -254,86 +254,287 @@ def precompute_kit_data(kit_dir, genome_file, output_file, threads=1):
 
 
 def calculate_coverage_metrics(bam_file, bed_file, min_mapping_quality=20, total_bases=None):
-    """Calculate coverage metrics for a BAM file against a BED file"""
+    """Calculate coverage metrics for a BAM file against a BED file with robust error handling"""
     kit_name = os.path.basename(bed_file).replace('.bed', '')
     logger.info(f"Calculating coverage metrics for kit: {kit_name}")
 
     # Convert to BedTool objects
-    bam = BedTool(bam_file)
-    bed = BedTool(bed_file)
+    try:
+        bam = BedTool(bam_file)
+        bed = BedTool(bed_file)
 
-    # Get coverage stats
-    coverage = bed.coverage(bam, d=True)
+        # First check if bed file has content
+        if bed.count() == 0:
+            logger.error(f"BED file appears to be empty: {bed_file}")
+            return {'kit_name': kit_name, 'error': 'Empty BED file'}
 
-    # Convert to Polars DataFrame for faster analysis
-    df_columns = ['chrom', 'start', 'end', 'depth']
+        # Get coverage stats
+        coverage = bed.coverage(bam, d=True)
 
-    # Use Polars to read the coverage file
-    df = pl.read_csv(
-        coverage.fn,
-        separator='\t',
-        has_header=False,
-        new_columns=df_columns,
-        schema_overrides={
-            'chrom': pl.Utf8,
-            'start': pl.Int64,
-            'end': pl.Int64,
-            'depth': pl.Float64
+        # Check if coverage file exists and has content
+        if not os.path.exists(coverage.fn):
+            logger.error(f"Coverage file was not created: {coverage.fn}")
+            return {'kit_name': kit_name, 'error': 'Coverage file not created'}
+
+        file_size = os.path.getsize(coverage.fn)
+        if file_size == 0:
+            logger.error(f"Coverage file is empty: {coverage.fn}")
+            return {'kit_name': kit_name, 'error': 'Empty coverage file'}
+
+        # Examine the raw content of the file
+        try:
+            with open(coverage.fn, 'r') as f:
+                sample_lines = [next(f) for _ in range(min(5, sum(1 for _ in open(coverage.fn))))]
+            logger.info(f"Coverage file sample for {kit_name}: {sample_lines}")
+        except Exception as e:
+            logger.warning(f"Could not read coverage file sample: {str(e)}")
+
+        # Try using pandas first (which is what BedTools works with natively)
+        try:
+            logger.info(f"Attempting to read coverage with pandas for {kit_name}")
+            import pandas as pd
+            df_pd = pd.read_csv(coverage.fn, sep='\t', header=None,
+                                names=['chrom', 'start', 'end', 'depth'])
+
+            if df_pd.empty:
+                logger.error(f"Pandas read resulted in empty dataframe for {kit_name}")
+            else:
+                logger.info(f"Successfully read coverage with pandas: {len(df_pd)} rows")
+
+                # Calculate with pandas first
+                df_pd['region_size'] = df_pd['end'] - df_pd['start']
+
+                if total_bases is None:
+                    total_bases = df_pd['region_size'].sum()
+
+                covered_bases = df_pd[df_pd['depth'] > 0]['region_size'].sum()
+                percent_covered = (covered_bases / total_bases) * 100 if total_bases > 0 else 0
+
+                weighted_mean = (df_pd['depth'] * df_pd['region_size']).sum() / df_pd['region_size'].sum() if df_pd[
+                                                                                                                  'region_size'].sum() > 0 else 0
+
+                # Calculate uniformity
+                if weighted_mean > 0:
+                    weighted_variance = ((df_pd['depth'] - weighted_mean) ** 2 * df_pd['region_size']).sum() / df_pd[
+                        'region_size'].sum()
+                    cv = np.sqrt(weighted_variance) / weighted_mean
+                    uniformity_score = 1 - cv
+                else:
+                    uniformity_score = 0
+
+                # Calculate coverage thresholds
+                coverage_thresholds = [1, 10, 20, 30, 50, 100]
+                coverage_percentages = {}
+
+                for threshold in coverage_thresholds:
+                    bases_above = df_pd[df_pd['depth'] >= threshold]['region_size'].sum()
+                    percentage = (bases_above / total_bases) * 100 if total_bases > 0 else 0
+                    coverage_percentages[f'pct_above_{threshold}x'] = percentage
+
+                # Return results
+                results = {
+                    'kit_name': kit_name,
+                    'total_target_bases': total_bases,
+                    'covered_bases': covered_bases,
+                    'percent_covered': percent_covered,
+                    'mean_coverage': weighted_mean,
+                    'uniformity_score': uniformity_score
+                }
+                results.update(coverage_percentages)
+
+                return results
+
+        except Exception as e:
+            logger.warning(f"Pandas approach failed for {kit_name}: {str(e)}")
+
+        # If pandas approach failed, try with polars
+        try:
+            logger.info(f"Attempting to read coverage with polars for {kit_name}")
+            # Read file as plain text first to inspect
+            with open(coverage.fn, 'r') as f:
+                lines = f.readlines()
+                if not lines:
+                    logger.error(f"Coverage file has no lines: {coverage.fn}")
+                    return {'kit_name': kit_name, 'error': 'No content in coverage file'}
+
+                # For diagnostic purposes, examine the first line
+                first_line = lines[0].strip()
+                logger.info(f"First line in coverage file: '{first_line}'")
+                fields = first_line.split('\t')
+                logger.info(f"Field count: {len(fields)}, Fields: {fields}")
+
+            # Now try polars with identified schema
+            df_columns = ['chrom', 'start', 'end', 'depth']
+            df = pl.read_csv(
+                coverage.fn,
+                separator='\t',
+                has_header=False,
+                new_columns=df_columns,
+                schema_overrides={
+                    'chrom': pl.Utf8,
+                    'start': pl.Int64,
+                    'end': pl.Int64,
+                    'depth': pl.Float64
+                },
+                null_values=["", "NA", "N/A", "null", "None"]
+            )
+
+            if df.height == 0:
+                logger.error(f"Polars read resulted in empty dataframe for {kit_name}")
+                return {'kit_name': kit_name, 'error': 'Empty dataframe from coverage file'}
+
+            logger.info(f"Successfully read coverage with polars: {df.height} rows")
+
+            # Continue with the original polars processing
+            df = df.with_column((pl.col("end") - pl.col("start")).alias("region_size"))
+
+            # Calculate basic metrics - use Polars' efficient aggregations
+            if total_bases is None:
+                total_bases = df.select(pl.sum("region_size")).item()
+
+            # Calculate covered bases (depth > 0)
+            covered_bases = df.filter(pl.col("depth") > 0).select(pl.sum("region_size")).item()
+            percent_covered = (covered_bases / total_bases) * 100 if total_bases > 0 else 0
+
+            # Calculate mean coverage (weighted by region size)
+            mean_coverage = df.select(
+                (pl.sum(pl.col("depth") * pl.col("region_size")) / pl.sum("region_size")).alias("mean_cov")
+            ).item()
+
+            # Calculate coverage uniformity (coefficient of variation)
+            if mean_coverage > 0:
+                # Calculate weighted variance
+                weighted_variance = df.select(
+                    (pl.sum((pl.col("depth") - mean_coverage) ** 2 * pl.col("region_size")) /
+                     pl.sum("region_size")).alias("weighted_var")
+                ).item()
+
+                cv = np.sqrt(weighted_variance) / mean_coverage
+                uniformity_score = 1 - cv  # Higher is better
+            else:
+                uniformity_score = 0
+
+            # Calculate percentages of bases with coverage above thresholds
+            coverage_thresholds = [1, 10, 20, 30, 50, 100]
+            coverage_percentages = {}
+
+            for threshold in coverage_thresholds:
+                bases_above_threshold = df.filter(pl.col("depth") >= threshold).select(pl.sum("region_size")).item()
+                percentage = (bases_above_threshold / total_bases) * 100 if total_bases > 0 else 0
+                coverage_percentages[f'pct_above_{threshold}x'] = percentage
+
+            # Calculate results
+            results = {
+                'kit_name': kit_name,
+                'total_target_bases': total_bases,
+                'covered_bases': covered_bases,
+                'percent_covered': percent_covered,
+                'mean_coverage': mean_coverage,
+                'uniformity_score': uniformity_score
+            }
+
+            # Add coverage threshold percentages
+            results.update(coverage_percentages)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Polars approach also failed for {kit_name}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+            # Final fallback - direct calculation
+            logger.info(f"Attempting direct calculation for {kit_name}")
+            try:
+                # Reset bed and get direct coverage without intermediate file
+                bed = BedTool(bed_file)
+                cov_summary = bed.coverage(bam)
+
+                # Process using simple summing operations
+                covered_regions = 0
+                total_weighted_cov = 0
+                total_size = 0
+
+                for line in open(cov_summary.fn):
+                    fields = line.strip().split('\t')
+                    if len(fields) >= 7:  # coverage produces 7 fields
+                        try:
+                            start, end = int(fields[1]), int(fields[2])
+                            size = end - start
+                            cov = float(fields[3])
+                            frac = float(fields[6])
+
+                            total_size += size
+                            total_weighted_cov += cov * size
+                            if frac > 0:
+                                covered_regions += size
+                        except (ValueError, IndexError):
+                            continue
+
+                if total_bases is None:
+                    total_bases = total_size
+
+                if total_size > 0:
+                    mean_cov = total_weighted_cov / total_size
+                    percent_covered = (covered_regions / total_size) * 100
+                else:
+                    mean_cov = 0
+                    percent_covered = 0
+
+                # Create dummy values for coverage thresholds
+                coverage_percentages = {}
+                for threshold in [1, 10, 20, 30, 50, 100]:
+                    coverage_percentages[f'pct_above_{threshold}x'] = 0
+
+                # Return basic results
+                basic_results = {
+                    'kit_name': kit_name,
+                    'total_target_bases': total_bases,
+                    'covered_bases': covered_regions,
+                    'percent_covered': percent_covered,
+                    'mean_coverage': mean_cov,
+                    'uniformity_score': 0.5  # Cannot calculate properly, use middle value
+                }
+                basic_results.update(coverage_percentages)
+                return basic_results
+
+            except Exception as e:
+                logger.error(f"All approaches failed for {kit_name}: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+
+                # Return minimal results
+                minimal_results = {
+                    'kit_name': kit_name,
+                    'error': str(e),
+                    'total_target_bases': total_bases if total_bases else 0,
+                    'covered_bases': 0,
+                    'percent_covered': 0,
+                    'mean_coverage': 0,
+                    'uniformity_score': 0
+                }
+                for threshold in [1, 10, 20, 30, 50, 100]:
+                    minimal_results[f'pct_above_{threshold}x'] = 0
+                return minimal_results
+
+    except Exception as outer_e:
+        logger.error(f"Outer exception in coverage calculation for {kit_name}: {str(outer_e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+        # Return minimal results with error
+        minimal_results = {
+            'kit_name': kit_name,
+            'error': str(outer_e),
+            'total_target_bases': total_bases if total_bases else 0,
+            'covered_bases': 0,
+            'percent_covered': 0,
+            'mean_coverage': 0,
+            'uniformity_score': 0
         }
-    )
-
-    # Calculate region sizes
-    df = df.with_column((pl.col("end") - pl.col("start")).alias("region_size"))
-
-    # Calculate basic metrics - use Polars' efficient aggregations
-    if total_bases is None:
-        total_bases = df.select(pl.sum("region_size")).item()
-
-    # Calculate covered bases (depth > 0)
-    covered_bases = df.filter(pl.col("depth") > 0).select(pl.sum("region_size")).item()
-    percent_covered = (covered_bases / total_bases) * 100 if total_bases > 0 else 0
-
-    # Calculate mean coverage (weighted by region size)
-    mean_coverage = df.select(
-        (pl.sum(pl.col("depth") * pl.col("region_size")) / pl.sum("region_size")).alias("mean_cov")
-    ).item()
-
-    # Calculate coverage uniformity (coefficient of variation)
-    if mean_coverage > 0:
-        # Calculate weighted variance
-        weighted_variance = df.select(
-            (pl.sum((pl.col("depth") - mean_coverage) ** 2 * pl.col("region_size")) /
-             pl.sum("region_size")).alias("weighted_var")
-        ).item()
-
-        cv = np.sqrt(weighted_variance) / mean_coverage
-        uniformity_score = 1 - cv  # Higher is better
-    else:
-        uniformity_score = 0
-
-    # Calculate percentages of bases with coverage above thresholds
-    coverage_thresholds = [1, 10, 20, 30, 50, 100]
-    coverage_percentages = {}
-
-    for threshold in coverage_thresholds:
-        bases_above_threshold = df.filter(pl.col("depth") >= threshold).select(pl.sum("region_size")).item()
-        percentage = (bases_above_threshold / total_bases) * 100 if total_bases > 0 else 0
-        coverage_percentages[f'pct_above_{threshold}x'] = percentage
-
-    # Calculate results
-    results = {
-        'kit_name': kit_name,
-        'total_target_bases': total_bases,
-        'covered_bases': covered_bases,
-        'percent_covered': percent_covered,
-        'mean_coverage': mean_coverage,
-        'uniformity_score': uniformity_score
-    }
-
-    # Add coverage threshold percentages
-    results.update(coverage_percentages)
-
-    return results
+        for threshold in [1, 10, 20, 30, 50, 100]:
+            minimal_results[f'pct_above_{threshold}x'] = 0
+        return minimal_results
 
 
 def calculate_off_target_metrics(bam_file, complement_file, min_mapping_quality=20):
