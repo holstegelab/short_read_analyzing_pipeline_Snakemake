@@ -635,6 +635,53 @@ def process_kit_precomputed(args):
         complement_file = kit_data['complement_file']
         total_bases = kit_data['total_bases']
 
+        # Verify that complement file exists and has content
+        if not os.path.exists(complement_file):
+            logger.error(f"Complement file does not exist for {kit_name}: {complement_file}")
+            return {
+                'kit_name': kit_name,
+                'error': 'Missing complement file',
+                'total_target_bases': total_bases,
+                'covered_bases': 0,
+                'percent_covered': 0,
+                'mean_coverage': 0,
+                'uniformity_score': 0,
+                'on_off_ratio': 0
+            }
+
+        # Check complement file size
+        if os.path.getsize(complement_file) == 0:
+            logger.error(f"Complement file is empty for {kit_name}: {complement_file}")
+            return {
+                'kit_name': kit_name,
+                'error': 'Empty complement file',
+                'total_target_bases': total_bases,
+                'covered_bases': 0,
+                'percent_covered': 0,
+                'mean_coverage': 0,
+                'uniformity_score': 0,
+                'on_off_ratio': 0
+            }
+
+        # Try to examine chromosome naming in BAM and BED
+        try:
+            bam = pysam.AlignmentFile(bam_file, "rb")
+            bam_chroms = set(bam.references)
+            bam.close()
+
+            with open(bed_file, 'r') as f:
+                bed_sample = [next(f).strip().split('\t')[0] for _ in range(min(5, sum(1 for _ in open(bed_file))))]
+            bed_chroms = set(bed_sample)
+
+            has_common_chroms = any(b in bam_chroms for b in bed_chroms)
+
+            if not has_common_chroms:
+                logger.warning(f"No common chromosome names between BAM and BED for {kit_name}")
+                logger.warning(f"BAM chroms (sample): {list(bam_chroms)[:5]}")
+                logger.warning(f"BED chroms (sample): {bed_chroms}")
+        except Exception as e:
+            logger.warning(f"Could not check chromosome naming: {str(e)}")
+
         # Calculate on-target metrics
         on_target_metrics = calculate_coverage_metrics(
             bam_file, bed_file, min_mapping_quality, total_bases
@@ -659,11 +706,12 @@ def process_kit_precomputed(args):
 
     except Exception as e:
         logger.error(f"Error processing kit {kit_name}: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {
             'kit_name': kit_name,
             'error': str(e)
         }
-
 
 def generate_tsv_output(results, output_prefix, expected_kit=None):
     """Generate a simple TSV file with kit comparison results for pipeline integration"""
