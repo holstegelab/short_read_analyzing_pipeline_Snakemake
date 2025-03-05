@@ -39,7 +39,6 @@ import logging
 import json
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
-import pandas as pd
 
 # Set up logging
 logging.basicConfig(
@@ -106,34 +105,88 @@ def process_bed_file(args):
         kit_name = os.path.basename(bed_file).replace('.bed', '')
         logger.info(f"Processing kit: {kit_name}")
 
+        # Check if file exists and has content
+        if not os.path.exists(bed_file):
+            logger.error(f"BED file does not exist: {bed_file}")
+            return None, None
+
+        file_size = os.path.getsize(bed_file)
+        if file_size == 0:
+            logger.error(f"BED file is empty: {bed_file}")
+            return None, None
+
         # Get absolute path to bed file
         abs_bed_file = os.path.abspath(bed_file)
 
         # Create BedTool object
         bed = BedTool(abs_bed_file)
 
-        # Calculate basic statistics
-        regions = bed.to_dataframe()
-        regions_count = len(regions)
+        # Try to peek at the file contents for diagnostics
+        try:
+            with open(bed_file, 'r') as f:
+                first_lines = [next(f) for _ in range(3)]
+                logger.info(f"First few lines of {kit_name}: {first_lines}")
+        except Exception as e:
+            logger.warning(f"Could not read sample from file: {str(e)}")
 
-        # Calculate region sizes
-        regions['size'] = regions['end'] - regions['start']
-        total_bases = regions['size'].sum()
+        # First check if the bed file has any intervals
+        if bed.count() == 0:
+            logger.error(f"BED file has no valid intervals: {bed_file}")
+            return None, None
+
+        # Try to calculate basic statistics using a more robust approach
+        try:
+            regions = bed.to_dataframe()
+            if regions.empty:
+                logger.error(f"BED file converted to empty dataframe: {bed_file}")
+                return None, None
+
+            regions_count = len(regions)
+
+            # Calculate region sizes
+            regions['size'] = regions['end'] - regions['start']
+            total_bases = regions['size'].sum()
+
+            # Calculate interval statistics
+            min_interval = regions['size'].min() if not regions.empty else 0
+            max_interval = regions['size'].max() if not regions.empty else 0
+            mean_interval = regions['size'].mean() if not regions.empty else 0
+
+            # Count regions per chromosome
+            chrom_counts = {}
+            for chrom in regions['chrom'].unique():
+                chrom_counts[chrom] = len(regions[regions['chrom'] == chrom])
+
+        except Exception as e:
+            logger.error(f"Error processing regions dataframe for {kit_name}: {str(e)}")
+
+            # Fall back to direct BedTools operations without pandas
+            logger.info(f"Trying alternative approach for {kit_name}")
+
+            # Get region count directly
+            regions_count = bed.count()
+
+            # Calculate total bases directly
+            total_bases = sum(end - start for _, start, end in bed)
+
+            # Can't easily get min/max/mean directly, so use defaults
+            min_interval = 0
+            max_interval = 0
+            mean_interval = 0
+
+            # Count regions per chromosome - using BedTools directly for robustness
+            chrom_counts = {}
+            for interval in bed:
+                chrom = interval.chrom
+                if chrom in chrom_counts:
+                    chrom_counts[chrom] += 1
+                else:
+                    chrom_counts[chrom] = 1
 
         # Generate complement BED file (off-target regions)
         complement_file = os.path.join(output_dir, f"{kit_name}_complement.bed")
         complement = bed.complement(g=genome_file)
         complement.saveas(complement_file)
-
-        # Calculate interval size statistics
-        min_interval = regions['size'].min() if not regions.empty else 0
-        max_interval = regions['size'].max() if not regions.empty else 0
-        mean_interval = regions['size'].mean() if not regions.empty else 0
-
-        # Count regions per chromosome
-        chrom_counts = {}
-        for chrom in regions['chrom'].unique():
-            chrom_counts[chrom] = len(regions[regions['chrom'] == chrom])
 
         # Store results
         kit_data = {
@@ -151,6 +204,9 @@ def process_bed_file(args):
 
     except Exception as e:
         logger.error(f"Error processing {bed_file}: {str(e)}")
+        # Print traceback for better debugging
+        import traceback
+        logger.error(traceback.format_exc())
         return None, None
 
 
@@ -218,7 +274,7 @@ def calculate_coverage_metrics(bam_file, bed_file, min_mapping_quality=20, total
         separator='\t',
         has_header=False,
         new_columns=df_columns,
-        dtypes={
+        schema_overrides={
             'chrom': pl.Utf8,
             'start': pl.Int64,
             'end': pl.Int64,
