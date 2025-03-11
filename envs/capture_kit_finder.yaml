@@ -10,4 +10,5 @@ dependencies:
   - python
   - pybedtools
   - pandas
+  - pigz = 2.6
 name: capture_kit_finder
