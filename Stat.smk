@@ -530,7 +530,7 @@ rule mospeth_mergedCK:
 
 rule get_capture_kit:
     input: bam = pj(BAM,"{sample}.markdup.bam"),
-            cov = pj(STAT,"cov","{sample}.regions.bed.gz"),
+            cov = pj(STAT,"cov","{sample}_MERGED_CK.regions.bed.gz"),
             precomputed_data = PRECOMPUTEED_BED,
     output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv")
     params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
