@@ -541,7 +541,7 @@ rule get_capture_kit:
                mem_mb = 8000
     shell:
         """
-        pigz -d --keep -c 16 {input.cov}
+        pigz -d --keep -p 16 {input.cov}
         python {params.CAPTURE_KIT_CHECKER} \
             --coverage {output.cov_decompressed} \
             --metadata_capture {params.expected_kit} \
