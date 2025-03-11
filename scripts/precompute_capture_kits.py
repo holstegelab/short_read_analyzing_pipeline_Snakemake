@@ -4,7 +4,6 @@ import glob
 import os
 import json
 import pybedtools
-import "../constants"
 
 def merge_and_compute_total(bed_file):
     # Load the kit intervals and merge overlapping intervals
@@ -13,10 +12,15 @@ def merge_and_compute_total(bed_file):
     total_length = sum(int(interval.end) - int(interval.start) for interval in merged)
     return total_length, merged
 
+pj = os.path.join
+RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res_v2/'
+INTERVALS_DIR = pj(RESOURCES,'intervals')
+PRECOMPUTEED_BED = pj(INTERVALS_DIR, 'precomputed_kits.json')
+
 
 def main():
-    kit_dir = constants.INTERVALS_DIR
-    output_file = constants.PRECOMPUTEED_BED
+    kit_dir = INTERVALS_DIR
+    output_file = PRECOMPUTEED_BED
     kit_files = glob.glob(os.path.join(kit_dir, "*.bed"))
 
     precomputed = {}
