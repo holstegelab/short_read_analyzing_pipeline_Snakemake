@@ -4,7 +4,7 @@ import glob
 import os
 import json
 import pybedtools
-import constants
+import "../constants"
 
 def merge_and_compute_total(bed_file):
     # Load the kit intervals and merge overlapping intervals
