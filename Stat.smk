@@ -532,7 +532,8 @@ rule get_capture_kit:
     input: bam = pj(BAM,"{sample}.markdup.bam"),
             cov = pj(STAT,"cov","{sample}.regions.bed.gz"),
             precomputed_data = PRECOMPUTEED_BED,
-    output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv")
+    output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv"),
+            cov_decompressed = temp(pj(STAT,"cov","{sample}.regions.bed"))
     params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
             CAPTURE_KIT_CHECKER = srcdir(CAPTURE_KIT_CHECKER)
     conda: CONDA_CK_FINDER
@@ -540,8 +541,9 @@ rule get_capture_kit:
                mem_mb = 8000
     shell:
         """
+        pigz -d --keep -c 16 {input.cov}
         python {params.CAPTURE_KIT_CHECKER} \
-            --coverage {input.cov} \
+            --coverage {output.cov_decompressed} \
             --metadata_capture {params.expected_kit} \
             --output {output.capture_kit_stats} \
             --kit_data {input.precomputed_data} 
