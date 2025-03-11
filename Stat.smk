@@ -504,8 +504,33 @@ rule gathersexstats:
         header, data = read_stats.combine_sex_stats(samples,kmer_stats,sex_reported)
         read_stats.write_tsv(str(output),header,data)
 
+
+
+rule mospeth_mergedCK:
+    input:
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        interval=MERGED_CAPTURE_KIT_BED
+    output:         pj(STAT,'cov','{sample}_MERGED_CK.regions.bed.gz'),
+        pj(STAT,'cov','{sample}_MERGED_CK.regions.bed.gz.csi'),
+        temp(pj(STAT,'cov','{sample}_MERGED_CK.mosdepth.global.dist.txt')),
+        temp(pj(STAT,'cov','{sample}_MERGED_CK.mosdepth.summary.txt'))
+    params:
+        prefix=pj(STAT,'cov','{sample}_MERGED_CK')
+    resources:
+        mem_mb=2200,
+        n="1.8"
+    conda: CONDA_MOSDEPTH
+    shell:
+        """
+            mkdir -p `dirname {output[0]}`
+            mosdepth  --threads 2 -b {input.interval} --no-per-base {params.prefix} {input.bam}
+        """
+
+
 rule get_capture_kit:
     input: bam = pj(BAM,"{sample}.markdup.bam"),
+            cov = pj(STAT,"cov","{sample}.regions.bed.gz"),
             precomputed_data = PRECOMPUTEED_BED,
     output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv")
     params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
@@ -515,9 +540,9 @@ rule get_capture_kit:
                mem_mb = 8000
     shell:
         """
-        python {params.CAPTURE_KIT_CHECKER}             --bam {input.bam} \
-            --precomputed {input.precomputed_data} \
+        python {params.CAPTURE_KIT_CHECKER} \
+            --coverage {input.cov} \
+            --metadata_capture {params.expected_kit} \
             --output {output.capture_kit_stats} \
-            --expected_kit "{params.expected_kit}" \
-            --threads {resources.n} 
+            --kit_data {input.precomputed_data} 
         """

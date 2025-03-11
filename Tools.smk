@@ -281,17 +281,13 @@ rule precompute_bed_for_capture_kit_checker:
     input: kit_dir = INTERVALS_DIR,
             genome = GENOME_FILE
     output: precomputed = PRECOMPUTEED_BED
-    params: CAPTURE_KIT_CHECKER=srcdir(CAPTURE_KIT_CHECKER)
+    params: CAPTURE_KIT_CHECKER=srcdir(BED_PRECOMP)
     conda: CONDA_CK_FINDER
     resources:
         n="16",
         mem_mb=8000
     shell:
         """
-        python {params.CAPTURE_KIT_CHECKER}  --precompute_mode \
-            --kit_dir {input.kit_dir} \
-            --genome {input.genome} \
-            --precompute_output {output.precomputed} \
-            --threads {resources.n} \
+        python {params.CAPTURE_KIT_CHECKER}
         """
 

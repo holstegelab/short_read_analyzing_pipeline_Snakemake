@@ -92,7 +92,7 @@ MERGEPHASEDIRECT = 'scripts/merge_phasing_direct.py'
 CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
 SLOPSCRIPT = 'scripts/slop_start_stop.py'
 CAPTURE_KIT_CHECKER = 'scripts/capture_kit_cheker.py'
-
+BED_PRECOMP = 'scripts/precompute_capture_kits.py'
 
 #path to kmer files
 KMER_CHRY= pj(RESOURCES,'kmer_sex/k32.chrY.diff')
