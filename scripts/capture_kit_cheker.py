@@ -16,7 +16,7 @@ def load_sample_coverage(coverage_file, min_cov):
     try:
         df = pl.read_csv(
             coverage_file,
-            sep="\t",
+            separator="\t",
             has_header=False,
             new_columns=["chrom", "start", "end", "coverage"]
         )
