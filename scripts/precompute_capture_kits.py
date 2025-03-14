@@ -21,7 +21,7 @@ def precompute_from_bed(bed_file):
         # Read BED file without header, expecting three columns: chrom, start, end
         df = pl.read_csv(
             bed_file,
-            sep="\t",
+            separator="\t",
             has_header=False,
             new_columns=["chrom", "start", "end"]
         )
