@@ -530,10 +530,10 @@ rule mospeth_mergedCK:
 
 rule get_capture_kit:
     input: bam = pj(BAM,"{sample}.markdup.bam"),
-            cov = pj(STAT,"cov","{sample}.regions.bed.gz"),
+            target = MERGED_CAPTURE_KIT_BED,
             precomputed_data = PRECOMPUTEED_BED,
     output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv"),
-            cov_decompressed = temp(pj(STAT,"cov","{sample}.regions.bed"))
+            cov_decompressed = temp(pj(STAT,"cov","{sample}.regions.bed")),
     params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
             CAPTURE_KIT_CHECKER = srcdir(CAPTURE_KIT_CHECKER)
     conda: CONDA_CK_FINDER
@@ -541,10 +541,10 @@ rule get_capture_kit:
                mem_mb = 8000
     shell:
         """
-        pigz -d --keep -p 16 {input.cov}
-        python {params.CAPTURE_KIT_CHECKER} \
+        mosdepth --threads 16 -n --by {input.target} {wildcards.sample} {input.bam}
+        pigz {output.cov_decompressed}.gz
+        python scripts/infer_capture_kit.py \
             --coverage {output.cov_decompressed} \
             --metadata_capture {params.expected_kit} \
             --output {output.capture_kit_stats} \
-            --kit_json {input.precomputed_data} 
         """
