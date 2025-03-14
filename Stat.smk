@@ -546,5 +546,5 @@ rule get_capture_kit:
             --coverage {output.cov_decompressed} \
             --metadata_capture {params.expected_kit} \
             --output {output.capture_kit_stats} \
-            --kit_data {input.precomputed_data} 
+            --kit_json {input.precomputed_data} 
         """
