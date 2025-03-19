@@ -50,7 +50,7 @@ rule Stat_all:
         expand("{samplefile}.bam_rg_quality.tab",samplefile=SAMPLE_FILES),
         expand("{samplefile}.sex_chrom.tab",samplefile=SAMPLE_FILES),
         expand("{samplefile}.coverage.hdf5",samplefile=SAMPLE_FILES),
-        expand(pj(STAT,"{sample}.capture_kit_stats.tsv"), sample=sample_names),
+        # expand(pj(STAT,"{sample}.capture_kit_stats.tsv"), sample=sample_names),
     default_target: True
 
 
