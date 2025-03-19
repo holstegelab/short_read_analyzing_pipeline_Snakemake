@@ -42,8 +42,9 @@ Analyzing include several steps:
     2. Open Zslurm
     3. run pipeline with **snakemake** command
 
-      > snakemake --profile ~/.config/snakemake/zslurm/ --snakefile ~/short_read_analyzing_pipeline_Snakemake/Stat.smk --use-conda --rerun-incomplete --retries 0 
-      > **NOTE ABOUT PROFILE**
+      > snakemake --profile ~/.config/snakemake/zslurm/ --snakefile ~/short_read_analyzing_pipeline_Snakemake/Snakefile --use-conda --rerun-incomplete --retries 0 
+      
+    > **NOTE ABOUT PROFILE**
    > copy zslurm.yaml to ~/.config/snakemake/zslurm/config.yaml and change conda prefix to your conda prefix
     
 4. If you want to run just several steps (for example only Aligment step) - 
