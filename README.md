@@ -23,17 +23,20 @@ Analyzing include several steps:
   
 * Run **GATK HaplotypeCaller** or **Deepvariant** (default) for producing gVCF
     > Deepvariant is faster and more accuarte than GATK according to in-house tests
+    
     > Test results will be published soon
-* Combine gVCFs in unified Database with **GLnexus** for the next *cohort calling*
+* Combine gVCFs and perform joint calling with **GLnexus** for *cohort calling*
   * Alternative version with **GenommicDBImport** or **Combinegvcf** for GATK-based pipeline followed by **Genotypegvcf**
 * normaliztion of SNPs with pathced version of **bcftools norm** 
 * get several statistics and producing combined statistic files in dir *stat/* and in tsv-files with extension *.bam_quality.tab*
 
 ## Additional features
 
- * SV detection with **delly**
- * CNV detection with **cnvkit**
- * CNV detection with **GATK** 
+ * SV detection with **delly** (not updated)
+ * CNV detection with **cnvkit** (not updated)
+ * CNV detection with **GATK** (tested, not updated)
+ * chrM analysis
+ * Somatic calls for tumor analysis (in test)
 
 # HOW TO USE
 1. clone this repo on server
