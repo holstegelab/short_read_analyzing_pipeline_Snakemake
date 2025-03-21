@@ -902,7 +902,7 @@ rule markdup:
     resources:
         n="1",
         mem_mb=get_mem_mb_markdup,
-        temp_loc=pj("markdup_temporary_{sample}")
+        temp_loc=lambda wildcards: pj("markdup_temporary_{sample}")
     conda: CONDA_MAIN
     #write index is buggy in samtools 1.17, 2/110 invalid index, probably race condition due to multithreading.
     #switching to single thread
