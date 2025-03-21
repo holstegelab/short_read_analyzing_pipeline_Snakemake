@@ -896,7 +896,7 @@ rule markdup:
         machine=2500,
     # machine error rate, default is 2500
     # NovaSeq uses 100
-        no_dedup =lambda wildcards: 1 if True in SAMPLEINFO[wildcards['sample']]['no_dedup'] else 0
+        no_dedup =lambda wildcards: 1 if SAMPLEINFO[wildcards['sample']]['no_dedup'] else 0
     log:
         samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log")
     resources:
