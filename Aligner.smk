@@ -909,7 +909,7 @@ rule markdup:
     shell:
         """
             if [ {params.no_dedup} -eq 1 ]; then
-                ln {input.bam} {output.mdbams}
+                ln --force {input.bam} {output.mdbams}
                 samtools index {output.mdbams}
                 touch {output.MD_stat}
             else
