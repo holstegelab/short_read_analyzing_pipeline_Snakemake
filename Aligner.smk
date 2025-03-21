@@ -914,6 +914,7 @@ rule markdup:
                 touch {output.MD_stat}
             else
                 samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
+            fi
         """
 
 rule mCRAM:
