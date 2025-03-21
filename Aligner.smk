@@ -893,8 +893,10 @@ rule markdup:
         MD_stat=pj(STAT,"{sample}.markdup.stat")
     priority: 20
     params:
-        machine=2500  # machine error rate, default is 2500
+        machine=2500,
+    # machine error rate, default is 2500
     # NovaSeq uses 100
+        no_dedup =lambda wildcards: 1 if True in SAMPLEINFO[wildcards['sample']]['no_dedup'] else 0
     log:
         samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log")
     resources:
@@ -906,7 +908,12 @@ rule markdup:
     #switching to single thread
     shell:
         """
-            samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
+            if [ {params.no_dedup} -eq 1 ]; then
+                ln {input.bam} {output.mdbams}
+                ln {input.bam}.bai {output.mdbams_bai}
+                touch {output.MD_stat}
+            else
+                samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
         """
 
 rule mCRAM:

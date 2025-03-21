@@ -166,3 +166,6 @@ This file contains statistics related to sex chromosome determination.
 - **dist_chrx**, **dist_chrx_ratio**: Distance metric and ratio for X chromosome coverage.
 - **dist_chry**, **dist_chry_ratio**: Distance metric and ratio for Y chromosome coverage.
 
+### Coverage metrics (`{cohort}.coverage.hdf5`)
+This file contains coverage metrics for the study samples. The data is stored in HDF5 format for efficient storage and retrieval.
+
