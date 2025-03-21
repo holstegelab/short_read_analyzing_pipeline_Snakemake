@@ -910,7 +910,7 @@ rule markdup:
         """
             if [ {params.no_dedup} -eq 1 ]; then
                 ln {input.bam} {output.mdbams}
-                ln {input.bam}.bai {output.mdbams_bai}
+                samtools index {output.mdbams}
                 touch {output.MD_stat}
             else
                 samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}

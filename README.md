@@ -53,6 +53,42 @@ Analyzing include several steps:
 4. If you want to run just several steps (for example only Aligment step) - 
 choose suitible **smk** file as **--snakefile**
 
-## Additional notes
+We use `{cohort}.tsv` file as the start file for a pipeline and `{cohort}.source` file for additional paths to the files.
+**These 2 files should be uploaded by the user to the server before starting the pipeline.**
 
+### `{cohort}.tsv` - main file with filenames and paths (7 or 8 columns).
+
+#### Column Descriptions
+
+| Column Name             | Description                                                                                                                                                                                                                                                                                  |
+|-------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **study**               | Study name, e.g., FR_Lille, DE_Bonn. It should contain a two-letter country code + a short study name (without underscores).                                                                                                                                                                 |
+| **sample_id**           | Identifier of the sample in the form `studyname_sampleid` (to avoid duplicates between studies). Example: `FR_Lille_B00E9CH`. Subjects are linked to samples in the phenotype file. A subject can have multiple samples (e.g., WGS and WES), so `sample_id` is not the same as `subject_id`. |
+| **file_type**           | Can be one of: `fastq_paired`, `bam`, `cram`, `recalibrated_bam`, `recalibrated_cram`, `sra`. Recalibrated files use GATK BQSR. The pipeline attempts to recover original quality data (OQ tags). Preferably, submit non-recalibrated data with BAM/CRAM files including unmapped reads.     |
+| **sample_type**         | Can be one of: `illumina_exome`, `illumina_wgs`.                                                                                                                                                                                                                                             |
+| **capture_kit**         | (For exomes only) Example: `Agilent_V5`. The corresponding capture kit file (`Agilent_V5.bed`) should be uploaded to the `resources/capture_kits` directory. For build 37 capture kits, upload as `{capture_kit}.b37.bed`. These files will be lifted over to build 38.                      |
+| **sex**                 | Sex of the sample for validation and chrX/Y calling: `F` or `M`.                                                                                                                                                                                                                             |
+| **filenames_read1**     | (For `fastq_paired` files) The file containing read1 sequences. If using BAM, CRAM, or interleaved FASTQ files, only this column is needed.                                                                                                                                                  |
+| **filenames_read2**     | (For `fastq_paired` files) The file containing read2 sequences. For CRAM files, this column should contain the reference FASTA file needed for decoding.<                                                                                                                                    |
+| **additional_commands** | (Optional) Additional commands to run samples with |
+
+Available additional commands:
+`no_dedup=True` - skip deduplication (Markduplication) step
+
+### `{cohort}.source` - additional file with paths to the files.
+If your files are stored on dCache or archive, you can use this file to specify the paths to the files.
+File is 1-liner with the following structure:
+`{dcache or archive}://{path to the files}` for example:  `archive://archive/hulsmanm/source_files/UCL_NIH/`
+`/archive/hulsmanm/source_files/UCL_NIH/` will be added to the path from the `{cohort}.tsv` file.
+
+
+
+#### File Handling Notes
+- For `fastq_paired` files, paired read data is split across two files: `filenames_read1` for read1 and `filenames_read2` for read2.
+- For BAM/CRAM or interleaved FASTQ files, only `filenames_read1` is used.
+- If a CRAM file is used, the reference file must be specified in `filenames_read2` and delivered separately.
+- For multiple read groups, files are comma-separated (`,`). Order should be maintained (e.g., lane 1 first, then lane 2, etc.).
+- BAM/CRAM files containing multiple read groups do not need extra annotations. Read group information is parsed directly from the file metadata.
+
+This documentation ensures that all file naming conventions and metadata structures are followed correctly for pipeline processing.
 
