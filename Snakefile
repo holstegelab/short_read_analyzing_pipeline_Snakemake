@@ -88,7 +88,7 @@ else:
     chrM_rule = []
 gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
-gvcf_caller = config.get("caller","BOTH")
+gvcf_caller = config.get("caller","Deepvariant")
 glnexus_filtration = config.get("glnexus_filtration","custom")
 
 rule_all_combine = []
