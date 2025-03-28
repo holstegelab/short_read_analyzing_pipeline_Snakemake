@@ -71,8 +71,10 @@ rule copy_to_dcache:
         ADLER32_remote = ''
         retry_counter = 0
         while f'{ADLER32_local:08x}' != ADLER32_remote and retry_counter <= 3:
-            shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
-            shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
+            file_exists = shell("rclone --config {agh_dcache} lsf agh_processed:{target}/{input_cram}",return_code=True) == 0
+            if not file_exists:
+                shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
+                shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
             shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
             with open(output.sum, 'r') as sum_file:
                 ADLER32_remote = sum_file.readline().rstrip('\n')
