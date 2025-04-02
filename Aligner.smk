@@ -451,7 +451,7 @@ rule fastq_bz2togz:
     filetype can be 'fq' or 'fastq'
     """
     input:
-        "{path}.{filetype}.bz2"
+        lambda wildcards: f"{path}.{filetype}.bz2" if os.path.exists(f"{path}.{filetype}.bz2") else None
     output:
         temp("{path}.{filetype}.gz")
     resources:
