@@ -72,11 +72,11 @@ rule copy_to_dcache:
         retry_counter = 0
         while f'{ADLER32_local:08x}' != ADLER32_remote and retry_counter <= 3:
             try:
-                shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/")
-                shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/")
-                shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
+                shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/{input_cram}")
+                shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/{input_crai}")
+                shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
             except:
-                shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
+                shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
             with open(output.sum, 'r') as sum_file:
                 ADLER32_remote = sum_file.readline().rstrip('\n')
             retry_counter += 1
