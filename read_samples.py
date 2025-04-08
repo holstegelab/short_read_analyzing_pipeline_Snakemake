@@ -461,7 +461,6 @@ def get_readgroups(sample, sourcedir):
     # Update the sample dictionary with the alternative names and readgroups
     sample['alternative_names'] = alternative_names
     sample['readgroups'] = readgroups
-    print(sample)
     # Return the updated sample dictionary and the list of warnings
     return (sample, warnings)
 
