@@ -11,6 +11,8 @@ module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 
+use rule * from Aligner
+
 module Tools:
     snakefile: 'Tools.smk'
     config: config
