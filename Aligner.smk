@@ -11,7 +11,7 @@ wildcard_constraints:
     extension=r'sam|bam|cram',
     filetype=r'fq|fastq',
     batchnr=r'[\d]+',
-    readid=r'R1|R2'
+    readid=r'R1|R2',
 
 # readgroup="[\w\d_\-@]+"
 
@@ -393,6 +393,7 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
     This is the READGROUPS/<sample>_<sourcefilename> folder.
     """
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
+    print(wildcards['sample'], sinfo, wildcards, 'hoi', wildcards['readgroup'], 'e')
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
     folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
@@ -679,8 +680,8 @@ rule merge_bam_alignment:
         log = rules.adapter_removal.output.adapter_removal
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.merged.bam")),
-        badmap_fastq1=pj(FQ,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
-        badmap_fastq2=pj(FQ,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
+        badmap_fastq1=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
+        badmap_fastq2=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
         stats=ensure(pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"),non_empty=True)
     conda: CONDA_PYPY
     log: pj(LOG,"Aligner","{sample}.{readgroup}.mergebamaligment.log")
@@ -851,7 +852,7 @@ def get_badmap_fastq(wildcards):  #{{{
     files = []
 
     for readgroup in readgroups_b:
-        files.append(pj(FQ,
+        files.append(pj(FQ_BADMAP,
             wildcards['sample'] + '.' + readgroup['info']['ID'] + '.badmap_' + wildcards['readid'] + '.fastq.gz'))
     return files
 
@@ -864,7 +865,7 @@ rule merge_rgs_badmap:
     input:
         fastq=get_badmap_fastq
     output:
-        fastq=pj(FQ,"{sample}.badmap.{readid}.fastq.gz")
+        fastq=pj(FQ_BADMAP,"{sample}.badmap.{readid}.fastq.gz")
     conda: CONDA_MAIN
     resources:
         n="1",
@@ -909,7 +910,7 @@ rule markdup:
     shell:
         """
             if [ {params.no_dedup} -eq 1 ]; then
-                ln --force {input.bam} {output.mdbams}
+                cp {input.bam} {output.mdbams}
                 samtools index {output.mdbams}
                 touch {output.MD_stat}
             else

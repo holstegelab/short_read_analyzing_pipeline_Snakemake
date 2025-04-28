@@ -5,6 +5,7 @@ import csv
 from constants import *
 from read_samples import *
 from pathlib import Path
+import functools
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -329,14 +330,26 @@ valid_chr_p = {'chr1': chr_p[:84],
                'chrY': chr_p[850:]}
 
 
+@functools.cache
+def _read_sex_file(filename):
+    sex = "UNK"
+    with open(filename) as f:
+        for line in f:
+            if line.startswith('sex: '):
+                parts = line.split(':')
+                if len(parts) == 2:
+                    sex = parts[1].strip()
+                break
+
+    assert sex == 'M' or sex == 'F', 'Unknown sex in sex detection result file.'
+    return 'male' if sex == 'M' else 'female'
+
 def get_validated_sex_file(input):
     #this file should exist after running 'get_validated_sex' job.
     #it should also certainly exist after the bam file is created,
     #as it relies on this file.
     filename = input['validated_sex']
-    with open(filename) as f:
-        xsample = yaml.load(f,Loader=yaml.FullLoader)
-    return 'male' if  xsample['sex'] == 'M' else 'female'
+    return _read_sex_file(filename)
 
 def get_ref_by_validated_sex(wildcards, input):
     sex = get_validated_sex_file(input)

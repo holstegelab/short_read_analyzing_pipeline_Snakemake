@@ -7,7 +7,17 @@ onsuccess: shell("rm -fr logs/Stats/*")
 wildcard_constraints:
     sample=r"[\w\d_\-@]+"
 
+module Aligner:
+    snakefile: 'Aligner.smk'
+    config: config
 
+use rule * from Aligner
+
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+
+use rule BedToIntervalList from Tools
 
 
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
@@ -27,7 +37,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = Aligner.checkpoints.get_readgroups.get(sample=sample).output[0]
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']
@@ -36,11 +46,6 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
     return sinfo  #}}}
 
 
-module Tools:
-    snakefile: 'Tools.smk'
-    config: config
-
-use rule BedToIntervalList from Tools
 
 
 rule Stat_all:

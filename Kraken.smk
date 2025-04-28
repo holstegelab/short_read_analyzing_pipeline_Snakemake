@@ -18,8 +18,8 @@ rule kraken_all:
 
 rule kraken:
     input:
-        fastq1=pj(FQ,"{sample}.badmap.R1.fastq.gz"),
-        fastq2=pj(FQ,"{sample}.badmap.R2.fastq.gz")
+        fastq1=pj(FQ_BADMAP,"{sample}.badmap.R1.fastq.gz"),
+        fastq2=pj(FQ_BADMAP,"{sample}.badmap.R2.fastq.gz")
     output:
         report=pj(KRAKEN, "{sample}.report.tsv"),
         read_cls=pj(KRAKEN, "{sample}.read_classification.tsv")
@@ -49,8 +49,8 @@ rule bracken:
 
 rule viralmap:
     input:
-        fastq1=pj(FQ,"{sample}.badmap.R1.fastq.gz"),
-        fastq2=pj(FQ,"{sample}.badmap.R2.fastq.gz")
+        fastq1=pj(FQ_BADMAP,"{sample}.badmap.R1.fastq.gz"),
+        fastq2=pj(FQ_BADMAP,"{sample}.badmap.R2.fastq.gz")
     output:
         bam=pj(KRAKEN, "{sample}.viralmap.bam"),
     params:

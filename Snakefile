@@ -165,11 +165,13 @@ if end_point == "gVCF":
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
+        use rule * from Aligner
+        
         use rule * from Deepvariant
 
-        use rule * from Aligner
-
         use rule * from Kraken
+
+        use rule * from Stat
 
         rule finished_sample:
             """Finish processing a sample. 
