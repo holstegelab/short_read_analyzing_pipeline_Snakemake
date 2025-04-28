@@ -6,6 +6,7 @@ channels:
   - defaults
 dependencies:
   - snakemake
+  - conda=24.7
   - snakedeploy
   - crossmap
   - numpy
