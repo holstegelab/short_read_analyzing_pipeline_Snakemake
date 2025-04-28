@@ -15,3 +15,5 @@ dependencies:
   - pyyaml
   - poetry
   - h5py
+  - bcftools
+  - samtools
