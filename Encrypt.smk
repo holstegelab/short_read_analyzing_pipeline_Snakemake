@@ -45,7 +45,7 @@ rule copy_to_dcache:
         cram=rules.Encrypt_crams.output.enCRAM,
         crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai")
     resources:
-        mem_mb=200,
+        mem_mb=2000,
         n="0.1"
     output:
         copied = pj(CRAM,"{sample}.mapped_hg38.cram.copied"),

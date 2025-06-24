@@ -135,6 +135,7 @@ REF_MALE_STR = pj(RESOURCES, str_ref)
 REF_MALE_FAI = pj(RESOURCES, 'hg38_phix/male/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.fa.fai')
 
 PAR_and_CENTROMERIC = pj(RESOURCES, 'PAR_and_centromeric_regions_hg38.bed')
+PAR = pj(RESOURCES, 'hg38_phix/GRCh38_PAR.bed')
 #verifybamid files
 VERIFYBAMID_EXOME = pj(RESOURCES,'verifybamid/exome/1000g.phase3.10k.b38.exome.vcf.gz.dat')
 VERIFYBAMID_WGS = pj(RESOURCES, 'verifybamid/wgs/1000g.phase3.100k.b38.vcf.gz.dat')
