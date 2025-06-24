@@ -114,6 +114,7 @@ rule DVWhatshapPhasingMerge:
         merge_script=srcdir(MERGEPHASEDIRECT),
         ploidy=lambda wildcards: 1 if wildcards["region"].endswith("H") else 2,
         skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y'))
+    log: pj(LOG, "Deepvariant", "{sample}.{region}.whatshap.log"),
     resources: 
         n="1.0",
         mem_mb = 900
