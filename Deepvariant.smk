@@ -61,6 +61,7 @@ rule deepvariant:
         vcf_tbi = temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi")),
         gvcf = temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz")),
         gvcf_tbi = temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")),
+    log: pj(LOG, "Deepvariant", "{sample}.{region}.log"),
     params:
             cd = current_dir + '/',
             mode=get_sequencing_mode,
