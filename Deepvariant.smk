@@ -80,7 +80,7 @@ rule deepvariant:
         if [ {params.skipsex} -eq 0 ]
         then
 
-            /opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{params.inter_dir}/{wildcards.sample}.{wildcards.region}" --postprocess_cpus 4
+            (/opt/deepvariant/bin/run_deepvariant --make_examples_extra_args="normalize_reads=true" --call_variants_extra_args config_string="device_count:{{key:'CPU' value:4}} inter_op_parallelism_threads:4 intra_op_parallelism_threads:4" --num_shards={resources.nshards} --model_type={params.mode} --regions={input.bed} --ref={REF_MALE} --reads={params.cd}{input.bam} --output_vcf={output.vcf} --output_gvcf={output.gvcf} --haploid_contigs {params.haploid_contigs} --intermediate_results_dir "{params.inter_dir}/{wildcards.sample}.{wildcards.region}" --postprocess_cpus 4 ) 2> {log}
             rm -rf "{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
             python {params.check} {output.vcf} 
             python {params.check} {output.gvcf}
