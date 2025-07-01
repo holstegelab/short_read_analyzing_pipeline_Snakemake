@@ -450,5 +450,80 @@ onerror:
             """)
 
 
+TELEGRAM_BOT_TOKEN = open("tg.token").read().strip()
+
+TELEGRAM_CHAT_ID = "@snakeemake_test_bot"     # Your channel ID (starts with @)
+
+def send_telegram_message(message, parse_mode="HTML"):
+    """Send message to Telegram channel"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": parse_mode
+    }
+    try:
+        response = requests.post(url, data=data)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"Failed to send Telegram message: {e}")
+        return False
+
+# Modified onerror rule with Telegram notification
+onerror:
+    shell("""
+    sample_pattern="{sample_pattern}"
+    grep 'Error in rule' zslurm-logs/* | awk '{{print $1 "\t" $4}}' | awk -F"[/:]" '{{print$1 "\t" $2}}' | awk '{{print$1 "\t" $3}}'>> error_rules.txt
+    grep -A 2 'Error in rule' zslurm-* | grep 'input' | awk -F[,] '{{print$1}}' | grep -E -o '{sample_pattern}' >> error_samples.txt
+    paste error_rules.txt error_samples.txt > error.log
+    """)
+    run:
+        # Read error log
+        error_count = 0
+        error_details = ""
+        
+        if os.path.exists("error.log"):
+            with open("error.log", "r") as f:
+                lines = f.readlines()
+                error_count = len(lines)
+                error_details = "\n".join(lines[:5])  # Show first 5 errors
+                if error_count > 5:
+                    error_details += f"\n... and {error_count - 5} more errors"
+        
+        # Create error message
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message = f"""
+🚨 <b>Pipeline Error Alert</b> 🚨
+
+<b>Time:</b> {timestamp}
+<b>Workflow:</b> {workflow.snakefile}
+<b>Total Errors:</b> {error_count}
+
+<b>Error Details:</b>
+<pre>{error_details}</pre>
+
+<b>Log Location:</b> error.log
+        """.strip()
+        
+        # Send notification
+        send_telegram_message(message)
+
+# Add success notification at the end of your workflow
+onsuccess:
+    run:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message = f"""
+✅ <b>Pipeline Completed Successfully</b> ✅
+
+<b>Time:</b> {timestamp}
+<b>Workflow:</b> {workflow.snakefile}
+<b>Total Rules:</b> {len(workflow.rules)}
+<b>Duration:</b> Started at workflow start time
+
+All tasks completed without errors!
+        """.strip()
+        
+        send_telegram_message(message)
 
 
