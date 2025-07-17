@@ -57,10 +57,10 @@ rule deepvariant:
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        vcf = ensure(temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz")), non_empty=True),
-        vcf_tbi = ensure(temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi")),non_empty=True),
-        gvcf = ensure(temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz")),non_empty=True),
-        gvcf_tbi = ensure(temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")),non_empty=True),
+        vcf = (temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz"))),
+        vcf_tbi = (temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi"))),
+        gvcf = (temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz"))),
+        gvcf_tbi = (temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi"))),
     log: pj(LOG, "Deepvariant", "{sample}.{region}.log"),
     params:
             cd = current_dir + '/',
@@ -86,10 +86,10 @@ rule deepvariant:
             rm -rf "{params.cd}{params.inter_dir}/{wildcards.sample}.{wildcards.region}"
 
         else
-            touch {output.vcf}
-            touch {output.vcf_tbi}
-            touch {output.gvcf}
-            touch {output.gvcf_tbi}
+            touch {params.cd}{output.vcf}
+            touch {params.cd}{output.vcf_tbi}
+            touch {params.cd}{output.gvcf}
+            touch {params.cd}{output.gvcf_tbi}
         fi
         """
 
