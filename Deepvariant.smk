@@ -40,7 +40,7 @@ def get_sequencing_mode(wildcards):#{{{
     return "WGS" if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else "WES"#}}}
 
 def get_mem_mb_deepvariant(wildcards, attempt):#{{{
-    res = 10000 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 9000
+    res = 10000
     return (attempt - 1) * 0.5 * res + res#}}}
 
 
