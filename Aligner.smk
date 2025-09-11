@@ -159,7 +159,7 @@ rule archive_get:
                           e and not os.path.isabs(e)])
 
         archive_files = " ".join([f'"{f.replace("archive:/", "")}"' for f in files if f.startswith("archive:/")])
-        shell("dmget -a " +  archive_files)
+        shell("daget  " +  archive_files)
         shell("touch {output}")
 
 
@@ -257,7 +257,7 @@ rule archive_to_active:
             shell("""
             mkdir -p "$(dirname "{destination}")"
             rsync --size-only "{source}" "{destination}"
-            dmput -r -w "{source}" || true
+            darelease "{source}" || true
             """)
 
         shell("""
