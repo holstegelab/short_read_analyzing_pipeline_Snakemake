@@ -238,8 +238,8 @@ rule archive_to_active:
         n="1",
         mem_mb=50
     output:
-        flag=temp(pj(SOURCEDIR,"{sample}.archive_retrieved")),
-        fpath=temp(directory(pj(SOURCEDIR,"{sample}.data")))
+        flag=pj(SOURCEDIR,"{sample}.archive_retrieved"),
+        fpath=directory(pj(SOURCEDIR,"{sample}.data"))
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         prefixpath = sample['prefix']
