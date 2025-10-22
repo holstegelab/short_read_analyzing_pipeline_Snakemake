@@ -30,6 +30,7 @@ rule chrM_analysis_all:
         expand("{chrM}/variants/gvcf/{sample}.chrM_merged_BP_annotated.g.vcf.gz", chrM = chrM, sample=sample_names),
         expand("{chrM}/variants/NUMTs/{sample}.chrM_NUMTs_filtred_NORM.vcf.gz", chrM = chrM, sample=sample_names),
         expand("{chrM}/variants/NUMTs/gVCF/{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz", chrM = chrM, sample=sample_names),
+        expand("{chrM}/stats/{sample}.mtDNA_CN.txt", chrM=chrM, sample=sample_names),
     default_target: True
 
 rule extract_chrM_reads:
@@ -118,10 +119,9 @@ rule merge_vcfs:
     shell:
             """
                  gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat} 
-               gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf}  && 
-               gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} && 
-               bcftools norm -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} &&
-               bgzip {params.filtred_norm_vcf} && 
+                              gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf}  &&
+                              gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} && 
+                              bcftools norm -m- -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} &&               bgzip {params.filtred_norm_vcf} && 
                tabix {output.filtred_norm_vcf_gz}
             """
 rule mutect_orig_bp_resolut:
@@ -293,3 +293,36 @@ rule mutect_orig_NUMT_BP_resolution:
               bcftools norm -d exact -o {output.merged_vcf_norm} -O z {output.merged_vcf} && tabix {output.merged_vcf_norm}
                bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  {output.merged_vcf_norm} 
             """
+    
+rule estimate_mtdna_copy_number:
+    input:
+        bam=rules.markdup.output.mdbams,
+        bai=rules.markdup.output.mdbams_bai
+    output:
+        cn_file=ensure(pj(chrM, 'stats', '{sample}.mtDNA_CN.txt'), non_empty=True)
+    params:
+        prefix=temp(pj(chrM, 'stats', '{sample}.mosdepth'))
+    conda:
+        "envs/mosdepth.yaml"
+    resources:
+        n=4,
+        mem_mb=8000
+    shell:
+        """
+        # Get coverage stats for all chromosomes
+        mosdepth -t {resources.n} -n {params.prefix} {input.bam}
+
+        # Calculate mtDNA copy number from the summary file
+        awk 'BEGIN {{ total_len=0; total_cov=0; mt_cov=0; }} \
+             $1 ~ /^chr[0-9]+$/ {{ total_len+=$2; total_cov+=$2*$4; }} \
+             $1 == "chrM" {{ mt_cov=$4; }} \
+             END {{ \
+                if (total_len > 0) {{ \
+                    nuc_cov = total_cov / total_len; \
+                    if (nuc_cov > 0) {{ \
+                        mtdna_cn = (mt_cov / nuc_cov) * 2; \
+                        print "{wildcards.sample}\t"mtdna_cn; \
+                    }} else {{ print "{wildcards.sample}\tNA"; }} \
+                }} else {{ print "{wildcards.sample}\tNA"; }} \
+             }}' {params.prefix}.mosdepth.summary.txt > {output.cn_file}
+        """
