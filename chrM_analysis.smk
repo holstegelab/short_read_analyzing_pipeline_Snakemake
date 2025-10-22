@@ -10,6 +10,12 @@ wildcard_constraints:
     sample=r"[\w\d_\-@]+",
 
 
+module Stat:
+    snakefile: "Stat.smk"
+    config: config
+
+use rule coverage from Stat
+
 
 # module Aligner:
 #     snakefile: 'Aligner.smk'
@@ -293,25 +299,17 @@ rule mutect_orig_NUMT_BP_resolution:
               bcftools norm -d exact -o {output.merged_vcf_norm} -O z {output.merged_vcf} && tabix {output.merged_vcf_norm}
                bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  {output.merged_vcf_norm} 
             """
-    
+
 rule estimate_mtdna_copy_number:
     input:
-        bam=pj(BAM,"{sample}.markdup.bam"),
-        # bai=rules.markdup.output.mdbams_bai
+        summary=rules.coverage.output[3]
     output:
         cn_file=ensure(pj(chrM, 'stats', '{sample}.mtDNA_CN.txt'), non_empty=True)
-    params:
-        prefix=temp(pj(chrM, 'stats', '{sample}.mosdepth'))
-    conda:
-        "envs/mosdepth.yaml"
     resources:
-        n=4,
-        mem_mb=8000
+        n=1,
+        mem_mb=100
     shell:
         """
-        # Get coverage stats for all chromosomes
-        mosdepth -t {resources.n} -n {params.prefix} {input.bam}
-
         # Calculate mtDNA copy number from the summary file
         awk 'BEGIN {{ total_len=0; total_cov=0; mt_cov=0; }} \
              $1 ~ /^chr[0-9]+$/ {{ total_len+=$2; total_cov+=$2*$4; }} \
@@ -324,5 +322,5 @@ rule estimate_mtdna_copy_number:
                         print "{wildcards.sample}\t"mtdna_cn; \
                     }} else {{ print "{wildcards.sample}\tNA"; }} \
                 }} else {{ print "{wildcards.sample}\tNA"; }} \
-             }}' {params.prefix}.mosdepth.summary.txt > {output.cn_file}
+             }}' {input.summary} > {output.cn_file}
         """
