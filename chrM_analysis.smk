@@ -11,10 +11,10 @@ wildcard_constraints:
 
 
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-use rule * from Aligner
+# module Aligner:
+#     snakefile: 'Aligner.smk'
+#     config: config
+# use rule * from Aligner
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
