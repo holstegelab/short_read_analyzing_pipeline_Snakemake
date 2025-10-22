@@ -167,7 +167,7 @@ rule mutect_orig_bp_resolut:
 ######################################
 
 rule extract_NUMTs_reads:
-    input: rules.markdup.output.mdbams
+    input: pj(BAM,"{sample}.markdup.bam")
     output: bam = ensure(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam'), non_empty = True),
             bai = pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')
     conda: CONDA_VCF
@@ -296,8 +296,8 @@ rule mutect_orig_NUMT_BP_resolution:
     
 rule estimate_mtdna_copy_number:
     input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai
+        bam=pj(BAM,"{sample}.markdup.bam"),
+        # bai=rules.markdup.output.mdbams_bai
     output:
         cn_file=ensure(pj(chrM, 'stats', '{sample}.mtDNA_CN.txt'), non_empty=True)
     params:
