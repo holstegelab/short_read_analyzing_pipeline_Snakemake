@@ -25,7 +25,7 @@ cur_dir = os.getcwd()
 
 rule chrM_analysis_all:
     input:
-        rules.Aligner_all.input,
+        # rules.Aligner_all.input,
         expand("{chrM}/variants/{sample}.chrM_filtred_NORM.vcf.gz", chrM = chrM, sample=sample_names),
         expand("{chrM}/variants/gvcf/{sample}.chrM_merged_BP_annotated.g.vcf.gz", chrM = chrM, sample=sample_names),
         expand("{chrM}/variants/NUMTs/{sample}.chrM_NUMTs_filtred_NORM.vcf.gz", chrM = chrM, sample=sample_names),
@@ -34,7 +34,7 @@ rule chrM_analysis_all:
     default_target: True
 
 rule extract_chrM_reads:
-    input: rules.markdup.output.mdbams
+    input: pj(BAM,"{sample}.markdup.bam")
     output: bam = ensure(temp(pj(chrM, '{sample}_chrM.reads.bam')), non_empty = True),
             bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True)
     conda: CONDA_VCF
