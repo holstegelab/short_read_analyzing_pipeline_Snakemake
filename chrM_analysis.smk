@@ -53,7 +53,7 @@ rule sort_by_name:
     input: rules.extract_chrM_reads.output.bam
     output: ensure(temp(pj(chrM, '{sample}_chrM_namesorted.reads.bam')), non_empty = True)
     conda: "envs/preprocess.yaml"
-    shell: "samtools sort -n {input} > {output}"
+    shell: "samtools sort -n -n -O bam  -o {output} {input}"
 
 rule realign_to_orig_ref:
     input: rules.sort_by_name.output
@@ -187,7 +187,7 @@ rule sort_by_name_NUMT:
     input: rules.extract_NUMTs_reads.output.bam
     output: ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs_namesorted.reads.bam')), non_empty = True)
     conda: "envs/preprocess.yaml"
-    shell: "samtools sort -n {input} > {output}"
+    shell: "samtools sort -n -n -O bam  -o {output} {input} "
 
 
 rule align_NUMT_to_chrM:
