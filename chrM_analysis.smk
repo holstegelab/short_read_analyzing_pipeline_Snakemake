@@ -66,7 +66,7 @@ rule realign_to_orig_ref:
         ref_dir=pj(ORIG_MT),
         threads_per_task = 4
     log: pj(LOG,"chrM","{sample}.orig_mt_align.log")
-    resources: n = 4,
+    resources: n = 1,
                 mem_mb = 14000
     shell:
         """  
@@ -202,7 +202,7 @@ rule align_NUMT_to_chrM:
         threads_per_task = 4,
 
     log: pj(LOG,"chrM","{sample}.origchrM_NUMT_align.log")
-    resources: n = 4,
+    resources: n = 1,
                 mem_mb = 14000
     shell:
             """
