@@ -70,8 +70,8 @@ rule realign_to_orig_ref:
                 mem_mb = 14000
     shell:
         """  
-        dragen-os -r {params.ref_dir} -b {input} --interleaved --num-threads {resources.n} | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {params.threads_per_task} -o {output.bai} {output.bam} 2> {log} 
-        dragen-os -r {params.ref_dir} -b {input} --interleaved --num-threads {resources.n} | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {params.threads_per_task} -o {output.bai_shifted} {output.bam_shifted} 2> {log}
+        dragen-os -r {params.ref_dir} -b {input}  --num-threads {resources.n} | samtools sort -O bam -@ {resources.n} -o {output.bam} && samtools index -@ {params.threads_per_task} -o {output.bai} {output.bam} 2> {log} 
+        dragen-os -r {params.ref_dir} -b {input}  --num-threads {resources.n} | samtools sort -O bam -@ {resources.n} -o {output.bam_shifted} && samtools index -@ {params.threads_per_task} -o {output.bai_shifted} {output.bam_shifted} 2> {log}
         """
 
 rule mutect_orig:
@@ -206,8 +206,8 @@ rule align_NUMT_to_chrM:
                 mem_mb = 14000
     shell:
             """
-            dragen-os -r {params.ref_dir} -b {input} --interleaved --num-threads {resources.n} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log} &
-             dragen-os -r {params.ref_dir} -b {input} --interleaved  --num-threads {resources.n} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted}  2>> {log}
+            dragen-os -r {params.ref_dir} -b {input}  --num-threads {resources.n} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam} && samtools index -@ {resources.n} -o {output.bai} {output.bam} 2> {log} &
+             dragen-os -r {params.ref_dir} -b {input}   --num-threads {resources.n} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam_shifted} && samtools index -@ {resources.n} -o {output.bai_shifted} {output.bam_shifted}  2>> {log}
             """
 rule mutect_orig_NUMT:
     input: bam = rules.align_NUMT_to_chrM.output.bam,
