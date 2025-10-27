@@ -127,7 +127,7 @@ rule merge_vcfs:
                  gatk MergeMutectStats --stats {input.orig} --stats {input.shift} -O {output.merged_stat} 
                               gatk MergeVcfs -I {input.sb_vcf} -I {input.o_vcf} -O {output.merged_vcf}  &&
                               gatk FilterMutectCalls  -OVI true -V {output.merged_vcf} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf} && 
-                              bcftools norm -m- -d exact -O v -o {params.filtred_norm_vcf} {output.filtred_vcf} &&               bgzip {params.filtred_norm_vcf} && 
+                              bcftools norm -m both -Ov  {output.filtred_vcf} |  bcftools norm -d exact -O v -o {params.filtred_norm_vcf} - &&               bgzip {params.filtred_norm_vcf} && 
                tabix {output.filtred_norm_vcf_gz}
             """
 rule mutect_orig_bp_resolut:
@@ -164,7 +164,7 @@ rule mutect_orig_bp_resolut:
               gatk Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:1-500 -L chrM:16069-16569 --mitochondria-mode -I {input.bam_shifted} -O {output.vcf_shift_BP}) &&
               gatk LiftoverVcf -I {output.vcf_shift_BP} -O {output.vcf_shift_back_BP} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null && 
               gatk MergeVcfs -I {output.vcf_shift_back_BP} -I {output.vcf_BP} -O {output.merged_vcf_BP} && 
-              bcftools norm -m- -d exact -o {output.merged_vcf_BP_norm} -O z {output.merged_vcf_BP} && tabix {output.merged_vcf_BP_norm} &&
+              bcftools norm -Ov-m both {output.merged_vcf_BP} | bcftools norm -d exact -o {output.merged_vcf_BP_norm} -O z - && tabix {output.merged_vcf_BP_norm} &&
             bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_BP_with_anno}  {output}
             """
 
