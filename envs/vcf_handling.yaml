@@ -10,4 +10,5 @@ dependencies:
 - python
 - numpy
 - bcftools=1.17
+- samtools
 name: vcf_handling
