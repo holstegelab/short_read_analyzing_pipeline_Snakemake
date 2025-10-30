@@ -42,7 +42,7 @@ rule chrM_analysis_all:
 rule extract_chrM_reads:
     input: pj(BAM,"{sample}.markdup.bam")
     output: bam = ensure(temp(pj(chrM, '{sample}_chrM.reads.bam')), non_empty = True),
-            bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True),
+            # bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True),
             temp_bam = temp(pj(chrM, '{sample}_chrM.reads.temp.bam')),
             temp_sort_bam= temp(pj(chrM,'{sample}_chrM.reads.temp.sort.bam'))
     conda: CONDA_VCF
@@ -55,15 +55,13 @@ rule extract_chrM_reads:
         samtools sort -n -o {output.temp_sort_bam} {output.temp_bam}  
          
         samtools fixmate -u  {output.temp_sort_bam} - | samtools view -f 0x02 -o {output.bam} -
-        
-        samtools index {output.bam} {output.bai}
         """
 
 rule sort_by_name:
     input: rules.extract_chrM_reads.output.bam
     output: ensure(temp(pj(chrM, '{sample}_chrM_namesorted.reads.bam')), non_empty = True)
     conda: "envs/preprocess.yaml"
-    shell: "samtools sort -n -n -O bam  -o {output} {input}"
+    shell: "samtools sort -n -O bam  -o {output} {input}"
 
 rule realign_to_orig_ref:
     input: rules.sort_by_name.output
@@ -185,7 +183,6 @@ rule mutect_orig_bp_resolut:
 rule extract_NUMTs_reads:
     input: pj(BAM,"{sample}.markdup.bam")
     output: bam = ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam')), non_empty = True),
-            bai = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')),
             temp_bam = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.temp.bam')),
             temp_sort_bam = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.temp.sort.bam'))
     conda: CONDA_VCF
@@ -199,8 +196,6 @@ rule extract_NUMTs_reads:
         samtools sort -n -o {output.temp_sort_bam} {output.temp_bam}  
          
         samtools fixmate -u  {output.temp_sort_bam} - | samtools view -f 0x02 -o {output.bam} -
-        
-        samtools index {output.bam} {output.bai}
         """
 
 rule sort_by_name_NUMT:
