@@ -51,7 +51,7 @@ rule extract_chrM_reads:
         """
         gatk PrintReads -I {input} -L chrM -O {output.temp_bam} --read-filter NotDuplicateReadFilter
         
-        samtools fixmate -u {output.temp_bam} - | samtools view -f 0x02 -o {output.bam} -
+        samtools sort -n {output.temp_bam} - | samtools fixmate -u  - - | samtools view -f 0x02 -o {output.bam} -
         
         samtools index {output.bam} {output.bai}
         """
@@ -192,7 +192,7 @@ rule extract_NUMTs_reads:
         """
         gatk PrintReads -I {input} -L chrM -O {output.temp_bam} --read-filter NotDuplicateReadFilter
         
-        samtools fixmate -u {output.temp_bam} - | samtools view -f 0x02 -o {output.bam} -
+        samtools sort -n {output.temp_bam} - | samtools fixmate -u  - - | samtools view -f 0x02 -o {output.bam} -
         
         samtools index {output.bam} {output.bai}
         """
