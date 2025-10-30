@@ -50,7 +50,10 @@ rule extract_chrM_reads:
     shell:
         """
         gatk PrintReads -I {input} -L chrM -O {output.temp_bam} --read-filter NotDuplicateReadFilter
-        samtools fixmate -u {output.temp_bam} - | samtools view -f 0x02 -o {output.bam} | samtools index {output.bam} {output.bai}
+        
+        samtools fixmate -u {output.temp_bam} - | samtools view -f 0x02 -o {output.bam} -
+        
+        samtools index {output.bam} {output.bai}
         """
 
 rule sort_by_name:
@@ -178,14 +181,21 @@ rule mutect_orig_bp_resolut:
 
 rule extract_NUMTs_reads:
     input: pj(BAM,"{sample}.markdup.bam")
-    output: bam = ensure(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam'), non_empty = True),
-            bai = pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')
+    output: bam = ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bam')), non_empty = True),
+            bai = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.bai')),
+            temp_bam = temp(pj(chrM, "NUMTs", '{sample}_NUMTs.reads.temp.bam'))
     conda: CONDA_VCF
     params: NUMTs_bed = NUMTs
     resources:
         mem_mb=1000
     shell:
-        "gatk PrintReads -I {input} -L {params.NUMTs_bed} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter"
+        """
+        gatk PrintReads -I {input} -L chrM -O {output.temp_bam} --read-filter NotDuplicateReadFilter
+        
+        samtools fixmate -u {output.temp_bam} - | samtools view -f 0x02 -o {output.bam} -
+        
+        samtools index {output.bam} {output.bai}
+        """
 
 rule sort_by_name_NUMT:
     input: rules.extract_NUMTs_reads.output.bam
