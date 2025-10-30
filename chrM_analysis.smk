@@ -42,12 +42,16 @@ rule chrM_analysis_all:
 rule extract_chrM_reads:
     input: pj(BAM,"{sample}.markdup.bam")
     output: bam = ensure(temp(pj(chrM, '{sample}_chrM.reads.bam')), non_empty = True),
-            bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True)
+            bai = ensure(temp(pj(chrM, '{sample}_chrM.reads.bai')), non_empty = True),
+            temp_bam = temp(pj(chrM, '{sample}_chrM.reads.temp.bam'))
     conda: CONDA_VCF
     resources:
         mem_mb=1000
     shell:
-        "gatk PrintReads -I {input} -L chrM -O {output.bam} --read-filter NotDuplicateReadFilter"
+        """
+        gatk PrintReads -I {input} -L chrM -O {output.temp_bam} --read-filter NotDuplicateReadFilter
+        samtools fixmate -u {output.temp_bam} - | samtools view -f 0x02 -o {output.bam} | samtools index {output.bam} {output.bai}
+        """
 
 rule sort_by_name:
     input: rules.extract_chrM_reads.output.bam
