@@ -319,7 +319,7 @@ rule estimate_mtdna_copy_number_wes:
     input:
         cov_file="stats/cov/{sample}.regions.bed.gz"
     output:
-        cn_file=ensure(pj("chrM", "stats", "{sample}.mtDNA_CN.txt"), non_empty=True)
+        cn_file=ensure(pj(chrM, "stats", "{sample}.mtDNA_CN.txt"), non_empty=True)
     resources:
         n=1,
         mem_mb=100
