@@ -315,27 +315,41 @@ rule mutect_orig_NUMT_BP_resolution:
                bcftools annotate -a {input.anno_file} -c FILTER -O z -o {output.merged_vcf_with_anno}  {output.merged_vcf_norm} 
             """
 
-rule estimate_mtdna_copy_number:
+rule estimate_mtdna_copy_number_wes:
     input:
-        summary=rules.coverage.output[3]
+        cov_file="stats/cov/{sample}.regions.bed.gz"
     output:
-        cn_file=ensure(pj(chrM, 'stats', '{sample}.mtDNA_CN.txt'), non_empty=True)
+        cn_file=ensure(pj("chrM", "stats", "{sample}.mtDNA_CN.txt"), non_empty=True)
     resources:
         n=1,
         mem_mb=100
     shell:
+        r"""
+        zcat {input.cov_file} | \
+        awk 'BEGIN {{ total_len=0; total_cov=0; mt_len=0; mt_cov=0; }}
+             $1 ~ /^chr/ {{
+                 len=$3-$2;
+                 if ($1 == "chrM") {{
+                     mt_len += len;
+                     mt_cov += $4 * len;
+                 }} else if ($1 ~ /^chr[0-9XY]+$/) {{
+                     total_len += len;
+                     total_cov += $4 * len;
+                 }}
+             }}
+             END {{
+                 if (total_len > 0 && mt_len > 0) {{
+                     nuc_cov = total_cov / total_len;
+                     mt_mean_cov = mt_cov / mt_len;
+                     if (nuc_cov > 0) {{
+                         mtdna_cn = (mt_mean_cov / nuc_cov) * 2;
+                         print "{wildcards.sample}\t"mtdna_cn;
+                     }} else {{
+                         print "{wildcards.sample}\tNA";
+                     }}
+                 }} else {{
+                     print "{wildcards.sample}\tNA";
+                 }}
+             }}' > {output.cn_file}
         """
-        # Calculate mtDNA copy number from the summary file
-        awk 'BEGIN {{ total_len=0; total_cov=0; mt_cov=0; }} \
-             $1 ~ /^chr[0-9]+$/ {{ total_len+=$2; total_cov+=$2*$4; }} \
-             $1 == "chrM" {{ mt_cov=$4; }} \
-             END {{ \
-                if (total_len > 0) {{ \
-                    nuc_cov = total_cov / total_len; \
-                    if (nuc_cov > 0) {{ \
-                        mtdna_cn = (mt_cov / nuc_cov) * 2; \
-                        print "{wildcards.sample}\t"mtdna_cn; \
-                    }} else {{ print "{wildcards.sample}\tNA"; }} \
-                }} else {{ print "{wildcards.sample}\tNA"; }} \
-             }}' {input.summary} > {output.cn_file}
-        """
+
