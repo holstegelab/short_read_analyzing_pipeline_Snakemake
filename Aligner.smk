@@ -478,14 +478,15 @@ def get_fastqpaired(wildcards):  #{{{
         if file2.endswith('.bz2'):
             file2 = file2[:-4] + '.gz'
         files = [file1, file2]
-        if sinfo['from_external']:  #ensure the data folder is available if this data is retrieved from tape.
+        if sinfo.get('from_external'):  #ensure the data folder is available if this data is retrieved from tape.
             files = files + [ancient(pj(SOURCEDIR,wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')),
                              ancient(pj(SOURCEDIR,wildcards['sample'] + '.data'))]
 
     else:  #source file is a bam /cram file. We will extract fastq files with the following names:
         file1 = FQ + f"/{wildcards['sample']}.{wildcards['readgroup']}_R1.fastq.gz"
         file2 = FQ + f"/{wildcards['sample']}.{wildcards['readgroup']}_R2.fastq.gz"
-    return [file1, file2]
+        files = [file1, file2]
+    return files
 
 
 #}}}
