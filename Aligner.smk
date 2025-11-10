@@ -690,8 +690,7 @@ rule merge_bam_alignment:
         bam_merge=srcdir(BAMMERGE)
     resources:
         n="1.5",
-        mem_mb=lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']][
-            'sample_type'] else attempt * 4500
+        mem_mb=lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else attempt * 4500
     priority: 15
     shell:
         """
