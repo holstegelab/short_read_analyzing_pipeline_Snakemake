@@ -1,4 +1,5 @@
 import os.path
+from snakemake.io import dynamic
 
 import read_samples
 from common import *
@@ -477,10 +478,13 @@ def get_fastqpaired(wildcards):  #{{{
         file2 = readgroup['file2']
         if file2.endswith('.bz2'):
             file2 = file2[:-4] + '.gz'
-        files = [file1, file2]
+        
         if sinfo.get('from_external'):  #ensure the data folder is available if this data is retrieved from tape.
+            files = [dynamic(file1), dynamic(file2)]
             files = files + [ancient(pj(SOURCEDIR,wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')),
                              ancient(pj(SOURCEDIR,wildcards['sample'] + '.data'))]
+        else:
+            files = [file1, file2]
 
     else:  #source file is a bam /cram file. We will extract fastq files with the following names:
         file1 = FQ + f"/{wildcards['sample']}.{wildcards['readgroup']}_R1.fastq.gz"
