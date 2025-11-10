@@ -1,5 +1,4 @@
 import os.path
-from snakemake.io import dynamic
 
 import read_samples
 from common import *
