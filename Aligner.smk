@@ -447,20 +447,20 @@ rule external_alignments_to_fastq:
         """
 
 
-# rule fastq_bz2togz:
-#     """Convert a bz2 compressed fastq file to a gz compressed fastq file.
-#     filetype can be 'fq' or 'fastq'
-#     """
-#     input:
-#         lambda wildcards: f"{path}.{filetype}.bz2" if os.path.exists(f"{path}.{filetype}.bz2") else None
-#     output:
-#         temp("{path}.{filetype}.gz")
-#     resources:
-#         n="1",
-#         mem_mb=150
-#     shell: """
-#         bzcat {input} | bgzip > {output}
-#         """
+rule fastq_bz2togz:
+    """Convert a bz2 compressed fastq file to a gz compressed fastq file.
+    filetype can be 'fq' or 'fastq'
+    """
+    input:
+        lambda wildcards: f"{path}.{filetype}.bz2" if os.path.exists(f"{path}.{filetype}.bz2") else None
+    output:
+        temp("{path}.{filetype}.gz")
+    resources:
+        n="1",
+        mem_mb=150
+    shell: """
+        bzcat {input} | bgzip > {output}
+        """
 
 
 def get_fastqpaired(wildcards):  #{{{
