@@ -6,6 +6,7 @@ import utils
 
 ruleorder: adapter_removal > fastq_bz2togz
 ruleorder: merge_bam_alignment > fastq_bz2togz
+ruleorder: merge_rgs_badmap > fastq_bz2togz
 
 onsuccess: shell("rm -fr logs/Aligner/*")
 
