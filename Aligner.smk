@@ -479,16 +479,26 @@ rule fastq_bz2togz:
     filetype can be 'fq' or 'fastq'
     """
     input:
-        flag = pj(SOURCEDIR,"{sample}.archive_retrieved"),
-        fastq_bz2togz_input
+        fastq_bz2togz_input,
+        flag = pj(SOURCEDIR,"{sample}.archive_retrieved")
     output:
         temp("{path}.{filetype}.gz")
     resources:
         n="1",
         mem_mb=150
-    shell: """
-        bzcat {input} | bgzip > {output}
-        """
+    run:
+        bz2_input = input[0]
+        bz2_file = None
+        if isinstance(bz2_input, list):
+            if bz2_input:
+                bz2_file = bz2_input[0]
+        else:
+            bz2_file = bz2_input
+
+        if bz2_file:
+            shell(f"bzcat {bz2_file} | bgzip > {output}")
+        else:
+            shell(f"touch {output}")
 
 
 def get_fastqpaired(wildcards):  #{{{
