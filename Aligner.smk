@@ -453,12 +453,12 @@ rule external_alignments_to_fastq:
 
 
 def fastq_bz2togz_input(wildcards):
-    bz2_file = f"{wildcards.path}.{wildcards.filetype}.bz2"
+    bz2_file = f"{FQ}/{wildcards.sample}.{wildcards.readgroup}.{wildcards.filetype}.bz2"
     if not os.path.exists(bz2_file):
         return []
     
     try:
-        path_parts = wildcards.path.split('/')
+        path_parts = (f"{FQ}/{wildcards.sample}.{wildcards.readgroup}.{wildcards.filetype}").split('/')
         data_dir_path = None
         
         for i in range(len(path_parts)):
@@ -482,7 +482,7 @@ rule fastq_bz2togz:
         fastq_bz2togz_input,
         flag = pj(SOURCEDIR,"{sample}.archive_retrieved")
     output:
-        temp("{path}.{filetype}.gz")
+        temp(FQ + "/{sample}.{readgroup}.{filetype}.gz")
     resources:
         n="1",
         mem_mb=150
