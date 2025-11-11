@@ -451,12 +451,35 @@ rule external_alignments_to_fastq:
         """
 
 
+
+def fastq_bz2togz_input(wildcards):
+    bz2_file = f"{wildcards.path}.{wildcards.filetype}.bz2"
+    if not os.path.exists(bz2_file):
+        return []
+    try:
+        path_str = wildcards.path
+        source_marker = f"{SOURCEDIR}/"
+        start_index = path_str.find(source_marker)
+        if start_index == -1:
+            return bz2_file
+        sub_path = path_str[start_index + len(source_marker):]
+        data_dir_name = sub_path.split('/')[0]
+        if data_dir_name.endswith('.data'):
+            sample = data_dir_name[:-5]
+            data_dir = pj(SOURCEDIR, f"{sample}.data")
+            return [bz2_file, data_dir]
+        else:
+            return bz2_file
+    except Exception:
+        return bz2_file
+
+
 rule fastq_bz2togz:
     """Convert a bz2 compressed fastq file to a gz compressed fastq file.
     filetype can be 'fq' or 'fastq'
     """
     input:
-        lambda wildcards: f"{wildcards.path}.{wildcards.filetype}.bz2" if os.path.exists(f"{wildcards.path}.{wildcards.filetype}.bz2") else []
+        fastq_bz2togz_input
     output:
         temp("{path}.{filetype}.gz")
     resources:
