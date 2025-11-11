@@ -227,47 +227,6 @@ rule start_sample:
         touch {output}
         """
 
-rule archive_to_active:
-    """Move the files of a sample from archive to active storage.
-
-    Can only start after 'start_sample' has been executed. 
-    Start_sample will reserve the space on active storage.
-
-    """
-    input:
-        ancient(pj(SOURCEDIR,"{sample}.started"))
-    resources:
-        arch_use_remove=lambda wildcards: SAMPLEINFO[wildcards['sample']]['filesize'],
-        partition="archive",
-        n="1",
-        mem_mb=50
-    output:
-        flag=pj(SOURCEDIR,"{sample}.archive_retrieved"),
-        fpath=directory(pj(SOURCEDIR,"{sample}.data"))
-    run:
-        sample = SAMPLEINFO[wildcards['sample']]
-        prefixpath = sample['prefix']
-        destinationpath = str(output.fpath)
-        files1 = sample['file1']
-        files2 = sample['file2']
-        for e in itertools.chain(files1,files2):
-            if not e or os.path.isabs(e):
-                continue
-            source = pj(prefixpath,e)
-            if ':/' in source:  #remove protocol
-                source = source.split(':/')[1]
-
-            destination = pj(destinationpath,e)
-            shell("""
-            mkdir -p "$(dirname "{destination}")"
-            rsync --size-only "{source}" "{destination}"
-            darelease "{source}" || true
-            """)
-
-        shell("""
-            touch {output.flag}
-        """)
-
 
 def get_cram_ref(wildcards):  #{{{
     """utility function to get cram reference file option for samtools
@@ -479,6 +438,7 @@ rule fastq_bz2togz:
     filetype can be 'fq' or 'fastq'
     """
     input:
+        flag = pj(SOURCEDIR,"{sample}.archive_retrieved"),
         fastq_bz2togz_input
     output:
         temp("{path}.{filetype}.gz")
