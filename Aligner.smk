@@ -4,6 +4,8 @@ import read_samples
 from common import *
 import utils
 
+ruleorder: adapter_removal > fastq_bz2togz
+
 onsuccess: shell("rm -fr logs/Aligner/*")
 
 wildcard_constraints:
