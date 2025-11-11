@@ -599,8 +599,7 @@ rule kmer_reads:
         tmpdir=pj(tmpdir,"kmer_{sample}"),
         kmerdir=KMER
     conda: CONDA_KMC
-    log:
-        kmer_log=pj(LOG,"Aligner","{sample}.kmer.log"),
+    log: kmer_log=pj(LOG,"Aligner","{sample}.kmer.log")
     priority: 15
     resources:
         n="2",
