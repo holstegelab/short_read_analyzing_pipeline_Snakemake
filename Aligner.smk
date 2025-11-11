@@ -456,18 +456,18 @@ def fastq_bz2togz_input(wildcards):
     bz2_file = f"{wildcards.path}.{wildcards.filetype}.bz2"
     if not os.path.exists(bz2_file):
         return []
+    
     try:
-        path_str = wildcards.path
-        source_marker = f"{SOURCEDIR}/"
-        start_index = path_str.find(source_marker)
-        if start_index == -1:
-            return bz2_file
-        sub_path = path_str[start_index + len(source_marker):]
-        data_dir_name = sub_path.split('/')[0]
-        if data_dir_name.endswith('.data'):
-            sample = data_dir_name[:-5]
-            data_dir = pj(SOURCEDIR, f"{sample}.data")
-            return [bz2_file, data_dir]
+        path_parts = wildcards.path.split('/')
+        data_dir_path = None
+        
+        for i in range(len(path_parts)):
+            if path_parts[i].endswith('.data'):
+                data_dir_path = '/'.join(path_parts[:i+1])
+                break
+                
+        if data_dir_path:
+            return [bz2_file, data_dir_path]
         else:
             return bz2_file
     except Exception:
