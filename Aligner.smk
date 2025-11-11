@@ -453,12 +453,13 @@ rule external_alignments_to_fastq:
 
 
 def fastq_bz2togz_input(wildcards):
-    bz2_file = f"{FQ}/{wildcards.sample}.{wildcards.readgroup}.{wildcards.filetype}.bz2"
+    path = f"source/{wildcards.sample}.data/{wildcards.rest}"
+    bz2_file = f"{path}.{wildcards.filetype}.bz2"
     if not os.path.exists(bz2_file):
         return []
     
     try:
-        path_parts = (f"{FQ}/{wildcards.sample}.{wildcards.readgroup}.{wildcards.filetype}").split('/')
+        path_parts = path.split('/')
         data_dir_path = None
         
         for i in range(len(path_parts)):
@@ -482,20 +483,13 @@ rule fastq_bz2togz:
         fastq_bz2togz_input,
         flag = pj(SOURCEDIR,"{sample}.archive_retrieved")
     output:
-        temp(FQ + "/{sample}.{readgroup}.{filetype}.gz")
+        temp(r"source/{sample,[^/]+}.data/{rest}.{filetype}.gz")
     resources:
         n="1",
         mem_mb=150
     run:
-        bz2_input = input[0]
-        bz2_file = None
-        if isinstance(bz2_input, list):
-            if bz2_input:
-                bz2_file = bz2_input[0]
-        else:
-            bz2_file = bz2_input
-
-        if bz2_file:
+        if input:
+            bz2_file = input[0]
             shell(f"bzcat {bz2_file} | bgzip > {output}")
         else:
             shell(f"touch {output}")
