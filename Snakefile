@@ -4,6 +4,7 @@ import itertools
 import os
 
 
+ruleorder: adapter_removal > fastq_bz2togz
 
 wildcard_constraints:
     sample=r"[\w\d_\-@]+",
