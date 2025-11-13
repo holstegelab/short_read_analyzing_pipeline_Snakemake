@@ -243,7 +243,7 @@ rule archive_to_active:
         mem_mb=50
     output:
         flag=pj(SOURCEDIR,"{sample}.archive_retrieved"),
-        fpath=directory(pj(SOURCEDIR,"{sample}.data"))
+        # fpath=directory(pj(SOURCEDIR,"{sample}.data"))
     run:
         sample = SAMPLEINFO[wildcards['sample']]
         prefixpath = sample['prefix']
@@ -488,9 +488,9 @@ rule fastq_bz2togz:
         n="1",
         mem_mb=150
     run:
-        if input:
-            bz2_file = input[0]
-            shell(f"bzcat {bz2_file} | bgzip > {output}")
+        bz2_input = [f for f in input if f.endswith(".bz2")]
+        if bz2_input:
+            shell(f"bzcat {bz2_input[0]} | bgzip > {output}")
         else:
             shell(f"touch {output}")
 
