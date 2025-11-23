@@ -20,6 +20,64 @@ from collections import OrderedDict
 
 PROTOCOLS = ['archive','dcache']
 
+
+def _exclude_filename(samplefile_path):
+    base = os.path.realpath(samplefile_path)
+    if base.endswith('.tsv'):
+        base = base[:-4]
+    return base + '.exclude'
+
+
+def load_sample_exclusions(exclude_filename):
+    exclusions = OrderedDict()
+    if not os.path.isfile(exclude_filename):
+        return exclusions
+
+    print(f'Reading exclusions from: {exclude_filename}')
+    with open(exclude_filename, 'r', encoding='utf-8') as handle:
+        for lineno, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            parts = line.split('\t', 1)
+            if len(parts) != 2:
+                print(f"* WARNING: Invalid exclusion entry at {exclude_filename}:{lineno}: '{line}'")
+                continue
+
+            sample_name, reason = parts[0].strip(), parts[1].strip()
+            if not sample_name:
+                print(f"* WARNING: Missing sample name in exclusion entry at {exclude_filename}:{lineno}")
+                continue
+
+            exclusions[sample_name] = reason
+
+    return exclusions
+
+
+def apply_sample_exclusions(sampleinfodict, exclusions, exclude_filename):
+    if not exclusions:
+        return sampleinfodict, OrderedDict()
+
+    filtered = OrderedDict()
+    excluded = OrderedDict()
+    for sample, info in sampleinfodict.items():
+        if sample in exclusions:
+            reason = exclusions[sample]
+            reason_msg = f": {reason}" if reason else ''
+            print(f"- Excluding sample {sample}{reason_msg}")
+            excluded[sample] = {'info': info, 'reason': reason}
+            continue
+        filtered[sample] = info
+
+    missing = [sample for sample in exclusions if sample not in sampleinfodict]
+    for sample in missing:
+        reason = exclusions[sample]
+        print(f"* WARNING: Sample '{sample}' listed in {exclude_filename} not present in the sample file")
+        excluded[sample] = {'info': None, 'reason': reason}
+
+    return filtered, excluded
+
 def gzipFileSize(filename):
     """return UNCOMPRESSED filesize of a gzipped file.
     
@@ -264,7 +322,11 @@ def read_samplefile(filename, prefixpath=None):
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
                     'target':targetpath,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
-                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 'no_dedup':sample_config.get('no_dedup',False), 'cram_refs':cram_refs}
+                   'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 
+                   'no_dedup':str(sample_config.get('no_dedup','0')).lower() in ('1','true','yes','y','on'), 
+                   'remove_duplicated_reads': str(sample_config.get('remove_duplicated_reads','0')).lower() in ('1','true','yes','y','on'),
+                   'erf_correct': str(sample_config.get('erf_correct','0')).lower() in ('1','true','yes','y','on'),
+                   'cram_refs':cram_refs}
                 
             all_files = [append_prefix(prefixpath,f) for f in itertools.chain(filenames1,filenames2)] 
             protocols = set([f.split(':')[0] for f in all_files if ':' in f])
@@ -456,6 +518,10 @@ def get_readgroups(sample, sourcedir):
                 readgroups.append(readgroup)
     
     # Check that at least one readgroup was defined
+    if sample.get('erf_correct', False) and file_type in (
+        'bam', 'extracted_bam', 'recalibrated_bam', 'cram', 'recalibrated_cram', 'extracted_cram'
+    ):
+        readgroups = erf_normalize_and_merge_readgroups(readgroups)
     check(warnings, len(readgroups) > 0, 'No readgroups defined for sample: ' + sample_id)
 
     # Update the sample dictionary with the alternative names and readgroups
@@ -463,6 +529,51 @@ def get_readgroups(sample, sourcedir):
     sample['readgroups'] = readgroups
     # Return the updated sample dictionary and the list of warnings
     return (sample, warnings)
+
+
+def erf_normalize_and_merge_readgroups(readgroups):
+    def _normalize(src):
+        if src is None:
+            raise ValueError('Missing PU/ID for ERF normalization')
+        parts = str(src).split('_')
+        if len(parts) >= 3 and parts[-2] in ('1', '3'):
+            res = parts[:-2] + [parts[-1]]
+            return res[0] if len(res) == 1 else '_'.join(res)
+        return str(src)
+
+    by_file = {}
+    for rg in readgroups:
+        key = rg.get('file')
+        by_file.setdefault(key, []).append(rg)
+
+    merged = []
+    for key, rgs in by_file.items():
+        uniq = {}
+        for rg in rgs:
+            info = rg.get('info', {})
+            src = info.get('PU') or info.get('ID')
+            nid = _normalize(src)
+            info['ID'] = nid
+            info['PU'] = nid
+            if nid not in uniq:
+                uniq[nid] = rg
+        nuniq = len(uniq)
+        for v in uniq.values():
+            v['nreadgroups'] = nuniq
+        merged.extend(uniq.values())
+
+    used = set()
+    for rg in merged:
+        nid = rg['info']['ID']
+        if nid in used:
+            counter = 2
+            while f"{nid}.{counter}" in used:
+                counter += 1
+            rg['info']['ID'] = f"{nid}.{counter}"
+            used.add(rg['info']['ID'])
+        else:
+            used.add(nid)
+    return merged
 
 
 def read_fastqfile(filename):
@@ -580,7 +691,9 @@ def read_fastqfile(filename):
 
 
 ############# CODE used in Snakemake pipeline ######################
+SAMPLEFILE_TO_ALL_SAMPLES = {}
 SAMPLEFILE_TO_SAMPLES = {}
+SAMPLEFILE_TO_EXCLUDED_SAMPLES = {}
 MAX_BATCH_SIZE = 2 * 1024 #2TB
 
 
@@ -591,8 +704,18 @@ def samplefile(sfilename):
         if not os.path.isfile(sfilename):
             raise RuntimeError('Sample file ' + sfilename + ' does not exist')
        
-        datfilename = os.path.realpath(sfilename)[:-4] + '.adat'
-        if not os.path.isfile(datfilename):
+        real_samplefile = os.path.realpath(sfilename)
+        datfilename = real_samplefile[:-4] + '.adat'
+        exclude_filename = _exclude_filename(sfilename)
+
+        regenerate_dat = True
+        if os.path.isfile(datfilename):
+            dat_mtime = os.path.getmtime(datfilename)
+            regenerate_dat = dat_mtime < os.path.getmtime(sfilename)
+            if not regenerate_dat and os.path.isfile(exclude_filename):
+                regenerate_dat = dat_mtime < os.path.getmtime(exclude_filename)
+
+        if regenerate_dat:
             if not os.path.isfile(sfilename):
                 raise RuntimeError('Sample file ' + sfilename + ' does not exist')
             samplelist = read_samplefile(sfilename)
@@ -602,7 +725,11 @@ def samplefile(sfilename):
         else:
             sampleinfodict = utils.load(datfilename)
 
-        SAMPLEFILE_TO_SAMPLES[basename] = sampleinfodict
+        SAMPLEFILE_TO_ALL_SAMPLES[basename] = sampleinfodict
+        exclusions = load_sample_exclusions(exclude_filename)
+        filtered_samples, excluded_samples = apply_sample_exclusions(sampleinfodict, exclusions, exclude_filename)
+        SAMPLEFILE_TO_SAMPLES[basename] = filtered_samples
+        SAMPLEFILE_TO_EXCLUDED_SAMPLES[basename] = excluded_samples
     return SAMPLEFILE_TO_SAMPLES[basename]
 
 
@@ -625,11 +752,12 @@ def load_samplefiles(filedir, cache):
                 if ncount == 7 or ncount == 8 or ncount == 9: #sample file
                     basename = os.path.splitext(os.path.basename(f))[0]
                     SAMPLE_FILES.append(basename)
-                    w = samplefile(f)
+                    w_filtered = samplefile(f)
+                    raw_samples = SAMPLEFILE_TO_ALL_SAMPLES[basename]
                     
                     #generate some indices
                     no_readgroup = []
-                    for sample,info in w.items():
+                    for sample,info in w_filtered.items():
                         if sample in SAMPLEINFO:
                             print('WARNING!: Sample ' + sample + ' is defined in more than one sample files.')
                         SAMPLEINFO[sample] = info
@@ -638,7 +766,7 @@ def load_samplefiles(filedir, cache):
                         if len(info.get('readgroups',[])) == 0:
                             no_readgroup.append(sample)
                     if no_readgroup:
-                        print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w)))
+                        print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w_filtered)))
                     
 
                     #assign to batches for staging from archive or dcache
@@ -652,7 +780,7 @@ def load_samplefiles(filedir, cache):
                     new_batch = {p:[] for p in PROTOCOLS}
                     SAMPLEFILE_TO_BATCHES[basename] = {p:[] for p in PROTOCOLS}
                     
-                    for sample,info in list(w.items()):
+                    for sample,info in raw_samples.items():
                         #check if sample is on active storage
                         if not info['from_external']: 
                             continue
@@ -674,7 +802,6 @@ def load_samplefiles(filedir, cache):
                         
                         #check if batch is full
                         if (cursize[protocol]['full'] + info['filesize']) > MAX_BATCH_SIZE: #stable batch allocation
-                            w[sample] = info
                             SAMPLEFILE_TO_BATCHES[basename][protocol].append({'samples':new_batch[protocol], 'size':cursize[protocol]['actual']})
                             new_batch[protocol] = []
                             cursize[protocol]['actual'] = 0

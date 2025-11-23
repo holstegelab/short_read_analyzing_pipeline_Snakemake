@@ -175,8 +175,8 @@ def process(querygroup, fastqrecord, stats):
 
 def fastqtosam(fastqrecord, rg, stats):
     name, seq1, seq2, qual1, qual2 = fastqrecord
-    stats['restored_bp_read1'] = stats.get('restored_bp_read1') + len(seq1)
-    stats['restored_bp_read2'] = stats.get('restored_bp_read2') + len(seq1)
+    stats['restored_bp_read1'] = stats.get('restored_bp_read1', 0) + len(seq1)
+    stats['restored_bp_read2'] = stats.get('restored_bp_read2', 0) + len(seq2)
     stats['readded_fragments'] = stats.get('readded_fragments',0) + 1
 
 

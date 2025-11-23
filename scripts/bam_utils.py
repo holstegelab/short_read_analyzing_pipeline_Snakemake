@@ -126,9 +126,12 @@ class BamRecord:
             
     
     def gen_sa_tag(self):
-        nm = self.tags.get('NM',0)
+        nm = self.tags.get('NM', 0)
         strand = '-' if self.is_reversed() else '+'
-        return '%s,%s,%s,%s,%s,%d;' % (self.rname, self.pos, strand, self.cigar, self.mapq, nm)
+        mapq_field = self.tags.get('XQ')
+        if mapq_field is None:
+            mapq_field = self.mapq
+        return '%s,%s,%s,%s,%s,%d;' % (self.rname, self.pos, strand, self.cigar, str(mapq_field), nm)
    
 
     def get_aligned_read_length(self):
@@ -266,8 +269,12 @@ class BamRecord:
                     read.tags.pop('ZB',None)
                     read.tags.pop('ZQ',None)
 
-                read.seq = s[:-read_pos]
-                read.qual = q[:-read_pos]
+                if read_pos > 0:
+                    read.seq = s[:-read_pos]
+                    read.qual = q[:-read_pos]
+                else:
+                    read.seq = s
+                    read.qual = q
         return read
     
     def clip_end(self, read_end_pos, orig_orientation=True):
@@ -300,8 +307,12 @@ class BamRecord:
                     read.tags.pop('ZB',None)
                     read.tags.pop('ZQ',None)
 
-                read.seq = s[:-read_pos]
-                read.qual = q[:-read_pos]
+                if read_pos > 0:
+                    read.seq = s[:-read_pos]
+                    read.qual = q[:-read_pos]
+                else:
+                    read.seq = s
+                    read.qual = q
             else:
                 s = read.orig_seq(include_postfix=False)
                 q = read.orig_qual(include_postfix=False)

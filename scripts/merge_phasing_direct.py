@@ -221,10 +221,14 @@ def process_record(grecord, vrecord, gphase_blocks, wphase_blocks):
     ngenotype = [[gt1,gt2,True]]
 
     grecord.genotypes = ngenotype
-    
+
 
     #grecord.set_format('GTW',numpy.array([result],dtype='S'))
     grecord.set_format('PS', numpy.array([block_id],dtype='i'))
+
+    leftover_tags = [fmt for fmt in ('PGT', 'PID') if fmt in grecord.FORMAT]
+    if leftover_tags:
+        raise RuntimeError(f"Unexpected phasing tags remaining after merge at {grecord.CHROM}:{grecord.POS}: {','.join(leftover_tags)}")
     return grecord
 
 

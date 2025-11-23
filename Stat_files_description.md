@@ -78,6 +78,8 @@ This file contains various quality metrics for BAM files used in the study. The 
 #### Dropout Metrics
 - **at_dropout, gc_dropout**: AT/GC dropout percentages.
 - **het_snp_sensitivity**: Heterozygous SNP sensitivity measure.
+- **chrM_* columns**: Per-sample mitochondrial read statistics from `stats/{sample}.chrM_read_stats.tsv` (counts, MAPQ summaries, pairing).
+- **numt_* columns**: Nuclear mitochondrial insertion read statistics from `stats/{sample}.numt_read_stats.tsv`.
 
 ### `{cohort}`.bam_rg_quality.tab - Read Group Quality Statistics
 This file contains quality metrics for individual read groups in the study. The columns are grouped as follows:

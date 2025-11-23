@@ -1,11 +1,16 @@
 import utils
 import yaml
 import csv
+import os
+import zlib
+import time
+from shlex import quote
 
 from constants import *
 from read_samples import *
 from pathlib import Path
 import functools
+from snakemake.shell import shell
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -363,6 +368,37 @@ def get_strref_by_validated_sex(wildcards, input):
     sex = get_validated_sex_file(input)
     return REF_FEMALE_STR if sex == 'female' else REF_MALE_STR
 
+def node_ssd_base():
+    user = os.environ.get('USER','')
+    slurm_tmp = os.environ.get('SLURM_TMPDIR')
+    if slurm_tmp and os.path.isdir(slurm_tmp) and os.access(slurm_tmp, os.W_OK):
+        return slurm_tmp
+    job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID')
+    if job_id:
+        p = f"/scratch-node/{user}.{job_id}"
+        if os.path.isdir(p) and os.access(p, os.W_OK):
+            return p
+    base = "/scratch-node"
+    if os.path.isdir(base):
+        try:
+            entries = [os.path.join(base, d) for d in os.listdir(base) if d.startswith(user + '.')]
+        except OSError:
+            entries = []
+        entries = [e for e in entries if os.path.isdir(e) and os.access(e, os.W_OK)]
+        if entries:
+            entries.sort(key=lambda q: os.stat(q).st_mtime, reverse=True)
+            return entries[0]
+    if os.path.isdir(TMPDIR_ALT) and os.access(TMPDIR_ALT, os.W_OK):
+        return os.path.join(TMPDIR_ALT, user)
+    if os.path.isdir('/tmp') and os.access('/tmp', os.W_OK):
+        return os.path.join('/tmp', user)
+    return tmpdir
+
+def node_tmp_path(*segments):
+    base = node_ssd_base()
+    parts = [str(s) for s in segments]
+    return os.path.join(base, *parts)
+
 def get_samplefile_folder(samplefile):
     return os.path.dirname(os.path.realpath(samplefile + '.tsv'))
 
@@ -382,3 +418,59 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
+
+def remote_base_for_sample(sample):
+    sinfo = SAMPLEINFO[sample]
+    target = sinfo['target']
+    samplefile = os.path.basename(sinfo['samplefile'])
+    if target is None:
+        target = os.path.join(sinfo['study'], samplefile)
+    if target.endswith('/'):
+        target = target[:-1]
+    return target
+
+
+def remote_base_for_samplefile(samplefile):
+    samples = list(SAMPLEFILE_TO_SAMPLES[samplefile].keys())
+    if not samples:
+        raise ValueError(f"Samplefile {samplefile} has no samples defined")
+    return remote_base_for_sample(samples[0])
+
+
+def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, config_path, ada_script):
+    adler_local = 1
+    with open(local_path, 'rb') as fhandle:
+        for chunk in iter(lambda: fhandle.read(16 * 1024 * 1024), b''):
+            adler_local = zlib.adler32(chunk, adler_local)
+    adler_local &= 0xffffffff
+
+    adler_remote = ''
+    retries = 0
+    remote_dir_full = f"agh_processed:{remote_dir}"
+    remote_file = f"{remote_dir}/{remote_name}"
+    remote_file_full = f"{remote_dir_full}/{remote_name}"
+    config_q = quote(config_path)
+    local_q = quote(local_path)
+    checksum_q = quote(checksum_path)
+    remote_dir_full_q = quote(remote_dir_full)
+    remote_file_full_q = quote(remote_file_full)
+    remote_file_q = quote(remote_file)
+    ada_q = quote(str(ada_script))
+
+    shell(f"rclone --config {config_q} mkdir -v {remote_dir_full_q}")
+
+    while f'{adler_local:08x}' != adler_remote and retries <= 3:
+        shell(f"rclone --config {config_q} -v copyto {local_q} {remote_file_full_q}")
+        shell(f"{ada_q} --tokenfile {config_q} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {remote_file_q} | awk '{{{{print $2}}}}' | awk -F '=' '{{{{print $2}}}}' > {checksum_q}")
+        shell(f"cp {checksum_q} {checksum_q}.tmp")
+
+        with open(checksum_path, 'r') as sum_file:
+            adler_remote = sum_file.readline().rstrip('\n')
+
+        retries += 1
+        if f'{adler_local:08x}' != adler_remote:
+            shell(f"rclone --config {config_q} -v deletefile {remote_file_full_q}")
+            time.sleep(60)
+
+    if f'{adler_local:08x}' != adler_remote:
+        raise ValueError(f"Checksums do not match for {local_path} after 3 retries. Local: {adler_local:08x}, Remote: {adler_remote}")

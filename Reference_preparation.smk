@@ -28,6 +28,16 @@ rule Reference_preparation_all:
         ORIG_MT_fai,
         SHIFTED_MT_dict,
         ORIG_MT_dict,
+        ORIG_MT_fa + ".amb",
+        ORIG_MT_fa + ".ann",
+        ORIG_MT_fa + ".bwt",
+        ORIG_MT_fa + ".pac",
+        ORIG_MT_fa + ".sa",
+        SHIFTED_MT_fa + ".amb",
+        SHIFTED_MT_fa + ".ann",
+        SHIFTED_MT_fa + ".bwt",
+        SHIFTED_MT_fa + ".pac",
+        SHIFTED_MT_fa + ".sa",
     default_target: True
 
 
@@ -82,6 +92,36 @@ rule create_dict_for_chrM_reference:
     shell:  """
             gatk CreateSequenceDictionary -R {input}
             """
+
+rule bwa_index_chrM_orig:
+    input:
+        fa=ancient(ORIG_MT_fa)
+    output:
+        amb=ORIG_MT_fa + ".amb",
+        ann=ORIG_MT_fa + ".ann",
+        bwt=ORIG_MT_fa + ".bwt",
+        pac=ORIG_MT_fa + ".pac",
+        sa=ORIG_MT_fa + ".sa"
+    conda: CONDA_MAIN
+    shell:
+        """
+        bwa index {input.fa}
+        """
+
+rule bwa_index_chrM_shifted:
+    input:
+        fa=ancient(SHIFTED_MT_fa)
+    output:
+        amb=SHIFTED_MT_fa + ".amb",
+        ann=SHIFTED_MT_fa + ".ann",
+        bwt=SHIFTED_MT_fa + ".bwt",
+        pac=SHIFTED_MT_fa + ".pac",
+        sa=SHIFTED_MT_fa + ".sa"
+    conda: CONDA_MAIN
+    shell:
+        """
+        bwa index {input.fa}
+        """
 
 rule create_hash:
     input:

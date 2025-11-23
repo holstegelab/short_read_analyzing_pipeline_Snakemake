@@ -11,6 +11,11 @@ MERGED_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'merged_capture_k
 MERGED_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'merged_capture_kits_cds.interval_list')
 MERGED_CAPTURE_KIT_IVL_CNV = pj(INTERVALS_DIR, 'preprocessed_intervals_for_GATK_CNV', 'merged_capture_kits_cds.interval_list')
 INTERSECT_CAPTURE_KIT_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'intersect_non_focused_capture_kits.bed')
+
+INTERSECT_CAPTURE_KIT_AUTO_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT_SEX_SPECIFIC', 'intersect_non_focused_capture_kits.auto.bed')
+INTERSECT_CAPTURE_KIT_X_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT_SEX_SPECIFIC', 'intersect_non_focused_capture_kits.chrX.bed')
+INTERSECT_CAPTURE_KIT_Y_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT_SEX_SPECIFIC', 'intersect_non_focused_capture_kits.chrY.bed')
+
 INTERSECT_CAPTURE_KIT_IVL = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'intersect_non_focused_capture_kits.interval_list')
 HARD_MAPPABILITY_TRACK = pj(RESOURCES, 'k24.umap.bed.gz')
 TARGETS_BED = pj(INTERVALS_DIR, 'MERGED_INTERSECT', 'gencode_43_cds.bed')
@@ -49,6 +54,7 @@ LOG= 'logs'
 BENCH= 'benchmark'
 BAM= 'bams'
 GVCF= 'gvcf_conv'
+GVCF_TAR= 'gvcf_tar'
 VCF= 'vcfs'
 VCF_Final= 'Final_VCF'
 STAT= 'stats'
@@ -83,10 +89,10 @@ annovar_db = pj(RESOURCES, "annovar/annovar/humandb/")
 ada = pj(SOFTWARE, 'SpiderScripts/ada/ada')
 bcftools_patched = pj(SOFTWARE, 'bcftools-1.8/bcftools')
 #custom scripts (encapsulate in srcdir())
-BAMMERGE= 'scripts/bam_merge.py'
+BAMMERGE= 'scripts/bam_merge'
 BAMCHECK='scripts/bam_check_fastq.py'
 BAMSTATS= 'scripts/bam_stats.py'
-DECHIMER= 'scripts/bam_dechimer.py'
+DECHIMER= 'scripts/bam_dechimer'
 DECHIMER_THRESHOLD= 0.005
 MERGEPHASE = 'scripts/merge_phasing.py'
 MERGEPHASEDIRECT = 'scripts/merge_phasing_direct.py'
@@ -94,6 +100,7 @@ CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
 SLOPSCRIPT = 'scripts/slop_start_stop.py'
 CAPTURE_KIT_CHECKER = 'scripts/capture_kit_cheker.py'
 BED_PRECOMP = 'scripts/precompute_capture_kits.py'
+ADA = 'ada'
 
 #path to kmer files
 KMER_CHRY= pj(RESOURCES,'kmer_sex/k32.chrY.diff')
@@ -103,6 +110,7 @@ KMER_AUTO= pj(RESOURCES,'kmer_sex/k32.auto.diff')
 
 #path to ref and add ref files
 REF =  pj(RESOURCES, 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.fa')
+AUTO_ONLY_BED = pj(RESOURCES, 'hg38_phix/GRCh38_masked_v2_decoy_excludes_GPRIN2_DUSP22_FANCD2_decoy_HLA_PhiX.onlyauto.bed')
 REF_DIR = pj(RESOURCES, 'hg38_phix')
 
 SHIFTED_MT= pj(RESOURCES,'MT_ref_shifted')
@@ -110,9 +118,9 @@ SHIFTED_MT_fa= pj(RESOURCES,'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted
 SHIFTED_MT_dict= pj(RESOURCES,'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.dict')
 SHIFTED_MT_fai= pj(RESOURCES,'MT_ref_shifted/Homo_sapiens_assembly38.chrM.shifted_by_8000_bases.fasta.fai')
 MT_CHAIN= pj(RESOURCES,'MT_ref_shifted/ShiftBack.chain')
-ORIG_MT_fa= pj(RESOURCES,'MT_ref/chrM_hg38.fasta')
-ORIG_MT_dict= pj(RESOURCES,'MT_ref/chrM_hg38.dict')
-ORIG_MT_fai= pj(RESOURCES,'MT_ref/chrM_hg38.fasta.fai')
+ORIG_MT_fa= pj(RESOURCES,'MT_ref/reference.fasta')
+ORIG_MT_dict= pj(RESOURCES,'MT_ref/reference.dict')
+ORIG_MT_fai= pj(RESOURCES,'MT_ref/reference.fasta.fai')
 ORIG_MT= pj(RESOURCES,'MT_ref')
 NUMTs= pj(RESOURCES, 'databases/NUMT_list_hg38.bed')
 mask_bed= 'Ref_PhiX_Male/hg38_alt_mask.male.bed'
@@ -162,7 +170,7 @@ ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')
 WINDOWS = pj(INTERVALS_DIR, 'windows/all.selected.sorted.3.bed')
 WINDOWS_ANNOTATED = pj(INTERVALS_DIR, 'windows/all.selected.sorted.bed')
 
-
+AGH_DCACHE_CONFIG =  pj(RESOURCES, ".agh/agh_processed.conf")
 # kraken db
 KRAKEN_DB = pj(RESOURCES, 'kraken/pluspf_20230605')
 

@@ -80,8 +80,8 @@ module Reference_preparation:
     config: config
 END_RULE = []
 CLEAN_RULE = []
-chrM = config.get("chrM","No")
-if chrM == "Yes":
+chrM_flag = config.get("chrM","Yes")
+if chrM_flag == "Yes":
     use rule * from chrM_analysis
     chrM_rule = rules.chrM_analysis_all.input
 else:
@@ -90,6 +90,21 @@ gVCF_combine_method = config.get("Combine_gVCF_method","GLnexus")
 
 gvcf_caller = config.get("caller","Deepvariant")
 glnexus_filtration = config.get("glnexus_filtration","custom")
+
+
+def finished_sample_inputs(wildcards, require_gvcf=False, require_deepvariant=False):
+    files = [
+        pj(CRAM, f"{wildcards.sample}.mapped_hg38.cram.copied"),
+        pj(STAT, f"{wildcards.sample}.stats.tar.gz"),
+        pj(KRAKEN, f"{wildcards.sample}.bracken_report.tsv"),
+    ]
+    if require_gvcf:
+        files.append(pj(GVCF, f"{wildcards.sample}.done"))
+    if require_deepvariant:
+        files.append(pj(DEEPVARIANT, f"{wildcards.sample}.done"))
+    if chrM_flag == "Yes":
+        files.append(pj(chrM, f"{wildcards.sample}.done"))
+    return files
 
 rule_all_combine = []
 VQSR_rule = []
@@ -115,14 +130,10 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
-                pj(GVCF,"{sample}.done"),
-                pj(DEEPVARIANT,"{sample}.done"),
-                pj(STAT,"{sample}.done"),
-                pj(KRAKEN,"{sample}.bracken_report.tsv")
+                lambda wc: finished_sample_inputs(wc, require_gvcf=True, require_deepvariant=True)
 
             output:
-                pj(SOURCEDIR,"{sample}.finished")
+                temp(pj(SOURCEDIR,"{sample}.finished"))
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -148,12 +159,9 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
-                pj(GVCF,"{sample}.done"),
-                pj(STAT,"{sample}.done"),
-                pj(KRAKEN,"{sample}.bracken_report.tsv")
+                lambda wc: finished_sample_inputs(wc, require_gvcf=True)
             output:
-                os.path.join(SOURCEDIR, "{sample}.finished")
+                temp(os.path.join(SOURCEDIR, "{sample}.finished"))
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -179,12 +187,9 @@ if end_point == "gVCF":
             This rule will drop the reservation of space on active storage.
             """
             input:
-                pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
-                pj(DEEPVARIANT,"{sample}.done"),
-                pj(STAT,"{sample}.done"),
-                pj(KRAKEN,"{sample}.bracken_report.tsv")
+                lambda wc: finished_sample_inputs(wc, require_deepvariant=True)
             output:
-                pj(SOURCEDIR,"{sample}.finished")
+                temp(pj(SOURCEDIR,"{sample}.finished"))
             resources:
                 active_use_remove=Aligner.calculate_active_use,
                 mem_mb=50,
@@ -196,8 +201,22 @@ if end_point == "gVCF":
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. \n"
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
 
-    END_RULE = [expand("{source}/{sample}.finished",sample=sample_names,source=SOURCEDIR), rules.Stat_all.input]
-    CLEAN_RULE = [expand(pj(STAT,"{sample}.stats.tar.gz"),sample=sample_names)]
+    END_RULE = [
+        expand("{source}/{sample}.finished", sample=sample_names, source=SOURCEDIR),
+        rules.Stat_all.input,
+        rules.kraken_tar_all.output.done,
+        rules.badmap_tar_all.output.done,
+        rules.stats_to_dcache_all.output.done,
+        rules.excluded_to_dcache_all.output.done,
+    ]
+    if gvcf_caller in ("Deepvariant", "BOTH"):
+        END_RULE.append(rules.deepvariant_tar_wgs_all.output.done)
+        END_RULE.append(rules.deepvariant_tar_wes_all.output.done)
+    if chrM_flag == "Yes":
+        END_RULE.append(rules.chrM_tar_all.output.done)
+    CLEAN_RULE = [
+        expand(pj(STAT,"{sample}.stats.tar.gz"), sample=sample_names)
+    ]
 
 elif end_point == 'PrepareRef':
     use rule * from Reference_preparation
@@ -426,7 +445,7 @@ rule pipeline:
         chrM_rule,
         #SV_rule,
         #CNV_rule,
-        rules.Encrypt_all.input,
+        #rules.Encrypt_all.input,
     output:
         done=touch('pipeline.done')
 

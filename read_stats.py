@@ -4,6 +4,7 @@ import numpy
 import yaml
 import h5py
 import gzip
+import traceback
 CHROMS = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
 def write_tsv(filename, header,data):
@@ -279,9 +280,21 @@ def read_adapter_removal_stats(filename):
             else:
                 break 
     
-    result['ar_aligned_fraction'] = result['well_aligned_read_pairs'] / result['ar_read_pairs']
-    result['ar_adapter_fraction'] = result['reads_with_adapters[1]']  / (2.0 * result['ar_read_pairs'])
-    result['ar_retained_fraction'] = result['retained_reads'] / (2.0 * result['ar_read_pairs'])
+    # Validate required keys and avoid division by zero when no read pairs are present
+    required_keys = ['ar_read_pairs', 'well_aligned_read_pairs', 'reads_with_adapters[1]', 'retained_reads']
+    missing = [k for k in required_keys if k not in result]
+    if missing:
+        raise ValueError(f"AdapterRemoval stats parse error: missing keys {missing} in {filename}")
+
+    pairs = float(result['ar_read_pairs'])
+    if pairs <= 0.0:
+        result['ar_aligned_fraction'] = 0.0
+        result['ar_adapter_fraction'] = 0.0
+        result['ar_retained_fraction'] = 0.0
+    else:
+        result['ar_aligned_fraction'] = result['well_aligned_read_pairs'] / pairs
+        result['ar_adapter_fraction'] = result['reads_with_adapters[1]']  / (2.0 * pairs)
+        result['ar_retained_fraction'] = result['retained_reads'] / (2.0 * pairs)
     return result 
     
 
@@ -398,20 +411,53 @@ def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merg
 
     for sample_rg, adapter_r, adapter_i, merge_stats, dragmap_stats, dechimer_stats in zip(sample_readgroups, adapter_removals, adapters, merge_stats, dragmaps, dechimers):
         sample, rg = sample_rg
-        
-        a = read_adapter_removal_stats(adapter_r)
+        print(f"Loading {sample} {rg}")
+
+        print(f"Loading adapter removal stats for {sample} {rg}")
+        print(adapter_r)
+        try:
+            a = read_adapter_removal_stats(adapter_r)
+        except Exception:
+            print(f"Error while reading adapter removal stats for {sample} {rg} from {adapter_r}", flush=True)
+            traceback.print_exc()
+            raise
+        print(a)
         nrow = [sample,rg] + [a[h] for h in header_adapterr]
         
-        a = read_adapter_identify_stats(adapter_i)
+        print(f"Loading adapter identify stats for {sample} {rg}")
+        try:
+            a = read_adapter_identify_stats(adapter_i)
+        except Exception:
+            print(f"Error while reading adapter identify stats for {sample} {rg} from {adapter_i}", flush=True)
+            traceback.print_exc()
+            raise
         nrow = nrow + [a[h] for h in header_adapteri]
         
-        a = read_merge_stats(merge_stats)
+        print(f"Loading merge stats for {sample} {rg}")
+        try:
+            a = read_merge_stats(merge_stats)
+        except Exception:
+            print(f"Error while reading merge stats for {sample} {rg} from {merge_stats}", flush=True)
+            traceback.print_exc()
+            raise
         nrow = nrow + [a[h] for h in header_merge]
         
-        a = read_dragmap_stats(dragmap_stats)
+        print(f"Loading dragmap stats for {sample} {rg}")
+        try:
+            a = read_dragmap_stats(dragmap_stats)
+        except Exception:
+            print(f"Error while reading dragmap stats for {sample} {rg} from {dragmap_stats}", flush=True)
+            traceback.print_exc()
+            raise
         nrow = nrow + [a[0][h] for h in header_dm_value] + [a[1][h] for h in header_dm_ratio]
                     
-        a = read_dechimer_stats(dechimer_stats)
+        print(f"Loading dechimer stats for {sample} {rg}")
+        try:
+            a = read_dechimer_stats(dechimer_stats)
+        except Exception:
+            print(f"Error while reading dechimer stats for {sample} {rg} from {dechimer_stats}", flush=True)
+            traceback.print_exc()
+            raise
         nrow = nrow + [a[h] for h in header_dechimer]
                             
         data.append(nrow)
@@ -419,7 +465,83 @@ def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merg
     return (tuple(header), data)
 
 
-def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias, hsstats):
+def _read_region_stats(filename):
+    result = {}
+    with open(filename, 'r') as handle:
+        reader = csv.reader(handle, delimiter='\t')
+        header = next(reader, None)
+        if header is None:
+            return result
+        for row in reader:
+            if len(row) < 2:
+                continue
+            key, value = row[0], row[1]
+            value = value.strip()
+            if value == '' or value.lower() == 'nan':
+                result[key] = float('nan')
+                continue
+            try:
+                if any(c in value for c in ['.', 'e', 'E']):
+                    result[key] = float(value)
+                else:
+                    result[key] = int(value)
+            except ValueError:
+                result[key] = value
+    return result
+
+
+def _normalize_region_metrics(stats):
+    alias = {
+        'reads_paired': 'paired_reads',
+        'first_fragments': 'paired_read1',
+        'last_fragments': 'paired_read2',
+        'paired_read_1': 'paired_read1',
+        'paired_read_2': 'paired_read2',
+        'reads_properly_paired': 'properly_paired',
+        'singletons': 'paired_singletons',
+        'reads_mapped_and_qc_passed': 'reads_mapped_qc_pass',
+        'reads_mapped_and_paired_qc_passed': 'reads_mapped_and_paired_qc_pass',
+        'pairs_on_different_chromosomes_mapq_5': 'pairs_on_different_chromosomes_1',
+    }
+    out = dict(stats)
+    for src, dst in alias.items():
+        if src in stats and dst not in out:
+            out[dst] = stats[src]
+    return out
+
+
+REGION_METRICS = [
+    'raw_total_sequences',
+    'filtered_sequences',
+    'sequences',
+    'is_sorted',
+    'first_fragments',
+    'last_fragments',
+    'reads_mapped',
+    'reads_mapped_and_paired',
+    'reads_unmapped',
+    'reads_qc_failed',
+    'reads_duplicated',
+    'reads_mapped_and_paired_qc_pass',
+    'reads_mapped_qc_pass',
+    'paired_reads',
+    'paired_read1',
+    'paired_read2',
+    'properly_paired',
+    'paired_singletons',
+    'pairs_on_different_chromosomes',
+    'pairs_on_different_chromosomes_1',
+    'average_length',
+    'insert_size_average',
+    'insert_size_standard_deviation',
+    'maximum_length',
+    'total_length',
+    'bases_mapped_cigar',
+    'bases_trimmed',
+]
+
+
+def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias, hsstats, chrM_stats, numt_stats):
     header = ['sample', 'total_sequences', 'avg_quality', 'average_length', 'max_length', 'error_rate',\
               'insert_size_avg', 'insert_size_std',\
               'reads_unmapped', 'reads_properly_paired', 'reads_mq0', 'reads_duplicated',\
@@ -439,7 +561,7 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
               'pcr_adapter_2_exome','nextera_exome', \
               'pre_adapter_ac', 'pre_adapter_ag','pre_adapter_at', 'pre_adapter_ca', 'pre_adapter_cg', 'pre_adapter_ct', 'pre_adapter_ga', 'pre_adapter_gc', 'pre_adapter_gt', 'pre_adapter_ta', 'pre_adapter_tc', 'pre_adapter_tg',\
               'bait_bias_ac', 'bait_bias_ag','bait_bias_at', 'bait_bias_ca', 'bait_bias_cg', 'bait_bias_ct', 'bait_bias_ga', 'bait_bias_gc', 'bait_bias_gt', 'bait_bias_ta', 'bait_bias_tc', 'bait_bias_tg']
-              
+
     bamstats_header = ['unmapped_ratio','mqual20_ratio','secondary_ratio','supplementary_ratio','sup_diffchrom_ratio','duplicate_ratio','duplicate_supplement_ratio','soft_clipped_bp_ratio',\
                         'aligned_bp_ratio','inserted_bp_ratio','deleted_bp_ratio','total_bp','soft_clipped_bp_ratio_filter_50','soft_clipped_bp_ratio_filter_60','soft_clipped_bp_ratio_filter_70',\
                         'aligned_bp_ratio_filter_50','aligned_bp_ratio_filter_60','aligned_bp_ratio_filter_70','poly_a','poly_g', 'illumina_adapter','pcr_adapter_1','pcr_adapter_2','nextera']    
@@ -455,11 +577,30 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
                     'pct_target_bases_500x',
                     'at_dropout','gc_dropout',
                     'het_snp_sensitivity']
-    header = header +  hsstat_header
+    region_fields = [
+        'sequences',
+        'reads_mapped',
+        'reads_unmapped',
+        'reads_properly_paired',
+        'pairs_on_different_chromosomes',
+        'average_length',
+        'insert_size_average',
+        'insert_size_standard_deviation',
+        'total_length',
+        'bases_mapped_cigar',
+        'error_rate',
+        'mismatches',
+        'reads_mq0',
+        'supplementary_alignments',
+    ]
+    chrM_header = [f'chrm_{metric}' for metric in region_fields]
+    numt_header = [f'numt_{metric}' for metric in region_fields]
+
+    header = header +  hsstat_header + chrM_header + numt_header
 
     data = []
 
-    for sample, genome_filename, exome_filename, v2,ba,be, pre_ad, bait_b, hsstat in zip(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias, hsstats):
+    for sample, genome_filename, exome_filename, v2,ba,be, pre_ad, bait_b, hsstat, chrM_stat, numt_stat in zip(samples, genome_filenames, exome_filenames, vpca2, bam_extra_all, bam_extra_exome, pre_adapter, bait_bias, hsstats, chrM_stats, numt_stats):
         print('Reading statistics for sample: ' + sample)
         stats = read_stats_full(genome_filename)
         
@@ -493,6 +634,12 @@ def combine_quality_stats(samples, genome_filenames, exome_filenames, vpca2, bam
 
         hsstat = read_hsstats(hsstat)[0]
         nrow = nrow + [hsstat[h] for h in hsstat_header]
+
+        chrM_values = _normalize_region_metrics(_read_region_stats(chrM_stat))
+        numt_values = _normalize_region_metrics(_read_region_stats(numt_stat))
+
+        nrow = nrow + [chrM_values.get(metric, 0) for metric in region_fields]
+        nrow = nrow + [numt_values.get(metric, 0) for metric in region_fields]
 
         data.append(tuple(nrow))
     return (tuple(header), data)
@@ -579,47 +726,67 @@ def combine_oxo_stats(samples, pre_adapter, bait_bias):
 
 
 def write_coverage_to_hdf5(annotation, samples, genome_filenames, coverage_beds, hdf5file):
-    with open(annotation,'r') as f:
-        bed_regions = [line.strip().split('\t') for line in f.readlines()]
+    try:
+        with open(annotation,'r') as f:
+            bed_regions = [line.strip().split('\t') for line in f.readlines()]
 
-    fields = ['chrom', 'start', 'end', 'at_content', 'gc_content', 'n_a', 'n_c', 'n_g', 'n_t', 'n_n', 'n_other', 'n_length']
-    dtypes = ['S', 'i4', 'i4', 'f4', 'f4', 'i4', 'i4', 'i4', 'i4', 'i4', 'i4', 'i4']
-    
-    with h5py.File(hdf5file, 'w') as f:
-        grp = f.create_group('coverage')
-        covds = grp.create_dataset('coverage', shape=(len(coverage_beds), len(bed_regions)), dtype='e', compression='gzip') #half precision float
-        
-        
-        samples = [e.encode('utf-8') for e in samples]
-        maxlen_samples = max([len(e) for e in samples])
-        sampleds = grp.create_dataset('samples', shape=(len(coverage_beds),), dtype=f'S{maxlen_samples}',  compression="gzip")
-        sampleds[:] = samples
-        
-        total_bases_mapped = []
+        fields = ['chrom', 'start', 'end', 'at_content', 'gc_content', 'n_a', 'n_c', 'n_g', 'n_t', 'n_n', 'n_other', 'n_length']
+        dtypes = ['S', 'i4', 'i4', 'f4', 'f4', 'i4', 'i4', 'i4', 'i4', 'i4', 'i4', 'i4']
 
-        for genome_filename in genome_filenames:
-            stats = read_stats_full(genome_filename)
+        with h5py.File(hdf5file, 'w') as f:
+            grp = f.create_group('coverage')
+            covds = grp.create_dataset('coverage', shape=(len(coverage_beds), len(bed_regions)), dtype='e', compression='gzip') #half precision float
 
-            total_bases_mapped.append(stats['bases mapped (cigar)'])
-        basesds = grp.create_dataset('bases_mapped', shape=(len(coverage_beds),), dtype='i8', compression="gzip")
-        basesds[:] = total_bases_mapped
-        
-        for pos, (field, dt) in enumerate(zip(fields, dtypes)):
-            print(pos, field, dt)
-            if dt == 'S':
-                
-                d = [e[pos].encode('utf-8') for e in bed_regions]
-                maxlen = max([len(e) for e in d])
-                ds = grp.create_dataset(field, shape=(len(bed_regions), ), dtype=dt+ str(maxlen),  compression="gzip")
-                ds[:] = d
-            else:
-                ds = grp.create_dataset(field, shape=(len(bed_regions), ), dtype=dt,  compression="gzip")
-                ds[:] = [e[pos] for e in bed_regions]
 
-        for pos, coverage_bed in enumerate(coverage_beds):
-            print(pos, coverage_bed)
-            with gzip.open(coverage_bed, 'rt') as f_in:
-                data = [float(line.split('\t')[-1]) for line in f_in]
-                
-                covds[pos, :] = data
+            samples = [e.encode('utf-8') for e in samples]
+            maxlen_samples = max([len(e) for e in samples])
+            sampleds = grp.create_dataset('samples', shape=(len(coverage_beds),), dtype=f'S{maxlen_samples}',  compression="gzip")
+            sampleds[:] = samples
+
+            total_bases_mapped = []
+
+            for genome_filename in genome_filenames:
+                try:
+                    stats = read_stats_full(genome_filename)
+                except Exception:
+                    print(f"Error while reading genome stats from {genome_filename}", flush=True)
+                    traceback.print_exc()
+                    raise
+
+                total_bases_mapped.append(stats['bases mapped (cigar)'])
+            basesds = grp.create_dataset('bases_mapped', shape=(len(coverage_beds),), dtype='i8', compression="gzip")
+            basesds[:] = total_bases_mapped
+
+            for pos, (field, dt) in enumerate(zip(fields, dtypes)):
+                print(pos, field, dt)
+                try:
+                    if dt == 'S':
+
+                        d = [e[pos].encode('utf-8') for e in bed_regions]
+                        maxlen = max([len(e) for e in d])
+                        ds = grp.create_dataset(field, shape=(len(bed_regions), ), dtype=dt+ str(maxlen),  compression="gzip")
+                        ds[:] = d
+                    else:
+                        ds = grp.create_dataset(field, shape=(len(bed_regions), ), dtype=dt,  compression="gzip")
+                        ds[:] = [e[pos] for e in bed_regions]
+                except Exception:
+                    print(f"Error while preparing annotation field '{field}' for {hdf5file}", flush=True)
+                    traceback.print_exc()
+                    raise
+
+            for pos, coverage_bed in enumerate(coverage_beds):
+                print(pos, coverage_bed)
+                try:
+                    with gzip.open(coverage_bed, 'rt') as f_in:
+                        data = [float(line.split('\t')[-1]) for line in f_in]
+
+                        covds[pos, :] = data
+                except Exception:
+                    print(f"Error while reading coverage bed {coverage_bed}", flush=True)
+                    traceback.print_exc()
+                    raise
+    except Exception:
+        print(f"Error while writing coverage HDF5 to {hdf5file}", flush=True)
+        traceback.print_exc()
+        raise
 

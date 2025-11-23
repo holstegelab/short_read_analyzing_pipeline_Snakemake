@@ -28,6 +28,7 @@ def rg_prune(readgroup, stats, stats_prefix, args):
     rpos = [r.get_read_position(orig_orientation=True) for r in reads]
   
 
+
     #determine prune positions
     pruned = False
     nreadgroup = readgroup.copy()
@@ -64,6 +65,7 @@ def rg_prune(readgroup, stats, stats_prefix, args):
 
         #prune
         read = reads[pos]
+        
         if (stop - start) < args.min_align_length: 
             pruned = True
             if read.is_primary():
@@ -77,11 +79,13 @@ def rg_prune(readgroup, stats, stats_prefix, args):
         if rpos[pos]['read_spos'] != start or (start > 0 and before):
             pruned = True
             read = read.clip_start(start, orig_orientation=True)
+            
             stats[f"{stats_prefix}_start_pruned"] = stats.get(f"{stats_prefix}_start_pruned",0) + 1
 
         if rpos[pos]['read_epos'] != stop or (stop > 0 and after):
             pruned = True
             read = read.clip_end(stop, orig_orientation=True)
+            
             stats[f"{stats_prefix}_end_pruned"] = stats.get(f"{stats_prefix}_end_pruned",0) + 1
 
 
@@ -168,7 +172,7 @@ def get_position_order(readgroup):
 def dechimer(reads1, reads2, stats, args):
     r1 = reads1['primary']
     r2 = reads2['primary']
-    modified1 = modified2 = False    
+    modified1 = modified2 = False
     if not 'supplementary' in reads1 and not 'supplementary' in reads2: #only two alignment records
         if not 'S' in r1.cigar and not 'S' in r2.cigar:
             return (modified1,modified2) # fast path
@@ -189,12 +193,15 @@ def dechimer(reads1, reads2, stats, args):
             #only primary reads --> distance > MAX_READ_DIST --> remove clipping
             if diff >= args.max_read_dist:
                 if cigar1[-1][0] == 'SH':
-                    r1 = r1.clip_end(cigar1[-1][1], orig_orientation=True)
+                    # clip end to ORL - trailing_clip_len (API expects new end position)
+                    end_pos1 = r1.get_orig_read_length() - cigar1[-1][1]
+                    r1 = r1.clip_end(end_pos1, orig_orientation=True)
                     stats[f'read1_dechimer_clip'] = stats.get('read1_dechimer_clip',0) + 1
                     modified1=True
 
                 if cigar2[-1][0] == 'SH':
-                    r2 = r2.clip_end(cigar2[-1][1], orig_orientation=True)
+                    end_pos2 = r2.get_orig_read_length() - cigar2[-1][1]
+                    r2 = r2.clip_end(end_pos2, orig_orientation=True)
                     stats[f'read2_dechimer_clip'] = stats.get('read2_dechimer_clip',0) + 1
                     modified2 = True
 
@@ -211,18 +218,20 @@ def dechimer(reads1, reads2, stats, args):
 
         elif r1.is_unmapped() and r2.is_unmapped():
             pass
-        elif r1.is_unmapped(): 
+        elif r1.is_unmapped():
             if cigar2[-1][0] == 'SH':
-                r2 = r2.clip_end(cigar2[-1][1], orig_orientation=True)
+                end_pos2 = r2.get_orig_read_length() - cigar2[-1][1]
+                r2 = r2.clip_end(end_pos2, orig_orientation=True)
                 stats[f'read2_dechimer_clip'] = stats.get('read2_dechimer_clip',0) + 1
                 modified2 = True
             if args.loose_ends and cigar2[0][0] == 'SH':
                 r2 = r2.clip_start(cigar2[0][1], orig_orientation=True)
                 stats[f'read2_loose_end_clip'] = stats.get('read2_loose_end_clip',0) + 1
                 modified2 = True
-        else: #is_unmapped2 
+        else: #is_unmapped2
             if cigar1[-1][0] == 'SH':
-                r1 = r1.clip_end(cigar1[-1][1], orig_orientation=True)
+                end_pos1 = r1.get_orig_read_length() - cigar1[-1][1]
+                r1 = r1.clip_end(end_pos1, orig_orientation=True)
                 stats[f'read1_dechimer_clip'] = stats.get('read1_dechimer_clip',0) + 1
                 modified1 = True
             if args.loose_ends and cigar1[0][0] == 'SH':

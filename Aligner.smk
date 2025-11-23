@@ -1,8 +1,118 @@
+import os
 import os.path
+import itertools
+import subprocess
+import time
+import re
+import shlex
+import sys
+import traceback
+import json
+from collections.abc import Mapping
 
 import read_samples
 from common import *
 import utils
+
+FAILED_JOBS_LOG = pj(LOG, "failed_jobs.jsonl")
+
+
+def _normalize(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    if isinstance(value, Mapping):
+        return {str(key): _normalize(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_normalize(item) for item in value]
+    try:
+        return _normalize(dict(value))
+    except Exception:
+        return str(value)
+
+
+def _serialize_iterable(values):
+    if values is None:
+        return []
+    if isinstance(values, (str, os.PathLike)):
+        return [_normalize(values)]
+    try:
+        return [_normalize(v) for v in list(values)]
+    except TypeError:
+        return [_normalize(values)]
+
+
+def _serialize_mapping(obj):
+    if obj is None:
+        return {}
+    if isinstance(obj, Mapping):
+        return {str(key): _normalize(val) for key, val in obj.items()}
+    try:
+        return {str(key): _normalize(val) for key, val in dict(obj).items()}
+    except Exception:
+        return {"value": _normalize(obj)}
+
+
+def log_failure(
+    wildcards,
+    input,
+    output,
+    params,
+    log,
+    threads,
+    resources,
+    rule_name,
+    exception=None,
+    **extra,
+):
+    if exception is None:
+        exception = extra.get("exception")
+    record = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "rule": rule_name,
+        "wildcards": {str(key): _normalize(val) for key, val in dict(wildcards).items()},
+        "input": _serialize_iterable(input),
+        "output": _serialize_iterable(output),
+        "params": _serialize_mapping(params),
+        "log": _serialize_iterable(log),
+        "threads": threads,
+        "resources": _serialize_mapping(resources),
+    }
+    attempt = extra.get("attempt")
+    if attempt is not None:
+        record["attempt"] = attempt
+    if exception is not None:
+        record["exception"] = "".join(
+            traceback.format_exception_only(type(exception), exception)
+        ).strip()
+    try:
+        target_dir = os.path.dirname(FAILED_JOBS_LOG)
+        if target_dir:
+            os.makedirs(target_dir, exist_ok=True)
+        with open(FAILED_JOBS_LOG, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        print(f"[log_failure] Failed to record failure for rule {rule_name}", file=sys.stderr)
+        traceback.print_exc()
+
+
+def failure_logger(rule_name):
+    def _handler(wildcards, input, output, params, log, threads, resources, **extra):
+        log_failure(
+            wildcards,
+            input,
+            output,
+            params,
+            log,
+            threads,
+            resources,
+            rule_name=rule_name,
+            **extra,
+        )
+
+    return _handler
+
 
 onsuccess: shell("rm -fr logs/Aligner/*")
 
@@ -28,12 +138,10 @@ wildcard_constraints:
 # extract all sample names from SAMPLEINFO dict to use it rule all
 
 
-rule Aligner_all:
-    input:
-        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names,cram=CRAM),
-    default_target: True
 
 
+
+##THIS FUNCION IS COPIED ALSO in Stat.smk and Kraken.smk
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
     """If samples are on tape, we do not have sample readgroup info.
     That is, the 'readgroups' field is empty.
@@ -97,6 +205,10 @@ def get_source_files(wildcards):  #{{{
 
 #}}}
 
+rule Aligner_all:
+    input:
+        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names,cram=CRAM)   #default target removed, as it keeps all cram files on disk till end of pipeline
+
 checkpoint get_readgroups:
     """Get the readgroup info for a sample.
 
@@ -105,9 +217,10 @@ checkpoint get_readgroups:
     Once readgroup info is available, snakemake will recalculate the DAG.
     """
     input:
-        get_source_files
+        get_source_files,
+        ancient(pj(SOURCEDIR,"{sample}.started"))
     output:
-        pj(SAMPLEINFODIR,"{sample}.dat")
+        temp(pj(SAMPLEINFODIR,"{sample}.dat"))
     resources:
         n="1",
         mem_mb=150
@@ -133,17 +246,16 @@ rule archive_get:
     The batch is defined in SAMPLEFILE_TO_BATCHES.
     Once the batch is retrieved, an indicator file is written to indicate that the batch is available.
     """
-
     output:
-        pj(FETCHDIR,'{samplefile}.archive_{batchnr}.retrieved')
+        temp(pj(FETCHDIR,'{samplefile}.archive_{batchnr}.retrieved'))
     resources:
         arch_use_add=lambda wildcards:
         SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]['size'],
         partition="archive",
-        n="1",
+        n="0.1",
         mem_mb=100
     run:
-        dname = os.path.dirname(str(output))
+        dname = os.path.dirname(str(output))        
         batch = SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]
         files = []
         for sample in batch['samples']:
@@ -155,12 +267,65 @@ rule archive_get:
             files2 = sinfo['file2']
             prefixpath = sinfo['prefix']
 
-            files.extend([append_prefix(prefixpath,e) for e in itertools.chain(files1,files2) if
-                          e and not os.path.isabs(e)])
+            files.extend([append_prefix(prefixpath, e) for e in itertools.chain(files1, files2) if e and not os.path.isabs(e)])
 
-        archive_files = " ".join([f'"{f.replace("archive:/", "")}"' for f in files if f.startswith("archive:/")])
-        shell("daget  " +  archive_files)
-        shell("touch {output}")
+        # Collect archive-managed paths (strip protocol for commands)
+        check_paths = [f.replace("archive:/", "") for f in files if f.startswith("archive:/")]
+
+        # Request staging for all files in this batch (if any)
+        if check_paths:
+            print(f"[archive_get] Batch {wildcards['samplefile']}#{wildcards['batchnr']}: staging {len(check_paths)} file(s)")
+            total = len(check_paths)
+            for i in range(0, total, 100):
+                chunk = check_paths[i:i+100]
+                print(f"[archive_get] daget chunk {i//100 + 1}/{(total + 99)//100}: {len(chunk)} file(s)", flush=True)
+                try:
+                    print("RUNNING DAGET")
+                    res = subprocess.run(["/opt/dacommands/bin/daget", "-av", *chunk], capture_output=True, text=True)
+                    if res.stdout:
+                        print(res.stdout, end="", flush=True)
+                    if res.stderr:
+                        print(res.stderr, end="", file=sys.stderr, flush=True)
+                    if res.returncode != 0:
+                        raise RuntimeError(f"[archive_get] daget exited with code {res.returncode} for this chunk")
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
+                    raise
+
+            # Poll until all are online (DUL or REG)
+            done = set()
+            while True:
+                pending = [p for p in check_paths if p not in done]
+                if not pending:
+                    print("[archive_get] All files online. Proceeding.", flush=True)
+                    break
+                for i in range(0, len(pending), 100):
+                    chunk = pending[i:i+100]
+                    try:
+                        res = subprocess.run(["/opt/dacommands/bin/dals", "-l", *chunk], capture_output=True, text=True)
+                        out = (res.stdout or "") + (res.stderr or "")
+                    except Exception:
+                        traceback.print_exc(file=sys.stderr)
+                        out = ""
+                    for line in out.splitlines():
+                        m = re.search(r"\(([A-Z]{3})\)\s+(.*)$", line)
+                        if not m:
+                            continue
+                        status = m.group(1)
+                        filepath = m.group(2).strip()
+                        if status in ("DUL", "REG"):
+                            done.add(filepath)
+                print(f"[archive_get] Poll: {len(done)}/{len(check_paths)} online (DUL/REG)", flush=True)
+                time.sleep(30)
+
+        # Mark batch as retrieved only when staged
+        print(f"[archive_get] Writing retrieved flag: {str(output)}", flush=True)
+        try:
+            os.makedirs(os.path.dirname(str(output)), exist_ok=True)
+        except Exception:
+            pass
+        with open(str(output), "w") as _f:
+            _f.write("")
 
 
 def retrieve_batch(wildcards):  #{{{
@@ -218,10 +383,12 @@ rule start_sample:
         # storsge memory is reserved for the sample
         active_use_add=calculate_active_use,
         mem_mb=50,
-        n="1"
+        n="0.1"
     shell: """
         touch {output}
         """
+
+
 
 rule archive_to_active:
     """Move the files of a sample from archive to active storage.
@@ -235,7 +402,7 @@ rule archive_to_active:
     resources:
         arch_use_remove=lambda wildcards: SAMPLEINFO[wildcards['sample']]['filesize'],
         partition="archive",
-        n="1",
+        n="0.6",
         mem_mb=50
     output:
         flag=temp(pj(SOURCEDIR,"{sample}.archive_retrieved")),
@@ -249,17 +416,61 @@ rule archive_to_active:
         for e in itertools.chain(files1,files2):
             if not e or os.path.isabs(e):
                 continue
-            source = pj(prefixpath,e)
+            source = pj(prefixpath, e)
             if ':/' in source:  #remove protocol
                 source = source.split(':/')[1]
 
             destination = pj(destinationpath,e)
             shell("""
+            set -euo pipefail
+            echo "[archive_to_active] RSYNC copy"
+            echo "[archive_to_active] src: {source}"
+            echo "[archive_to_active] dst: {destination}"
             mkdir -p "$(dirname "{destination}")"
-            rsync --size-only "{source}" "{destination}"
-            darelease "{source}" || true
+            rsync --size-only --progress "{source}" "{destination}"
             """)
-
+            if destination.endswith(".bz2"):
+                new_filename = destination[:-4] + '.gz'
+                #convert to gzip
+                shell("""
+                set -euo pipefail
+                echo "[archive_to_active] Converting bz2->gz"
+                echo "[archive_to_active] src: {destination}"
+                echo "[archive_to_active] dst: {new_filename}"
+                ls -l "{destination}" || true
+                if command -v pigz >/dev/null 2>&1; then
+                  cc="pigz -p {threads} -c"
+                else
+                  cc="gzip -c"
+                fi
+                if command -v pbzip2 >/dev/null 2>&1; then
+                  dc="pbzip2 -dc -p {threads}"
+                elif command -v lbzip2 >/dev/null 2>&1; then
+                  dc="lbzip2 -dc -n {threads}"
+                else
+                  dc="bzcat"
+                fi
+                echo "[archive_to_active] using decompressor: $dc"
+                echo "[archive_to_active] using compressor:   $cc"
+                tmp="{new_filename}.tmp.$$"
+                set -x
+                eval "$dc" "{destination}" | eval "$cc" > "$tmp"
+                set +x
+                mv -f "$tmp" "{new_filename}"
+                ls -l "{new_filename}" || true
+                """)
+                
+                
+        
+        for e in itertools.chain(files1,files2):
+            if not e or os.path.isabs(e):
+                continue
+            source = pj(prefixpath, e)
+            if ':/' in source:  #remove protocol
+                source = source.split(':/')[1]
+            shell("""
+            /opt/dacommands/bin/darelease "{source}" || true
+            """)
         shell("""
             touch {output.flag}
         """)
@@ -352,39 +563,68 @@ rule split_alignments_by_readgroup:
     priority: 99
     params:
         cramref=get_cram_ref,
+        fixer=srcdir('scripts/fix_bam_rg_pairs'),    
     run:
-        sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
-        readgroups = [readgroup for readgroup in sinfo['readgroups'] if wildcards['filename'] in readgroup['file']]
+        # All branching in Python; shell executes a single, fixed command string
+        sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+        readgroups = [rg for rg in sinfo['readgroups'] if wildcards['filename'] in rg['file']]
 
         readfile = readgroups[0]['file']
+        erf_correct = SAMPLEINFO[wildcards['sample']].get('erf_correct', False)
+        if erf_correct:
+            print(f"[split_alignments_by_readgroup] ERF correct enabled for sample {wildcards.sample}, source {wildcards.filename} using {params.fixer}", file=sys.stderr)
 
+        # Determine formats and reference flags
+        extension_in = os.path.splitext(readfile)[1][1:].lower()
+        file_type = readgroups[0]['file_type']
+        reference_file = readgroups[0].get('reference_file', None)
+        if file_type == 'cram':
+            rflag = f"-r {reference_file}" if reference_file else ""
+            output_fmt = 'cram,version=3.1'
+            extension = 'cram'
+        else:
+            rflag = ""
+            output_fmt = 'bam'
+            extension = 'bam'
+
+        sanitized = f"{output.readgroups}/{wildcards.sample}.sanitized.{extension_in}"
         n = len(readgroups)
-        if n == 1:  #nothing to split, single readgroup, just link the source file
-            extension = os.path.splitext(readfile)[1][1:].lower()
-            readgroup_id = readgroups[0]['info']['ID']
 
-            cmd = """
-                mkdir -p {output.readgroups}
-                ln {readfile} {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension}
-                touch {output.done}
+        if n == 1:
+            # Single RG path: optionally sanitize, then link
+            readgroup_id = readgroups[0]['info']['ID']
+            if erf_correct:
+                cmd = f"""
+                    set -euo pipefail
+                    mkdir -p {output.readgroups}
+                    {params.fixer} -i {readfile} -o {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension_in} {rflag} --threads {resources.n}                    
+                    touch {output.done}
+                """
+            else:
+                cmd = f"""
+                    set -euo pipefail
+                    mkdir -p {output.readgroups}
+                    ln {readfile} {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension_in}
+                    touch {output.done}
                 """
             shell(cmd)
         else:
-            #extract readgroups to output folder with {sample}.{readgroups ID}.{extension} format
-            if readgroups[0]['file_type'] == 'cram':
-                #keep cram format, much more efficient, and even slighly faster
-                output_fmt = 'cram,version=3.1'
-                extension = 'cram'
+            # Multi-RG path: optionally sanitize, then split
+            if erf_correct:
+                pre = f"{params.fixer} -i {readfile} -o {sanitized} {rflag} --threads {resources.n}\n                "
+                inpath = sanitized
             else:
-                output_fmt = 'bam'
-                extension = 'bam'
-
-            cmd = """
+                pre = ""
+                inpath = readfile
+            cmd = f"""
+                set -euo pipefail
                 mkdir -p {output.readgroups}
-                samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {readfile} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
+                {pre}samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {inpath} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
                 touch {output.done}
-                """
+            """
             shell(cmd)
+            if erf_correct:
+                shell(f"rm {sanitized}")
 
 
 def get_aligned_readgroup_folder(wildcards):  #{{{
@@ -393,7 +633,6 @@ def get_aligned_readgroup_folder(wildcards):  #{{{
     This is the READGROUPS/<sample>_<sourcefilename> folder.
     """
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
-    print(wildcards['sample'], sinfo, wildcards, 'hoi', wildcards['readgroup'], 'e')
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
     sfile = os.path.splitext(os.path.basename(readgroup['file']))[0]
     folder = pj(READGROUPS,wildcards['sample'] + '.sourcefile.' + sfile)
@@ -440,9 +679,23 @@ rule external_alignments_to_fastq:
     #alternative: collate can run also in fast mode (e.g. -r 100000 -f), but this has potential impact on alignment (estimation of insert size in aligner becomes biased to genome location)
     shell:
         """
-            samtools view -@ 2 -u -h {params.cramref} {params.dir}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\
+            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; elif [ -d "/tmp" ] && [ -w "/tmp" ]; then TMPDIR_USE="/tmp/${{USER}}"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            JOB_ID="${{SLURM_JOB_ID}}"
+            if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
+            if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+            JOB_TMP="$TMPDIR_USE/aligner_fastq/$JOB_ID/{wildcards.sample}.{wildcards.readgroup}"
+            echo "SSD base: $TMP_SSD" >&2
+            echo "TMPDIR_USE: $TMPDIR_USE" >&2
+            echo "JOB_ID: $JOB_ID" >&2
+            echo "JOB_TMP: $JOB_TMP" >&2
+            mkdir -p "$JOB_TMP"
+            trap '/bin/rm -rf "$JOB_TMP" 2>/dev/null || true' EXIT INT TERM
+            CRAM_REF="{params.cramref}"
+            samtools view -@ 2 -u -h $CRAM_REF {params.dir}/{wildcards.sample}.{wildcards.readgroup}.{params.extension} |\
             samtools reset -@ 2 --output-fmt BAM,level=0 --no-PG --no-RG --keep-tag OQ  |\
-            samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -u -n  -m {params.memory_per_core}M | \
+            samtools sort -T "$JOB_TMP"/{params.temp_sort} -@ 2 -u -n  -m {params.memory_per_core}M | \
             samtools fastq -O -N -@ 2 -0 /dev/null -1 {output.fq1} -2 {output.fq2} -s {output.singletons} 
         """
 
@@ -499,37 +752,104 @@ rule adapter_removal:
         for_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_1.fq.gz")),
         rev_f=temp(pj(FQ,"{sample}.{readgroup}.fastq.cut_2.fq.gz")),
         adapter_removal=ensure(pj(STAT,"{sample}.{readgroup}.adapter_removal.log"), non_empty=True),
+        fastq_stats=pj(STAT,"{sample}.{readgroup}.fastq.stats.tsv"),
+        adapters=pj(STAT,"{sample}.{readgroup}.fastq.adapters"),
     # log file in this case contain some stats about removed seqs
     priority: 10
     conda: CONDA_MAIN
-    params: adapters=ADAPTERS
+    params: adapters=ADAPTERS, fastq_stats=srcdir('scripts/fastq_stats.py'),
+            rmdups=srcdir('scripts/remove_interleaved_duplicates.py'), 
+            rescuer=srcdir('scripts/fastq_pair_rescue.py'),
+            remove_duplicated_reads=lambda wildcards: 1 if SAMPLEINFO[wildcards['sample']].get('remove_duplicated_reads', False) else 0
     resources:
-        n="3.5",
-        mem_mb=200
+        n="5",
+        mem_mb=200,
+        attempt=lambda wildcards, attempt: attempt
     ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
-    shell:
+    run:
+        f1 = input[0]
+        f2 = input[1]
+        import gzip, bz2
+        def _detect_fastq_lines(fn):
+            if fn.endswith('.gz'):
+                fh = gzip.open(fn, 'rt', encoding='utf-8', errors='replace')
+            elif fn.endswith('.bz2'):
+                fh = bz2.open(fn, 'rt', encoding='utf-8', errors='replace')
+            else:
+                fh = open(fn, 'rt', encoding='utf-8', errors='replace')
+            try:
+                l1 = fh.readline()
+                l2 = fh.readline()
+                l3 = fh.readline()
+            finally:
+                fh.close()
+            if l3.startswith('+'):
+                return 4
+            else:
+                return 2
+        def _detect_quality_range(fn, max_records=1000):
+            if fn.endswith('.gz'):
+                fh = gzip.open(fn, 'rt', encoding='utf-8', errors='replace')
+            elif fn.endswith('.bz2'):
+                fh = bz2.open(fn, 'rt', encoding='utf-8', errors='replace')
+            else:
+                fh = open(fn, 'rt', encoding='utf-8', errors='replace')
+            qmin = 10**9
+            qmax = -1
+            seen = 0
+            try:
+                while seen < max_records:
+                    h = fh.readline()
+                    if not h:
+                        break
+                    s = fh.readline()
+                    p = fh.readline()
+                    q = fh.readline()
+                    if not q:
+                        break
+                    for c in q.rstrip('\n\r'):
+                        oc = ord(c)
+                        if oc < qmin:
+                            qmin = oc
+                        if oc > qmax:
+                            qmax = oc
+                    seen += 1
+            finally:
+                fh.close()
+            if qmax < 0 or qmin > qmax:
+                return (33, 42)
+            base = 64 if qmin >= 64 else 33
+            return (base, max(0, qmax - base))
+        flatten1 = "- - - -"
+        flatten2 = "- - - -"
+        b1, m1 = _detect_quality_range(f1)
+        b2, m2 = _detect_quality_range(f2)
+        qualitybase = 64 if (b1 == 64 and b2 == 64) else 33
+        ascii_max1 = m1 + b1
+        ascii_max2 = m2 + b2
+        observed_max_phred = max(ascii_max1, ascii_max2) - qualitybase
+        qualitymax = 62
+        qualitybase_flag = f"--qualitybase {qualitybase}" if qualitybase == 64 else ""
+        qualitybase_output_flag = "--qualitybase-output 33" if qualitybase == 64 else ""
+        dedup_line = f"| python3 {params.rmdups} --input - --output - --quiet " if int(params.remove_duplicated_reads) == 1 else ""
+        use_rescue = 1 if int(resources.attempt) >= 2 else 0
+        if use_rescue == 1:
+            print(f"[adapter_removal] Using fastq_pair_rescue (attempt={int(resources.attempt)}; threads={resources.n}; external decompress)", file=sys.stderr)
+            src_line = f"python3 {params.rescuer} --r1 {f1} --r2 {f2} --decompress external --threads {resources.n} --buffer-size 2048 --quiet \\"
+        else:
+            src_line = (
+                f"paste <(pigz -cd {f1} | paste {flatten1}) <(pigz -cd {f2} | paste {flatten2}) \\\n            | tr '\\t' '\\n' \\"
+            )
+        if dedup_line:
+            print(f"[adapter_removal] Enabling interleaved duplicate removal", file=sys.stderr)
+        cmd = f"""
+            set -o pipefail
+            {src_line}
+            {dedup_line}| tee >(python3 {params.fastq_stats} --interleaved --input - -s {output.fastq_stats}) \
+            | tee >(AdapterRemoval --identify-adapters --adapter-list {params.adapters} --interleaved-input --file1 /dev/stdin --threads 4 {qualitybase_flag} {qualitybase_output_flag} > {output.adapters}) \
+            | AdapterRemoval --adapter-list {params.adapters} --interleaved-input --file1 /dev/stdin --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {output.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 {qualitybase_flag} {qualitybase_output_flag} --qualitymax {qualitymax}
         """
-		    AdapterRemoval --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]} --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {output.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 --qualitymax 42 
-		"""
-
-rule adapter_removal_identify:
-    """Identify adapters in fastq files."""
-    input:
-        get_fastqpaired,
-        ancient(pj(SOURCEDIR,"{sample}.started"))
-    output:
-        stats=pj(STAT,"{sample}.{readgroup}.fastq.adapters"),
-    priority: 5
-    conda: CONDA_MAIN
-    resources:
-        n="2.8",
-        mem_mb=200
-    params: adapters=ADAPTERS
-    shell:
-        """
-		AdapterRemoval --identify-adapters --adapter-list {params.adapters}  --file1 {input[0]} --file2 {input[1]}  --threads 4 > {output.stats}
-		"""
-
+        shell(cmd)
 
 def get_readgroup_params(wildcards):  #{{{
     """Utility function to get the readgroup params for a sample.
@@ -580,26 +900,39 @@ rule kmer_reads:
         with open(output.lst,'w') as f:
             for file in input.fastq:
                 f.write(file + '\n')
-        #set threads of second stage to 1, as we encountered some issues (corrupt files)
-        shell("""
-            mkdir -p {params.kmerdir}
-            mkdir -p {params.tmpdir}
-            kmc -fq -k32 -cs8192 -sf12 -sp12 -sr1 -m36 @{output.lst} {params.kmerdir}/{wildcards.sample} {params.tmpdir}
-            """)
+        job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID') or str(os.getpid())
+        kmer_dir = str(params.kmerdir)
+        tmpdir_fallback = str(params.tmpdir)
+        sample = str(wildcards.sample)
+        list_path = str(output.lst)
+        ssd_base = node_ssd_base()
+        job_tmp = os.path.join(ssd_base, 'kmc', job_id, sample)
+
+        shell(f"""
+        mkdir -p "{kmer_dir}"
+        mkdir -p "{job_tmp}"
+
+        echo "Using temporary directory: {job_tmp}"
+        echo "Temporary directory fallback: {tmpdir_fallback}"
+        echo "SSD: {ssd_base}"
+        echo "Using kmer directory: {kmer_dir}"
+        trap '/bin/rm -rf "{job_tmp}" 2>/dev/null || true' EXIT INT TERM
+        kmc -fq -k32 -cs8192 -sf12 -sp12 -sr1 -m36 @{list_path} {kmer_dir}/{sample} "{job_tmp}"
+        """)
 
 rule get_validated_sex:
     input:
         out1=pj(KMER,"{sample}.kmc_pre"),
         out2=pj(KMER,"{sample}.kmc_suf")
     output:
-        yaml=pj(KMER,"{sample}.result.yaml"),
+        yaml=temp(pj(KMER,"{sample}.result.yaml")),
         chry=temp(pj(KMER,"{sample}.chry.tsv")),
         chrx=temp(pj(KMER,"{sample}.chrx.tsv")),
         chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
         auto=temp(pj(KMER,"{sample}.auto.tsv"))
     resources:
-        n="1",
-        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * 9000 + 5000 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else (attempt - 1) * 0.5 * 4500 + 2700
+        n="0.5",
+        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * 4500 + 2500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else (attempt - 1) * 0.5 * 4500 + 2500
     params:
         kmerdir=KMER,
         process_sex=srcdir('scripts/process_sex.py')
@@ -655,8 +988,7 @@ rule align_reads:
         validated_sex=rules.get_validated_sex.output.yaml
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.aligned.bam")),
-    log:
-        dragmap_log=pj(STAT,"{sample}.{readgroup}.dragmap.log")
+        dragmap_log=pj(STAT,"{sample}.{readgroup}.dragmap.log")            
     params:
         ref_dir=get_refdir_by_validated_sex,
         rg_params=get_readgroup_params
@@ -667,81 +999,113 @@ rule align_reads:
         use_threads=24,
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.25 * int(38000) + int(38000),
     shell:
-        "(dragen-os -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ 2 -o {output.bam}) 2> {log} "
+        "(dragen-os -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ 2 -o {output.bam}) 2> {output.dragmap_log} "
 # --enable-sampling true used for (unmapped) bam input. It prevents bugs when in output bam information about whicj read is 1st or 2nd in pair.
 #--preserve-map-align-order 1 was tested, so that unaligned and aligned bam have sam read order (requires thread synchronization). But reduces performance by 1/3.  Better to let mergebam job deal with the issue.
 
-rule merge_bam_alignment:
-    """Merge bam alignment with original fastq files."""
+
+
+rule merge_bam_alignment_dechimer:
+    """Merge + optional Dechimer in one streaming step.
+
+    Runs bam_merge to restore tags and compute merge_stats, then conditionally runs
+    dechimer based on primary_soft_clipped_bp_ratio. Always writes the final BAM via fixmate.
+    Also produces badmap FASTQs from the merge step.
+    """
     input:
         fastq=get_fastqpaired,
         bam=rules.align_reads.output.bam,
-        stats=rules.adapter_removal_identify.output.stats,
-        log = rules.adapter_removal.output.adapter_removal
-    output:
-        bam=temp(pj(BAM,"{sample}.{readgroup}.merged.bam")),
-        badmap_fastq1=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
-        badmap_fastq2=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
-        stats=ensure(pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"),non_empty=True)
-    conda: CONDA_PYPY
-    log: pj(LOG,"Aligner","{sample}.{readgroup}.mergebamaligment.log")
-    params:
-        bam_merge=srcdir(BAMMERGE)
-    resources:
-        n="1.5",
-        mem_mb=lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']][
-            'sample_type'] else attempt * 4500
-    priority: 15
-    shell:
-        """
-         (samtools view -h --threads 2 {input.bam} | \
-         pypy {params.bam_merge} -a  {input.fastq[0]} -b {input.fastq[1]} -ua {output.badmap_fastq1} -ub {output.badmap_fastq2} -s {output.stats}  |\
-         samtools fixmate -@ 2 -u -O BAM -m - {output.bam}) 2> {log}
-        """
-
-rule dechimer:
-    """Dechimer reads.
-
-    Dechimer is only executed if the fraction of soft-clipped bases is > DECHIMER_THRESHOLD.
-    Otherwise, makes an hard link to the merged bam file.
-    """
-    input:
-        bam=rules.merge_bam_alignment.output.bam,
-        stats=rules.merge_bam_alignment.output.stats
+        fastq_stats=rules.adapter_removal.output.fastq_stats
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.dechimer.bam")),
-        stats=pj(STAT,"{sample}.{readgroup}.dechimer_stats.tsv")
+        stats=pj(STAT,"{sample}.{readgroup}.dechimer_stats.tsv"),
+        badmap_fastq1=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
+        badmap_fastq2=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
+        merge_stats=ensure(pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"),non_empty=True),
+        checked=temp(pj(BAM,"{sample}.{readgroup}.bam_checked")),
+        check_stats=pj(STAT,"{sample}.{readgroup}.bam_check_stats.tsv")
     priority: 16
     params:
-        dechimer=srcdir(DECHIMER)
+        bam_merge=srcdir(BAMMERGE),
+        dechimer=srcdir(DECHIMER),
+        bam_stats_compare_hts=srcdir('scripts/bam_stats_compare_hts.py')
     resources:
-        n="1.5",#most samples have < 1% soft-clipped bases and are only copied. For the few samples with > 1% soft-clipped bases, dechimer is using ~1.4 cores.
-        mem_mb=275
+        n="1.5",
+        mem_mb=lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else attempt * 4500
     conda: CONDA_PYPY
     run:
-        with open(input['stats'],'r') as f:
-            stats = [l for l in f.readlines()]
-        primary_soft_clipped_bp_ratio = float(
-            [e.split('\t')[1].strip() for e in stats if e.startswith('primary_soft_clipped_bp_ratio')][0])
+        import os, shlex, tempfile
+        from snakemake.shell import shell
 
-        if primary_soft_clipped_bp_ratio > DECHIMER_THRESHOLD:
-            cmd = """    samtools view -h --threads 2 {input.bam} |\
-                         pypy {params.dechimer} --min_align_length 40 --loose_ends -i - -s {output.stats} |\
-                          samtools fixmate -@ 2 -u -O BAM -m - {output.bam}"""
-            shell(cmd)
+        # Stage 1: merge + fixmate to temporary BAM, teeing to checker
+        tmp_dir = os.path.dirname(str(output.bam))
+        fd, merged_tmp = tempfile.mkstemp(prefix=f"{wildcards.sample}.{wildcards.readgroup}.merged.", suffix=".bam", dir=tmp_dir)
+        os.close(fd)
+
+        bami_q = shlex.quote(str(input.bam))
+        fq1 = shlex.quote(str(input.fastq[0]))
+        fq2 = shlex.quote(str(input.fastq[1]))
+        ua = shlex.quote(str(output.badmap_fastq1))
+        ub = shlex.quote(str(output.badmap_fastq2))
+        merge_stats = shlex.quote(str(output.merge_stats))
+        check_stats = shlex.quote(str(output.check_stats))
+        checked = shlex.quote(str(output.checked))
+        out_stats = shlex.quote(str(output.stats))
+        outbam = shlex.quote(str(output.bam))
+        # Build bam_merge command: run with python3 when using the Python script
+        bam_merge_path = str(params.bam_merge)
+        bam_merge_q = shlex.quote(bam_merge_path)
+        bam_merge = bam_merge_q
+        if bam_merge_path.endswith('.py'):
+            bam_merge = f"python3 {bam_merge_q}"
+        dechimer = shlex.quote(str(params.dechimer))
+        bam_stats = shlex.quote(str(params.bam_stats_compare_hts))
+        fastq_stats = shlex.quote(str(input.fastq_stats))
+
+        cmd_stage1 = (
+            "set -o pipefail; "
+            f"samtools view -h --threads 2 {bami_q} "
+            f"| {bam_merge} -a {fq1} -b {fq2} -ua {ua} -ub {ub} -s {merge_stats} "
+            f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} -s {check_stats} -c {checked} > /dev/null) "
+            f"| samtools fixmate -@ 2 -u -O BAM -m - {shlex.quote(merged_tmp)}"
+        )
+        shell(cmd_stage1)
+
+        # Decide from merge_stats whether to run dechimer
+        ratio = 0.0
+        with open(str(output.merge_stats), "rt") as f:
+            for line in f:
+                if line.startswith("primary_soft_clipped_bp_ratio"):
+                    try:
+                        ratio = float(line.split("\t")[1].strip())
+                    except Exception:
+                        ratio = 0.0
+                    break
+        need_dechimer = (ratio > float(DECHIMER_THRESHOLD))
+
+        if need_dechimer:
+            fix_threads = 4
+            cmd_stage2 = (
+                "set -o pipefail; "
+                f"samtools view -h --threads 2 {shlex.quote(merged_tmp)} "
+                f"| {dechimer} --min_align_length 40 --loose_ends -i - -s {out_stats} "
+                f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} -s {check_stats} -c {checked} > /dev/null) "
+                f"| samtools fixmate -@ {fix_threads} -u -O BAM -m - {outbam}"
+            )
+            shell(cmd_stage2)
+            try:
+                os.unlink(merged_tmp)
+            except Exception:
+                pass
         else:
-            #switching to copy instead of hard link, as hard link also updates modification time input.bam
-            cmd = """
-                    cp {input.bam} {output.bam}
-                    touch {output.stats}
-                   """
-            shell(cmd)
+            shell(f"touch {out_stats}")
+            shell(f"mv -f {shlex.quote(merged_tmp)} {outbam}")
 
 
 rule sort_bam_alignment:
     """Sort bam alignment by chromosome and position."""
     input:
-        in_bam=rules.dechimer.output.bam
+        in_bam=rules.merge_bam_alignment_dechimer.output.bam
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.sorted.bam")),
         bai=temp(pj(BAM,"{sample}.{readgroup}.sorted.bam.bai"))
@@ -751,14 +1115,27 @@ rule sort_bam_alignment:
     priority: 17
     resources:
         tmpdir=tmpdir,
-        n="1.5",
+        n="1.3",
         mem_mb=13000
     params:
         temp_sort=pj("sort_temporary_{sample}_{readgroup}"),
         memory_per_core=6000
     shell:
         """
-            (samtools sort -T {resources.tmpdir}/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M --write-index -o {output.bam}##idx##{output.bai} {input}) 2> {log.samtools_sort}            
+            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; elif [ -d "/tmp" ] && [ -w "/tmp" ]; then TMPDIR_USE="/tmp/${{USER}}"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            JOB_ID="${{SLURM_JOB_ID}}"
+            if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
+            if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+            JOB_TMP="$TMPDIR_USE/aligner_sort/$JOB_ID/{wildcards.sample}.{wildcards.readgroup}"
+            echo "SSD base: $TMP_SSD" >&2
+            echo "TMPDIR_USE: $TMPDIR_USE" >&2
+            echo "JOB_ID: $JOB_ID" >&2
+            echo "JOB_TMP: $JOB_TMP" >&2
+            mkdir -p "$JOB_TMP"
+            trap '/bin/rm -rf "$JOB_TMP" 2>/dev/null || true' EXIT INT TERM
+            (samtools sort -T "$JOB_TMP"/{params.temp_sort} -@ 2 -l 1 -m {params.memory_per_core}M --write-index -o {output.bam}##idx##{output.bai} {input}) 2> {log.samtools_sort}
         """
 
 
@@ -790,24 +1167,7 @@ def get_readgroups_bai(wildcards):  #{{{
 #}}}
 
 
-rule check_rg_bam:
-    input:
-        bam=rules.sort_bam_alignment.output.bam,
-        bai=rules.sort_bam_alignment.output.bai,
-        fastq=get_fastqpaired
-    output:
-        checked=temp(pj(BAM,"{sample}.{readgroup}.bam_checked")),
-    conda: CONDA_PYPY
-    resources:
-        n="1",
-        mem_mb=250
-    params:
-        bam_check=srcdir(BAMCHECK),
-        stats=pj(STAT,"{sample}.{readgroup}.bam_check_stats.tsv")
-    shell:
-        """
-         python {params.bam_check} --f1  {input.fastq[0]} --f2 {input.fastq[1]}  -s {params.stats}  -c {output.checked} -i {input.bam}
-        """
+ 
 
 
 def get_readgroup_checks(wildcards):
@@ -865,7 +1225,7 @@ rule merge_rgs_badmap:
     input:
         fastq=get_badmap_fastq
     output:
-        fastq=pj(FQ_BADMAP,"{sample}.badmap.{readid}.fastq.gz")
+        fastq=temp(pj(FQ_BADMAP,"{sample}.badmap.{readid}.fastq.gz"))
     conda: CONDA_MAIN
     resources:
         n="1",
@@ -884,14 +1244,23 @@ def get_mem_mb_markdup(wildcards, attempt):  #{{{
 
 #}}}
 
+def get_markdup_input_bam(wildcards):
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    rgs = sinfo['readgroups']
+    if len(rgs) > 1:
+        return pj(BAM, f"{wildcards['sample']}.merged.bam")
+    else:
+        rg_id = rgs[0]['info']['ID']
+        return pj(BAM, f"{wildcards['sample']}.{rg_id}.sorted.bam")
+
 rule markdup:
     """Mark duplicates using samtools markdup."""
     input:
-        bam=rules.merge_rgs.output.mer_bam
+        bam=get_markdup_input_bam
     output:
-        mdbams=pj(BAM,"{sample}.markdup.bam"),
-        mdbams_bai=pj(BAM,"{sample}.markdup.bam.bai"),
-        MD_stat=pj(STAT,"{sample}.markdup.stat")
+        mdbams=temp(pj(BAM,"{sample}.markdup.bam")),
+        mdbams_bai=temp(pj(BAM,"{sample}.markdup.bam.bai")),
+        MD_stat=temp(pj(STAT,"{sample}.markdup.stat"))
     priority: 20
     params:
         machine=2500,
@@ -914,7 +1283,13 @@ rule markdup:
                 samtools index {output.mdbams}
                 touch {output.MD_stat}
             else
-                samtools markdup -T {resources.temp_loc} -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
+                TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+                if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+                if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.temp_loc}"; fi
+                JOB_ID="${{SLURM_JOB_ID}}"; if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi; if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+                MDTMP="$TMPDIR_USE/markdup/$JOB_ID/{wildcards.sample}"
+                mkdir -p "$(dirname "$MDTMP")"
+                samtools markdup -T "$MDTMP" -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
             fi
         """
 
@@ -924,11 +1299,11 @@ rule mCRAM:
         bam=rules.markdup.output.mdbams,
         bai=rules.markdup.output.mdbams_bai
     output:
-        cram=pj(CRAM,"{sample}.mapped_hg38.cram"),
-        crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai")
+        cram=temp(pj(CRAM,"{sample}.mapped_hg38.cram")),
+        crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
     resources:
         n="2",
-        mem_mb=1000
+        mem_mb=1500
     priority: 30
     conda: CONDA_MAIN
     log:

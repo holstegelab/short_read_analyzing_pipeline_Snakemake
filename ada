@@ -1,0 +1,2950 @@
+#!/usr/bin/env bash
+
+# ADA - Advanced dCache API tool to manage data stored in dCache.
+#
+# Design: Natalie & Onno, SURFsara.
+#
+# Latest version is available at: https://github.com/sara-nl/SpiderScripts
+#
+# Changes:
+# 2025-06-17 - Haili   - Add option --delete-channel to delete a channel by name
+# 2025-04-10 - Haili   - Add options --resume and --force to events and report-staged
+# 2025-02-20 - Onno    - Fail early when a token is about to expire
+# 2025-02-18 - Haili   - Read config from <script_dir>/etc/ada.conf (as last option)
+# 2025-01-14 - Onno    - Add support for extended attributes
+# 2024-12-30 - Onno    - Add support for labels
+# 2024-12-27 - Onno    - Improved token validation
+# 2024-12-12 - Haili   - Implement unit testing
+# 2024-11-26 - Haili   - Add --recursive to --mkdir
+# 2024-09-12 - Haili   - Added bulk requests for staging and unstaging
+# 2024-08-24 - Haili   - Added option to use env var BEARER_TOKEN
+# 2020-11-04 - Onno    - Added link to Natalie's demo video
+# 2020-09-22 - Onno    - Support environment variables (ada_<variable>)
+# 2020-09-02 - Onno    - Added --space to get poolgroup capacity
+# 2020-08-23 - ahaupt  - Use env vars X509_USER_PROXY and X509_CERT_DIR if set
+# 2020-05-28 - Onno    - Allow curl options to be overridden in config files
+# 2020-04-21 - Onno    - Improved error handling
+# 2020-04-16 - Onno    - Add --recursive to --stage, --unstage, --checksum
+# 2020-04-03 - Onno    - Add --stat to get all possible file/dir info
+# 2020-03-13 - Onno    - Get server-sent events for files being staged
+# 2020-03-11 - Onno    - Added recursive deletes
+# 2020-03-04 - Onno    - Added X509 proxy authentication and netrc authentication
+# 2020-02-24 - Onno    - Don't show bearer tokens on command line
+# 2020-02-18 - Onno    - Recursion with server-sent events
+# 2020-02-14 - Onno    - Support for server-sent events
+# 2020-01-28 - Onno    - Created
+
+usage() {
+  cat <<-EOF
+	ADA - Advanced dCache API tool to manage your data in dCache.
+	Usage: $0 [general options...] [authentication] <command> [command options]
+
+	Demo video at https://www.youtube.com/watch?v=Bh0kpTcUUcw .
+
+	General options:
+
+	  --api
+	      The dCache API URL to talk to.
+
+	  --debug
+	      Show what's going on. Includes all API calls that Ada makes.
+
+	  --igtf true|false
+	      Indicates whether the API uses an IGTF compatible certificate,
+	      also called a "Grid" certificate.
+	      If not specified, IGTF certificates are assumed ('true'), which
+	      is probably the best for most dCache sites.
+	      Set this to false if the dCache API you talk to, has a "normal"
+	      certificate like a "Let's Encrypt" cert.
+
+	Authentication options:
+
+	  --tokenfile <filename>
+	      Authenticate with the token in this file.
+	      This can be an rclone config file with a
+	      bearer_token statement, or a plain file with
+	      only the token.
+
+	  --netrc [filename]
+	      Authenticate with a curl netrc file
+	      containing username and password.
+	      If no filename was provided, use ~/.netrc.
+
+	  --proxy [filename]
+	      Authenticate with a Grid proxy.
+	      If no filename was provided, use \$X509_USER_PROXY.
+
+	    If no authentication method is specified, \$BEARER_TOKEN is used if it exists.
+
+	Commands:
+
+	  --help
+	      Show this helptext.
+
+	  --version
+	      Show version number.
+
+	  --whoami
+	      Show how dCache identifies you.
+
+	  --viewtoken
+	      View all properties of the provided bearer token.
+	      This can be a Macaroon or OIDC token specified by:
+	        --tokenfile <file>
+	        \$ada_tokenfile=<file>
+	        \$BEARER_TOKEN=token
+
+	  --list <directory>
+	      List a directory.
+
+	  --longlist <file|directory>
+	      List a file or directory with details.
+	  --longlist --from-file <file-list>
+	      List the files or directories specified in the given file.
+
+	  --stat <file|directory>
+	      Show all details of file or dir.
+
+	  --mkdir <directory> [--recursive]
+	      Create a directory.
+	      To recursively create a directory and ALL of its
+	      parents, add --recursive. For safety, the maximum number
+	      of directories that can be created at once is 10.
+
+	  --mv <file|directory> <destination>
+	      Rename or move a file or directory.
+
+	  --delete <file|directory> [--recursive [--force]]
+	      Delete a file or directory.
+	      To recursively delete a directory and ALL of its
+	      contents, add --recursive. You will need to confirm
+	      deletion of each subdir, unless you add --force.
+	      Please note, that dCache storage systems usually
+	      don't have an undelete option.
+
+	  --setlabel <file> <label>
+	      Attach a label to a file.
+	  --rmlabel <file> <label>
+	  --rmlabel <file> --all
+	      Remove one or all label from a file.
+	  --lslabel <file> [label]
+	      List labels of a file.
+	      If label is provided, only list that label.
+	  --findlabel <directory> <label> [--recursive]
+	      Find files in this directory that have this label.
+	      If --recursive is specified, search also in
+	      subdirectories.
+
+	  --setxattr <file> <file-with-attributes>
+	      Add extended attributes to a file.
+	      This will read the extended attributes from a file,
+	      or from stdin if no file, or a '-', is specified.
+	      The attributes should be a list of key-value pairs
+	      separated by an equal sign (=), a comma (,) or a tab,
+	      or it can be a JSON object.
+	  --rmxattr <file> <key>
+	  --rmxattr <file> --all
+	      Remove one or all key-value pairs from the extended
+	      attributes.
+	  --lsxattr <file> [key]
+	      List extended attributes of a file.
+	      If key is provided, only list that key-value pair.
+	  --findxattr <directory> <key> <value> [--recursive]
+	  --findxattr <directory> --all <value> [--recursive]
+	      Find files in the directory that match the key-value pair.
+	      The value is a regular expression (example: '^keyword$').
+	      If --all is specified, search in all attributes.
+	      If --recursive is specified, search also in
+	      subdirectories.
+
+	  --checksum <file>
+	      Show MD5/Adler32 checksums for file.
+	  --checksum <directory> [--recursive]
+	      Show MD5/Adler32 checksums for files in directory.
+	  --checksum --from-file <file-list>
+	      Show MD5/Adler32 checksums for files in the list.
+
+	  --stage <file> [--lifetime <duration>]
+	      Stage a file from tape (restore, bring it online).
+	      With --lifetime the pin lifetime duration, e.g. 7D.
+	      Allowed units are S, M, H or D, standing for seconds,
+	      minutes, hours, or days.
+	      If --lifetime is not given, default is 7D.
+	  --stage <directory> [--recursive]
+	      Stage files in directory.
+	  --stage --from-file <file-list>
+	      Stage files or directories in the list.
+
+	  --unstage <file>
+	      Release file so dCache may purge its online replica.
+	  --unstage <directory> [--recursive]
+	      Release files in directory.
+	  --unstage --from-file <file-list>
+	      Release files in the list.
+
+	  --events <channel-name> <path-to-follow> [--resume] [--force] [--recursive] [--timeout s]
+	      Subscribe to changes in the given direcory,
+	      using server-sent events (SSE).
+	      If channel name is already in use, you must add --resume
+	      to resume following this channel. 
+	      If the channel name is not stored locally, you must also 
+	      add --force to resume,
+	      When --recursive is added, all subdirectories will be
+	      followed as well, including any new subdirectories
+	      that will be created.
+	      With --timeout a timeout in seconds can be set. When
+	      a channel is not being followed, dCache may clean it up
+	      after this timeout. Events that have not been processed
+	      will then be lost.
+
+	  --report-staged <channel-name> <path-to-follow> [--resume] [--force] [--recursive] [--timeout s]
+	      Subscribe to stage (bring online) events in a directory,
+	      using server-sent events (SSE).
+	      If channel name is already in use, you must add --resume
+	      to resume following this channel.
+	      If the channel name is not stored locally, you must also 
+	      add --force to resume,
+	      This command is slightly different from --events:
+	      When you start it, all files in the scope will be listed,
+	      including their locality and QoS. This allows your event
+	      handler to take actions, like starting jobs to process
+	      the files that are online.
+	      When all files have been listed, the command will keep
+	      listening and reporting all locality and QoS changes.
+	      The --recursive and --timeout flags work as with --events.
+
+	  --channels [channel-name]
+	      List your existing channels and their properties.
+	      If the channel name is given, list channel(s) with that name.
+
+	  --delete-channel <channel-name>
+	      Delete a channel.
+
+	  --space [poolgroup]
+	      Shows total, free, precious and removable space in a poolgroup.
+	      If no poolgroup is specified, lists all poolgroups.
+	      Available space = free + removable. This command will show that:
+	      "ada ... --space mypoolgroup | jq '.free + .removable'"
+	      The pinned (sticky) capacity can be calculated with:
+	      "ada ... | jq '.total - .free - .precious - .removable'"
+
+	  --quota
+	      Shows your storage quotas, for tape (custodial) and for disk (replica),
+	      user based as well as group based.
+
+
+	Configuration files:
+
+	  Default values can be stored in ~/.ada/ada.conf, /etc/ada.conf and <script_dir>/etc/ada.conf
+	  For example:
+	  api='https://prometheus.desy.de:3880/api/v1/'
+
+
+	Environment variables:
+
+	  Ada will use these environment variables if they exist (in order of precedence):
+	    BEARER_TOKEN
+	    ada_tokenfile       => --tokenfile
+	    ada_netrcfile       => --netrcfile
+	    ada_api             => --api
+	    ada_debug           => --debug
+	    ada_channel_timeout => --timeout
+	    ada_igtf            => --igtf
+	    X509_USER_PROXY
+	    X509_CERT_DIR
+
+	  You may need to export them, like:
+	    export ada_debug=true ; ada ...
+
+	  Environment variables override values from configuration files,
+	  but not from the command line.
+	  So the order of precedence is:
+	    1. command line arguments
+	    2. environment variables
+	    3. ~/.ada/ada.conf
+	    4. /etc/ada.conf
+	    5. <script_dir>/etc/ada.conf
+
+	Examples:
+	  $0 ... (todo)
+
+
+
+	EOF
+  exit 1
+}
+
+
+get_permissions () {
+  # Returns the access permissions of a file in 'drwxrwxrwx' format.
+  local file="$1"
+  case $OSTYPE in
+    darwin* )  permissions=$(stat -f "%Sp"      "$file" | grep -o '^..........$' )  ;;
+    * )        permissions=$(stat --format='%A' "$file" | grep -o '^..........$' )  ;;
+  esac
+  if [ -z "$permissions" ] ; then
+    echo 1>&2 "ERROR: Could not check permissions of file '$file'."
+    exit 1
+  fi
+  echo "$permissions"
+}
+
+
+#
+# Set default values and initialize variables
+#
+set_defaults() {
+  api=
+  debug=false
+  dry_run=false
+  channel_timeout=3600
+  auth_method=
+  certdir=${X509_CERT_DIR:-/etc/grid-security/certificates}
+  igtf=true
+  lifetime=7
+  lifetime_unit=D
+  from_file=false
+  counter=0
+  script_dir=$(dirname "$0")
+  command=
+  path=
+  recursive=false
+  force=false
+  resume=false
+
+  # Default options to curl for various activities;
+  # these can be overridden in configuration files, see below.
+  # Don't override them unless you know what you're doing.
+  curl_options_common=(
+                        -H "accept: application/json"
+                        --fail --silent --show-error
+                      )
+  curl_options_no_errors=(
+                        -H "accept: application/json"
+                        --fail --silent
+                      )
+  curl_options_post=(
+                      -H "content-type: application/json"
+                    )
+  curl_options_stream=(
+                        -H 'accept: text/event-stream'
+                        --no-buffer
+                        --fail --silent --show-error
+                      )
+
+  # Load defaults from configuration file if exists
+  declare -a configfiles=( "${script_dir}"/etc/ada.conf /etc/ada.conf ~/.ada/ada.conf )
+  for configfile in "${configfiles[@]}" ; do
+    if [ -f "$configfile" ] ; then
+      # Before loading, check permissions. Source file must never be world writable!
+      permissions=$(get_permissions "$configfile") || exit 1
+      source "$configfile"
+    fi
+  done
+
+  # Process environment vars (they take precedence over config files)
+  if [ -n "$ada_channel_timeout" ] ; then
+    channel_timeout="$ada_channel_timeout"
+  fi
+  if [ -n "$ada_debug" ] ; then
+    debug="$ada_debug"
+  fi
+  if [ -n "$ada_api" ] ; then
+    api="$ada_api"
+  fi
+  if [ -n "$ada_igtf" ] ; then
+    igtf="$ada_igtf"
+  fi
+  if [ -n "$ada_netrcfile" ] ; then
+    netrcfile="$ada_netrcfile"
+    auth_method=netrc
+  fi
+  if [ -n "$ada_tokenfile" ] ; then
+    tokenfile="$ada_tokenfile"
+    auth_method=token
+    token_debug_info="Token source: \$ada_tokenfile=$ada_tokenfile"
+  fi
+  if [ -n "$BEARER_TOKEN" ] ; then
+    token="$BEARER_TOKEN"
+    auth_method=token
+    token_debug_info="Token source: \$BEARER_TOKEN"
+  fi
+}
+# End set_defaults()
+
+#
+# Process command line arguments
+#
+get_args() {
+  # If no arguments are provided, show help.
+  if [ -z "$1" ] ; then
+    usage
+  fi
+  while [ $# -gt 0 ] ; do
+    case "$1" in
+      --help | -help | -h )
+        usage
+        ;;
+      --version )
+        git_dir=$(dirname "${script_dir}")
+        _VERSION_PLACEHOLDER=$(git --git-dir="${git_dir}/.git" describe --tags --abbrev=0 2>/dev/null || echo "v3.0+")
+        echo "${_VERSION_PLACEHOLDER}"
+        exit 1
+        ;;
+      --tokenfile )
+        auth_method=token
+        tokenfile="$2"
+        token_debug_info="Token source: --tokenfile $tokenfile"
+        shift ; shift
+        ;;
+      --netrc )
+        auth_method=netrc
+        case $2 in
+          --* | '' )
+            # Next argument is another option or absent; not a file name
+            netrcfile=~/.netrc
+            ;;
+          * )
+            # This must be a file name
+            netrcfile="$2"
+            shift
+            ;;
+        esac
+        shift
+        ;;
+      --proxy )
+        auth_method=proxy
+        case $2 in
+          --* | '' )
+            # Next argument is another option or absent; not a file name
+            proxyfile="${X509_USER_PROXY:-/tmp/x509up_u${UID}}"
+            ;;
+          * )
+            # This must be a file name
+            proxyfile="$2"
+            shift
+            ;;
+        esac
+        shift
+        ;;
+      --api )
+        api="$2"
+        shift ; shift
+        ;;
+      --whoami )
+        command='whoami'
+        shift
+        ;;
+      --viewtoken )
+        command='viewtoken'
+        shift
+        ;;
+      --list )
+        command='list'
+        path="$2"
+        shift ; shift
+        ;;
+      --longlist )
+        command='longlist'
+        if [ "$2" = "--from-file" ] ; then
+          $debug && echo "Reading list '$3'"
+          pathlist=$(<"$3")
+          shift ; shift ; shift
+        else
+          pathlist="$2"
+          shift ; shift
+        fi
+        ;;
+      --stat )
+        command='stat'
+        path="$2"
+        shift ; shift
+        ;;
+      --mkdir )
+        command='mkdir'
+        path="$2"
+        shift ; shift
+        ;;
+      --mv )
+        command='mv'
+        path="$2"
+        destination="$3"
+        shift ; shift ; shift
+        ;;
+      --delete )
+        command='delete'
+        path="$2"
+        shift ; shift
+        ;;
+      --setlabel )
+        command='setlabel'
+        path="$2"
+        label="$3"
+        shift ; shift ; shift
+        ;;
+      --rmlabel )
+        command='rmlabel'
+        path="$2"
+        label="$3"
+        shift ; shift ; shift
+        ;;
+      --lslabel )
+        command='lslabel'
+        path="$2"
+        shift ; shift
+        # Optinal argument: a label the user wants to see.
+        case $1 in
+          --* | '' )
+            # Next argument is another option or absent; not a label.
+            ;;
+          * )
+            # This must be a label
+            label="$1"
+            shift
+            ;;
+        esac
+        ;;
+      --findlabel )
+        command='findlabel'
+        path=$(echo "$2" | sed 's:/*$::')
+        regex="$3"
+        shift ; shift ; shift
+        ;;
+      --setxattr )
+        command='setxattr'
+        path="$2"
+        shift ; shift
+        # Optinal argument: filename containing the attributes (or - for stdin)
+        case $1 in
+          --* | '' )
+            # Next argument is another option or absent; not a file name.
+            # We will read attributes from stdin.
+            echo "No file containing attributes specified. Will read attributes from stdin. Terminate with ctrl+d."
+            xattr_file='/dev/stdin'
+            ;;
+          - )
+            # User wants to read attributes from stdin.
+            xattr_file='/dev/stdin'
+            shift
+            ;;
+          * )
+            # This must be a file name
+            if [ -f "$1" ] ; then
+              xattr_file="$1"
+            else
+              echo 1>&2 "ERROR: Can't read attributes from file '$1'. Does it exist?"
+              exit 1
+            fi
+            shift
+            ;;
+        esac
+        ;;
+      --lsxattr )
+        command='lsxattr'
+        path="$2"
+        shift ; shift
+        # Optinal argument: name of an attribute
+        case $1 in
+          --* | '' )
+            # Next argument is another option or absent; not an attribute name.
+            ;;
+          * )
+            # This must be an attribute name
+            attribute_name="$1"
+            shift
+            ;;
+        esac
+        ;;
+      --findxattr )
+        command='findxattr'
+        # Strip trailing slashes
+        path=$(echo "$2" | sed 's:/*$::')
+        attribute_name="$3"
+        regex="$4"
+        shift ; shift ; shift ; shift
+        ;;
+      --rmxattr )
+        command='rmxattr'
+        path="$2"
+        attribute_name="$3"
+        shift ; shift ; shift
+        ;;
+      --checksum )
+        command='checksum'
+        if [ "$2" = "--from-file" ] ; then
+         	pathlist=$(<"$3")
+          shift ; shift ; shift
+        else
+          pathlist="$2"
+          shift ; shift
+        fi
+        ;;
+      --stage )
+        command='stage'
+        if [[ $2 =~ ^--from-?file ]] ; then
+          from_file=true
+          pathlist=$(<"$3")
+         	shift ;	shift ;	shift
+        else
+          from_file=false
+          pathlist="$2"
+          shift ; shift
+        fi
+        ;;
+      --unstage )
+        command='unstage'
+        if [[ $2 =~ ^--from-?file ]] ; then
+          from_file=true
+          pathlist=$(<"$3")
+          shift ; shift ; shift
+        else
+          from_file=false
+          pathlist="$2"
+          shift ; shift
+        fi
+        ;;
+      --events )
+        command='events'
+        channel_name="$2"
+        path="$3"
+        shift ; shift ; shift
+        ;;
+      --report-staged )
+        command='report-staged'
+        channel_name="$2"
+        path="$3"
+        shift ; shift ; shift
+        ;;
+      --recursive )
+        recursive=true
+        shift
+        ;;
+      --force )
+        force=true
+        shift
+        ;;
+      --resume )
+        resume=true
+        shift
+        ;;        
+      --lifetime )
+        arg="$2"
+        lifetime=${arg::${#arg} -1}
+        lifetime_unit=${arg: ${#arg}-1}
+        shift ; shift
+        ;;
+      --timeout )
+        channel_timeout="$2"
+        shift ; shift
+        ;;
+      --channels )
+        command='channels'
+        case $2 in
+          --* | '' )
+            # Next argument is another option or absent; not a channel name
+            ;;
+          * )
+            # This must be a channel name
+            channel_name="$2"
+            shift
+            ;;
+        esac
+        shift
+        ;;
+      --delete-channel )
+        command='delete-channel'     
+        channel_name="$2"
+        shift ; shift
+        ;;        
+      --space )
+        command='space'
+        case $2 in
+          --* | '' )
+            # Next argument is another option or absent; not a poolgroup name
+            ;;
+          * )
+            # This must be a poolgroup
+            poolgroup="$2"
+            shift
+            ;;
+        esac
+        shift
+        ;;
+      --quota )
+        command='quota'
+        shift
+        ;;
+      --igtf )
+        # This option requires either 'true' or 'false' as value.
+        # Any other value is an error.
+        if [[ $2 == 'true' || $2 == 'false' ]] ; then
+          igtf="$2"
+          shift
+        else
+          # Why throw an error now, and not relying on the validation phase?
+          # This makes it easier to give a very clear error message.
+          # Otherwise, it might lead to errors like these:
+          #    "'--nextoption' is not a valid value for option --igtf"
+          # or even worse:
+          #    "'nextoptions-value' is not a valid command"
+          echo 1>&2 "ERROR: option --igtf requires either 'true' or 'false' as a value."
+          exit 1
+        fi
+        shift
+        ;;
+      --debug )
+        debug=true
+        shift
+        ;;
+      * )
+        echo 1>&2 "ERROR: unknown option '$1'." \
+                  "Use '$0 --help' for more information."
+        exit 1
+        ;;
+    esac
+  done
+}
+# End get_args()
+
+
+#
+# Define internal functions ada needs
+#
+
+
+view_token() {
+  local token="$1"
+  local token_debug_info="$2"
+
+  echo "$token_debug_info"
+
+  # Determine token type (JWT or Macaroon)
+  if [[ "$token" =~ ^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
+    # JWT / OIDC token.
+
+    # Get payload with the token properties.
+    payload=$(echo "$token" | cut -d "." -f2 | base64 -d 2>/dev/null | tr -d '\n')
+
+    # Check if decoding succeeded
+    if [ -z "$payload" ]; then
+      echo "Invalid token: cannot decode payload"
+      return 1
+    fi
+
+    # Print JWT/OIDC token with human readable timestamps
+    echo "$payload" | jq '. | .exp |= todate | .nbf |= todate | .iat |= todate'
+  else
+    # Not an OIDC token; probably a Macaroon
+    # We use grep with --text to avoid a "Binary file" message.
+    macaroon_decoded=$(echo "$token" \
+                       | base64 -d 2>/dev/null \
+                       | awk '{print substr($0, 5)}' 2>/dev/null \
+                       | grep --text -v 'signature' \
+                       | tr -d '\0')
+
+    # Check if decoding succeeded
+    if [ -z "$macaroon_decoded" ]; then
+      echo "Invalid macaroon: cannot decode"
+      return 1
+    fi
+
+    echo -e "\033[34m\n$macaroon_decoded\n\033[0m" | sed -e 's/^/  /'
+  fi
+}
+
+
+
+validate_expiration_timestamp () {
+  local exp_unix="$1"           # Expiration timestamp (unix format)
+  local token_debug_info="$2"   # Additional info for error message
+  local min_valid_time=60       # Token should be valid for more than this many seconds
+
+  # Do we actually have an expiration timestamp?
+  if [ -z "$exp_unix" ] || ! [[ "$exp_unix" =~ ^[0-9]+$ ]]; then
+    echo 1>&2 "ERROR: Invalid token: missing or invalid expiration field"
+    echo 1>&2 "$token_debug_info"
+    return 1
+  fi
+
+  # Get the current time in seconds since epoch
+  now=$(date +%s)
+
+  # Check if the token is expired
+  if [ "$now" -ge "$exp_unix" ]; then
+    echo 1>&2 "$token_debug_info"
+    echo 1>&2 "ERROR: Token has expired $(( now - exp_unix )) seconds ago."
+    return 1
+  fi
+
+  # Check if the token is about to expire
+  if [ "$now" -ge "$(( exp_unix - min_valid_time ))" ]; then
+    echo 1>&2 "$token_debug_info"
+    # print error
+    echo 1>&2 "ERROR: Token will expire in $(( exp_unix - now )) seconds." \
+              "Please use a token that is valid for more than $min_valid_time seconds," \
+              "to ensure Ada can finish the task."
+    return 1
+  fi
+
+  # If we get here, the expiration timestamp should be valid.
+  return 0
+}
+
+
+check_token() {
+  local token="$1"
+  local token_debug_info="$2"
+  local command="$3"
+
+  # Determine token type (JWT or Macaroon)
+  if [[ "$token" =~ ^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
+    # JWT / OIDC token
+    $debug && echo "Checking JWT / OIDC token..."
+    payload=$(echo "$token" | cut -d "." -f2 | base64 -d 2>/dev/null | tr -d '\n')
+
+    # Check if decoding succeeded
+    if [ -z "$payload" ]; then
+      echo 1>&2 "ERROR: Invalid token: cannot decode payload"
+      echo 1>&2 "$token_debug_info"
+      return 1
+    fi
+
+    # Extract expiration time (exp) from payload
+    exp_unix=$(echo "$payload" | jq -r '.exp' 2>/dev/null)
+
+    # Fail if the token has (almost) expired
+    validate_expiration_timestamp "$exp_unix" "$token_debug_info" || return 1
+
+    # If we're staging, the token must have storage.stage permission,
+    # or no storage.* claims at all.
+    # As of dCache 10.1, this is required.
+    if [[ "$command" == 'stage' ]] ; then
+      # For dCache, there are 2 kinds of OIDC tokens: those with storage.* claims,
+      # and those without any storage.* claims.
+      # If there is no storage.* claim at all, dCache will just assume
+      # everything is allowed.
+      # If there is at least one storage.* claim, dCache will check if the storage.* claims
+      # are sufficient for the job.
+      # So, we check if there is any storage claim.
+      oidc_scope=$(echo "$payload" | jq -r '.scope' 2>/dev/null)
+      if grep --silent 'storage\.' <<<"$oidc_scope" ; then
+        # Yes, there is a storage claim.
+        # This means we need storage.stage to be allowed to stage!
+        if ! grep --silent 'storage\.stage' <<<"$oidc_scope" ; then
+          echo 1>&2 "ERROR: You want to stage data from tape, but your OIDC token" \
+                    "does not have the storage.stage permission in its scope." \
+                    "You can check this with the --viewtoken option." \
+                    "Please use an OIDC token with 'storage.stage' in its scope."
+          return 1
+        fi
+      fi
+    fi
+
+    # If we get here, it means we have a valid OIDC token.
+    $debug && echo "$payload" | jq '. | .exp |= todate | .nbf |= todate | .iat |= todate'
+    $debug && echo "JWT / OIDC token is valid"
+    return 0
+
+  else
+    # Macaroon Token (assume it's base64 encoded)
+    $debug && echo "Checking Macaroon token..."
+
+    # We use grep with --text to avoid a "Binary file" message.
+    macaroon_decoded=$(echo "$token" \
+                       | base64 -d 2>/dev/null \
+                       | awk '{print substr($0, 5)}' 2>/dev/null \
+                       | grep --text -v 'signature' \
+                       | tr -d '\0')
+
+    # Check if decoding succeeded
+    if [ -z "$macaroon_decoded" ]; then
+      echo 1>&2 "ERROR: Invalid token: cannot decode"
+      echo 1>&2 "$token_debug_info"
+      return 1
+    fi
+
+    # Extract expiration time (before) using regex
+    exp=$(echo "$macaroon_decoded" | grep -o 'before:[0-9T:\.-]*Z' | sed -e 's/before://')
+
+    # Validate expiration field
+    if [ -z "$exp" ]; then
+      echo 1>&2 "ERROR: invalid macaroon: missing 'before' field"
+      echo 1>&2 "$token_debug_info"
+      return 1
+    fi
+
+    # Convert expiration time to unix time (seconds since epoch)
+    case $OSTYPE in
+      darwin* )  exp_unix=$(date -u -j -f "%Y-%m-%dT%H:%M:%S" "${exp:0:19}" +"%s" 2>/dev/null)  ;;
+            * )  exp_unix=$(date -d "$exp" +%s 2>/dev/null)  ;;
+    esac
+
+    if [ -z "$exp_unix" ]; then
+      echo 1>&2 "ERROR: invalid macaroon: unable to parse 'before' timestamp"
+      echo 1>&2 "$token_debug_info"
+      return 1
+    fi
+
+    # Fail if the token has (almost) expired
+    validate_expiration_timestamp "$exp_unix" "$token_debug_info" || return 1
+
+    # If we're staging, the macaroon must have STAGE activity permission.
+    # As of dCache 10.1, the STAGE activity is required for staging with a macaroon.
+    if [[ "$command" == 'stage' ]] ; then
+      if ! grep --silent 'activity:.*STAGE' <<<"$macaroon_decoded" ; then
+        echo 1>&2 "ERROR: You want to stage data from tape, but your macaroon token" \
+                  "does not have the STAGE activity permission." \
+                  "You can check this with the --viewtoken option." \
+                  "Please use a macaroon with the STAGE activity permission."
+        return 1
+      fi
+    fi
+
+    # If we get here, it means we have a valid macaroon.
+    $debug && echo -e "\033[34m\n$macaroon_decoded\n\033[0m" | sed -e 's/^/  /'
+    $debug && echo "Macaroon is valid"
+    return 0
+  fi
+}
+
+
+#
+# Set up dir for settings, channel state info, curl authentication headers, and request logfile
+#
+setup_dirs () {
+  ada_dir=~/.ada
+  requests_log="$ada_dir"/requests.log
+  mkdir -p "$ada_dir"/headers
+  mkdir -p "$ada_dir"/channels
+  touch "$requests_log"
+  chmod -R u=rwX,g=,o= "$ada_dir"
+  #
+  # If ada is used with --debug, the curl header files are not cleaned up.
+  # The users are supposed to do that themselves.
+  # But they might forget, and keeping the header files for too long
+  # might not be very safe on a shared system.
+  # So, we clean up all header files that haven't been used for 10 hours.
+  find "$ada_dir"/headers -type f -name 'authorization_header_*' -amin +600 -delete
+}
+
+
+check_authentication() {
+  # Returns whether the user is properly authenticated by dCache.
+  # If we check this before doing any API operation, we can provide a better error message.
+  local command
+  command='$debug && set -x
+           curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X GET "$api/user" \
+           | jq -r .status '
+  if $dry_run ; then
+    echo "$command"
+    return 0
+  fi
+  userinfo=$(eval "$command")
+  if grep --silent 'AUTHENTICATED' <<<"$userinfo" ; then
+    $debug && echo "Authenticated."
+    return 0
+  fi
+  #
+  echo "ERROR: authentication failed. Please check your credentials."
+  echo
+  echo "API: $api"
+  # Show path, if set.
+  # The path may provide useful info, such as the service name
+  # in for example "/pnfs/grid.sara.nl/data"
+  if [ -n "$path" ] ; then
+    echo "Path: $path"
+  fi
+  echo "Authentication method: $auth_method"
+  case $auth_method in
+    netrc )
+      echo "Netrc file: $netrcfile"
+      ;;
+    proxy )
+      echo "Proxy file: $proxyfile"
+      ;;
+    token )
+      view_token "$token" "$token_debug_info"
+      ;;
+    * )
+      echo "Unknown authentication method '$auth_method'."
+      ;;
+  esac
+  return 1
+}
+
+
+get_webdav_door () {
+  # The dCache API itself does not allow uploading and downloading
+  # of data. We need a WebDAV door for that.
+  # This function will return a WebDAV door.
+  # There can be several methods to find a WebDAV door.
+  # One is, reading it from an Rclone config file.
+  # Two other methods ask the API for a WebDAV door.
+  # If no door can be found, an error code is returned.
+  local api="$1"
+  local api_server="${api%/api/v*}"
+  local webdav_door
+  local command
+  # Method 1: if there's an Rclone config file, read the WebDAV door from that.
+  if [ -f "$tokenfile" ] ; then
+    $debug && echo "Getting WebDAV door from '$tokenfile' ..." 1>&2
+    webdav_door=$(awk -F' *= *' '/^url *=/ {print $2}' "$tokenfile")
+    if [ -n "$webdav_door" ] ; then
+      echo "$webdav_door"
+      return 0
+    fi
+  fi
+  $debug && echo "Method failed. Trying next method." 1>&2
+  # Method 2: read the /scripts/config.js file from the API server.
+  command='$debug && set -x
+           curl "${curl_authorization[@]}" \
+                "${curl_options_common[@]}" \
+                -H "Authorization: bearer $BEARER_TOKEN" \
+                -H "Accept: application/json" \
+                "$api_server/scripts/config.js" \
+           | jq -r ".\"dcache-view.endpoints.webdav\"" '
+  if $dry_run ; then
+    echo "$command"
+  else
+    $debug && echo "Getting WebDAV door from $api_server/scripts/config.js ..." 1>&2
+    webdav_door=$(eval "$command")
+  fi
+  # If we got a WebDAV door, we're done! Print value and return.
+  if [ -n "$webdav_door" ] ; then
+    echo "$webdav_door"
+    return 0
+  fi
+  $debug && echo "Method failed. Trying next method." 1>&2
+  # Method 3.
+  # This uses the /doors API call, which lists all doors.
+  # The list of doors can be quite long.
+  # From the list, we select the most appropriate.
+  # The door should have:
+  # - protocol https (this excludes xrootd and gridftp)
+  # - all paths: / (root path; we don't want a door that confines us)
+  # - a lot of tags (which means it's publically advertised)
+  # - port 443 is preferred (reduces firewall issues)
+  # - a low load (we don't want a busy door)
+  command='$debug && set -x
+           curl "${curl_authorization[@]}" \
+                "${curl_options_common[@]}" \
+                -H "Accept: application/json" \
+                -X GET "$api/doors" \
+           | jq -r "
+               map(select(
+                   .protocol == \"https\" and
+                   .root == \"/\" and
+                   ((.readPaths // []) | index(\"/\")) and
+                   ((.writePaths // []) | index(\"/\"))
+               ))
+               | sort_by(
+                   -((.tags // []) | length),     # prefer doors with more tags
+                   (.port != 443),                # prefer port 443
+                   .load                          # prefer lower load
+               )
+               | .[0] as \$best
+               | \"\(\$best.protocol)://\(\$best.addresses[0]):\(\$best.port)\"
+             "
+  '
+  if $dry_run ; then
+    echo "$command"
+  else
+    $debug && echo "Getting WebDAV door from $api/doors ..." 1>&2
+    webdav_door=$(eval "$command")
+  fi
+  # If we got a WebDAV door, we're done! Print value and return.
+  if [ -n "$webdav_door" ] ; then
+    echo "$webdav_door"
+    return 0
+  else
+    echo "Unable to get WebDAV door. Please try again with --debug to get more information." 1>&2
+    return 1
+  fi
+}
+
+
+urlencode () {
+  # We use jq for encoding the URL, because we need jq anyway.
+  $debug && echo "urlencoding '$1' to '$(printf '%s' "$1" | jq -sRr @uri)'" 1>&2
+  printf '%s' "$1" | jq -sRr @uri
+}
+
+
+pathtype () {
+  # Get the type of an object. Possible outcomes:
+  # DIR     = directory
+  # REGULAR = file
+  # LINK    = symbolic link
+  # <empty> = something went wrong... no permission?
+  local path="$1"
+  encoded_path=$(urlencode "$path")
+  local result
+  command='$debug && set -x
+          curl "${curl_authorization[@]}" \
+          -H "accept: application/json" \
+          --silent \
+          -X GET "$api/namespace/$encoded_path"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    result=$(eval "$command")
+    valid=$(echo "$result" | jq 'has("fileType")')
+    if [[ $valid == 'true' ]] ; then
+      echo "$result" | jq -r .fileType
+    else
+      # Something went wrong. The result should contain an error message in JSON format.
+      {
+        echo "Error while getting information about '$path':"
+        echo "$result" | jq .
+      } 1>&2
+      exit 1
+    fi
+  fi
+}
+
+
+is_dir () {
+  # Check whether a path is a directory. If the path doesn't exist, just continue.
+  # Similar to pathtype(), but that one quits with error if the path doesn't exist.
+  encoded_path=$(urlencode "$1")
+  # Warn the developers not to call is_dir before the auth has been set up.
+  if [ -z "$curl_authorization" ] ; then
+    echo 1>&2 "ERROR: calling function is_dir() before authentication has been set up." \
+              "Please submit an issue for this at https://github.com/sara-nl/SpiderScripts/ ."
+    exit 1
+  fi
+  result=$(
+            $debug && set -x
+            curl "${curl_authorization[@]}" \
+                 -H "accept: application/json" \
+                 --silent \
+                 -X GET "$api/namespace/$encoded_path" 2>/dev/null
+          )
+  # The exit code of the grep will be passed on to the calling statement.
+  echo "$result" | jq -r .fileType | grep --silent 'DIR'
+}
+
+
+get_pnfsid () {
+  local path=$(urlencode "$1")
+  command='curl "${curl_authorization[@]}" \
+           "${curl_options_no_errors[@]}" \
+           -X GET "$api/namespace/$path" \
+           | jq -r .pnfsId'
+  if $dry_run ; then
+    echo "$command"
+  else
+    eval "$command"
+  fi
+}
+
+
+is_online () {
+  # Checks whether a file is online.
+  # The locality should be ONLINE or ONLINE_AND_NEARLINE.
+  local path=$(urlencode "$1")
+  command='curl "${curl_authorization[@]}" \
+           "${curl_options_no_errors[@]}" \
+           -X GET "$api/namespace/$path?locality=true&qos=true" \
+           | jq -r ".fileLocality" \
+           | grep --silent "ONLINE"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    eval "$command"
+  fi
+}
+
+
+get_subdirs () {
+  local path=$(urlencode "$1")
+  str='.children | .[] | if .fileType == "DIR" then .fileName else empty end'
+  command='curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X GET "$api/namespace/$path?children=true" \
+           | jq -r "$str"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    eval "$command"
+  fi
+}
+
+
+get_files_in_dir () {
+  local path=$(urlencode "$1")
+  str='.children | .[] | if .fileType == "REGULAR" then .fileName else empty end'
+  command='curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X GET "$api/namespace/$path?children=true" \
+           | jq -r "$str"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    eval "$command"
+  fi
+}
+
+
+get_children () {
+  local path=$(urlencode "$1")
+  command='curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X GET "$api/namespace/$path?children=true" \
+           | jq -r ".children | .[] | .fileName"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    eval "$command"
+  fi
+}
+
+
+dir_has_items () {
+  local path="$1"
+  get_children "$path" | grep --silent --max-count 1 '.'
+}
+
+
+find_label () {
+  local path
+  local regex
+  local recursive
+  path="$1"
+  regex="$2"
+  recursive="$3"
+  encoded_path=$(urlencode "$path")
+  # We can only search dirs. Searching a file doesn't make sense, because we have found it.
+  if [[ $(pathtype "$path") == "REGULAR" ]] ; then
+    echo 1>&2 "ERROR: $path is a file. Please specify a directory."
+    exit 1
+  fi
+  # We search for files in this dir with a label that matches the regex.
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$api/namespace/$encoded_path?children=true&labels=true" \
+    | jq -r \
+         --arg path "$path/" \
+         --arg regex "$regex" \
+         '.children[]
+          | {fileName: ($path + .fileName), matchingLabels: ([.labels[]? | select(test($regex))])}
+          | select(.matchingLabels | length > 0)
+          | [ .fileName, (.matchingLabels | join(",")) ]
+          | @tsv'
+  )
+  #
+  # If recursion was requested, we search for subdirs in $path, and do the same thing.
+  if $recursive ; then
+    for subdir in $(get_subdirs "$path") ; do
+      find_label "$path/$subdir" "$regex" "$recursive"
+    done
+  fi
+}
+
+
+find_xattr () {
+  local path
+  local attribute_name
+  local regex
+  local recursive
+  path="$1"
+  attribute_name="$2"
+  regex="$3"
+  recursive="$4"
+  encoded_path=$(urlencode "$path")
+  # We can only search dirs. Searching a file doesn't make sense, because we have found it.
+  if [[ $(pathtype "$path") == "REGULAR" ]] ; then
+    echo 1>&2 "ERROR: '$path' is a file. Please specify a directory."
+    exit 1
+  fi
+  # We search for files in this dir with a attribute value that matches the regex.
+  if [[ $attribute_name == '--all' ]] ; then
+    (
+      $debug && set -x
+      curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X GET "$api/namespace/$encoded_path?children=true&xattr=true" \
+      | jq -r \
+           --arg  path "$path/" \
+           --arg  regex "$regex" \
+           '
+             .children[]
+             | select(.extendedAttributes | to_entries | any(.value | test($regex)))
+             | [
+                 ($path + .fileName),
+                 (.extendedAttributes | to_entries | map(select(.value | test($regex)) | "\(.key)=\(.value)") | join(", "))
+               ]
+             | @tsv
+           '
+    )
+  else
+    # Searching for a value of a specific attribute
+    (
+      $debug && set -x
+      curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X GET "$api/namespace/$encoded_path?children=true&xattr=true" \
+      | jq -r \
+           --arg attr_name "$attribute_name" \
+           --arg path "$path/" \
+           --arg regex "$regex" \
+           '
+             .children[]
+             | select(
+                 .extendedAttributes[$attr_name] != null
+                 and (.extendedAttributes[$attr_name] | type == "string")
+                 and (.extendedAttributes[$attr_name] | test($regex))
+               )
+             | [
+                 ($path + .fileName),
+                 "\($attr_name)=\(.extendedAttributes[$attr_name])"
+               ]
+             | @tsv
+           '
+    )
+  fi
+  #
+  # If recursion was requested, we search for subdirs in $path, and do the same thing.
+  if $recursive ; then
+    for subdir in $(get_subdirs "$path") ; do
+      find_xattr "$path/$subdir" "$attribute_name" "$regex" "$recursive"
+    done
+  fi
+}
+
+
+get_confirmation () {
+  prompt="$1"
+  while true ; do
+    # We read the answer from tty, otherwise strange things would happen.
+    read -r -p "$prompt (N/y) " -n1 answer < /dev/tty
+    # echo
+    case $answer in
+      Y | y )       return 0  ;;
+      N | n | '' )  return 1  ;;
+    esac
+  done
+}
+
+
+create_path () {
+  let counter++
+  if [ $counter -gt 10 ] ; then
+    echo 1>&2 "ERROR: max number of directories that can be created at once is 10."
+    exit 1
+  fi
+  local path="$1"
+  local recursive="$2"
+  local parent="$(dirname "$path")"
+  if ! is_dir "$parent" ; then
+    # The parent dir does not exist yet. Should we create it?
+    if $recursive ; then
+      if [ "${#parent}" -gt 1 ]; then
+        echo 1>&2 "Warning: parent dir '$parent' does not exist. Will attempt to create it."
+        create_path "$parent" "$recursive"
+      else
+        # We reached the root dir. Something most be wrong.
+        echo 1>&2 "ERROR: Unable to create dirs. Check the specified path."
+        exit 1
+      fi
+    else
+      echo 1>&2 "ERROR: parent dir '$parent' does not exist. To recursively create dirs, add --recursive."
+      exit 1
+    fi
+  fi
+  parent=$(urlencode "$(dirname "$path")")
+  name=$(basename "$path")
+  (
+    $debug && set -x   # If --debug is specified, show curl & jq command
+    curl "${curl_authorization[@]}" \
+          "${curl_options_common[@]}" \
+          "${curl_options_post[@]}" \
+          -X POST "$api/namespace/$parent" \
+          -d "{\"action\":\"mkdir\",\"name\":\"$name\"}" \
+    | jq -r .status
+  )
+}
+
+
+delete_path () {
+  local path="$1"
+  local recursive="$2"
+  local force="$3"
+  case $recursive in
+    true | false ) ;;  # No problem
+    * )
+      echo 1>&2 "ERROR: delete_path: recursive is '$recursive' but should be true or false."
+      exit 1
+      ;;
+  esac
+  path_type=$(pathtype "$path")
+  if [ -z "$path_type" ] ; then
+    # Could be a permission problem.
+    echo "Warning: could not get object type of '$path'."
+    # Quit the current object, but don't abort the rest
+    return 0
+  fi
+  local aborted=false
+  # Are there children in this path we need to delete too?
+  if $recursive && [ "$path_type" = "DIR" ] ; then
+    if $force || get_confirmation "Delete all items in $path?" ; then
+      while read -r child ; do
+        delete_path "$path/$child" "$recursive" "$force" \
+        || aborted=true
+      done < <(get_children "$path")
+    else
+      # If the user pressed 'n', dir contents will not be deleted;
+      # In that case we should not delete the dir either.
+      aborted=true
+    fi
+  fi
+  # Done with the children, now we delete the parent (if not aborted).
+  if $aborted ; then
+    echo "Deleting $path - aborted."
+    # Tell higher level that user aborted,
+    # because deleting the parent dir is useless.
+    return 1
+  else
+    echo -n "Deleting $path - "
+    encoded_path=$(urlencode "$path")
+    (
+      $debug && set -x
+      curl "${curl_authorization[@]}" \
+           "${curl_options_common[@]}" \
+           -X DELETE "$api/namespace/$encoded_path" \
+      | jq -r .status
+    )
+  fi
+}
+
+
+bulk_request() {
+  local activity="$1"
+  local pathlist="$2"
+  local recursive="$3"
+  if [ "$from_file" == false ] ; then
+    local filepath="$2"
+    type=$(pathtype "$filepath")
+    case $type in
+      DIR )
+        if $recursive ; then
+          expand=ALL
+        else
+          expand=TARGETS
+        fi
+        ;;
+      REGULAR | LINK )
+        expand=NONE
+        ;;
+      '' )
+        echo "ERROR: could not determine object type of '$filepath'." 1>&2
+        exit 1
+        ;;
+      * )
+        echo "Unknown object type '$type'. Please create an issue for this in Github." 1>&2
+        exit 1
+        ;;
+    esac
+  else
+    if $recursive ; then
+      echo 1>&2 "Error: recursive (un)staging forbidden when using file-list."
+      exit 1
+    else
+      expand=TARGETS
+    fi
+  fi
+  case $activity in
+    PIN   )
+      arguments="{\"lifetime\": \"${lifetime}\", \"lifetimeUnit\":\"${lifetime_unit}\"}" ;;
+    UNPIN )
+      arguments="{}" ;;
+  esac
+  target='['
+  while read -r path ; do
+    target=$target\"/${path}\",
+  done <<<"$pathlist"
+  target=${target%?}]
+  data="{\"activity\": \"${activity}\", \"arguments\": ${arguments}, \"target\": ${target}, \"expand_directories\": \"${expand}\"}"
+  $debug || echo "$target  "
+  # Elsewhere, we do 'set -x' in a subshell, but here we need to catch the return headers.
+  $debug && set -x   # If --debug is specified, show curl command
+  response=$(curl "${curl_authorization[@]}" \
+                  "${curl_options_common[@]}" \
+                  "${curl_options_post[@]}" \
+                  -X POST "$api/bulk-requests" \
+                  -d "${data}" \
+                  --write-out "\nHTTP_CODE_%{http_code}" \
+                  --dump-header -
+            )
+  # Stop showing commands
+  $debug && set +x
+  # Process the result based on the HTTP return code
+  status=$(echo "$response" | grep '^HTTP_CODE_')    # HTTP return code
+  $debug && echo 1>&2 "Returned HTTP status: $status"
+  # 403 could mean recursion is not allowed in dCache. Might become 422 in future.
+  # See also https://github.com/dCache/dcache/issues/7892
+  case $status in
+    HTTP_CODE_403 | HTTP_CODE_422 )
+      case $expand in
+        ALL )
+          echo -e 1>&2 "Operation failed. Possible causes:\n" \
+                       "* You may not have permission to access the directory\n" \
+                       "* Recursive staging may be prohibited.\n" \
+                       "\nTry the same command without --recursive. If that works," \
+                       "the dCache system does not allow you to stage recursively." \
+                       "If you need recursion, ask your dCache admins to set" \
+                       "'bulk.allowed-directory-expansion=ALL'."
+          ;;
+        TARGETS )
+          echo -e 1>&2 "Operation failed. Possible causes:\n" \
+                      "* You may not have permission to access the directory\n" \
+                      "* Staging or unstaging a directory may be prohibited.\n" \
+                      "\nTry to stage a single file in the directory. If that works," \
+                      "the dCache system does not allow you to stage directories." \
+                      "If you need to stage directories, ask your dCache admins to set" \
+                      "'bulk.allowed-directory-expansion=TARGETS', or" \
+                      "'bulk.allowed-directory-expansion=ALL' in case you want" \
+                      "to stage recursively."
+          ;;
+        NONE )
+          echo -e 1>&2 "Operation failed. You may not have permission to access the file(s)."
+          ;;
+      esac
+      exit 1
+      ;;
+    HTTP_CODE_2* )
+      echo "$response" | grep -e request-url -e Date | tee -a "${requests_log}"
+      # ToDo: explain to user what to do with the request-url, see issue #86
+      ;;
+    * )
+      # Something else went wrong; could be
+      # 400 (bad request)
+      # 401 (unauthorized)
+      # 429 (too many requests)
+      # 500 (internal server error)
+      echo 1>&2 -e "ERROR: operation failed. See details below:\n\n$response"
+      exit 1
+      ;;
+  esac
+  $debug && echo "Information about bulk request is logged in $requests_log."
+  {
+    echo "activity: $activity"
+    echo "target: $target" | sed 's/,/,\n         /g'
+    echo
+  } >> $requests_log
+}
+
+
+with_files_in_dir_do () {
+  # This will execute a function on all files in a dir.
+  # Recursion into subdirs is supported.
+  #
+  # Arguments:
+  # 1. The function to be executed on files;
+  # 2. The dir to work on
+  # 3. Recursive? (true|false)
+  # 3-x. Additional arguments to give to the function
+  #      (The first argument to the function is always the file name.)
+  #
+  local function="$1"
+  local path="$2"
+  local recursive="$3"
+  case $recursive in
+    true | false )  ;;  # No problem
+    * )
+      echo 1>&2 "Error in with_files_in_dir_do: recursive='$recursive'; should be true or false."
+      exit 1
+      ;;
+  esac
+  shift ; shift ; shift
+  # Run the given command on all files in this directory
+  get_files_in_dir "$path" \
+  | while read -r filename ; do
+    "$function" "$path/$filename" "$@"
+  done
+  # If needed, do the same in subdirs
+  if $recursive ; then
+    get_subdirs "$path" \
+    | while read -r subdir ; do
+      with_files_in_dir_do "$function" "$path/$subdir" "$recursive" "$@"
+    done
+  fi
+}
+
+
+get_checksums () {
+  # This function prints out all known checksums of a given file.
+  # A file can have Adler32 checksum, MD5 checksum, or both.
+  # Output format:
+  # /path/file  ADLER32=xxx  MD5_TYPE=xxxxx
+  local path="$1"
+  encoded_path=$(urlencode "$path")
+  {
+    echo -n -e "$path\t"
+    {
+      curl "${curl_authorization[@]}" \
+           "${curl_options_no_errors[@]}" \
+           -X GET "$api/namespace/$encoded_path?checksum=true" \
+      | jq -r '.checksums | .[] | [ .type , .value ] | @tsv'
+      # jq output is tab separated:
+      # ADLER32\txxx
+      # MD5_TYPE\txxxxx
+    } \
+    | sed -e 's/\t/=/g' | tr '\n' '\t'
+    echo
+  } \
+  | sed -e 's/\t/  /g'
+}
+
+
+get_channel_by_name () {
+  local channel_name="$1"
+  # Many other API calls depend on this one.
+  # So if this one fails, we quit the script.
+  channel_json=$(
+                  $debug && set -x
+                  curl "${curl_authorization[@]}" \
+                       "${curl_options_common[@]}" \
+                       -X GET "$api/events/channels?client-id=$channel_name"
+                ) \
+                || {
+                     echo "ERROR: unable to check for channels." 1>&2
+                     exit 1
+                   }
+  channel_url=$(jq -r '.[]' <<<"$channel_json")
+  channel_count=$(wc -l <<<"$channel_url")
+  if [ "$channel_count" -gt 1 ] ; then
+    echo 1>&2 "ERROR: there is more than one channel with that name:"
+    echo "$channel_url"
+    exit 1
+  fi
+  echo "$channel_url"
+}
+
+get_channels () {
+  local channel_name="$1"
+  local query=''
+  if [ -n "$channel_name" ] ; then
+    query="?client-id=$channel_name"
+  fi
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$api/events/channels${query}" \
+    | jq -r '.[]'
+  )
+}
+
+channel_subscribe () {
+  local channel_url="$1"
+  local path="$2"
+  local recursive="$3"
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         "${curl_options_post[@]}" \
+         -X POST "$channel_url/subscriptions/inotify" \
+         -d "{\"path\":\"$path\"}"
+  )
+  if $recursive ; then
+    get_subdirs "$path" \
+    | while read -r subdir ; do
+      $debug && echo "Subscribing to: $path/$subdir"
+      channel_subscribe "$channel_url" "$path/$subdir" "$recursive"
+    done
+  fi
+}
+
+
+get_subscriptions_by_channel () {
+  local channel_url="$1"
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$channel_url/subscriptions" \
+    | jq -r '.[]'
+  )
+}
+
+
+list_subscription () {
+  # Shows all properties of a subscription. (Could be only a path.)
+  local subscription="$1"
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$subscription" \
+    | jq -r 'to_entries[] | [.key, .value] | @tsv' \
+    | tr '\t' '='
+  )
+}
+
+
+get_path_from_subscription () {
+  local subscription="$1"
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$subscription" \
+    | jq -r .path
+  )
+}
+
+
+follow_channel () {
+  # This function is used for two commands: --events and --report-staged.
+  # Much of the functionality is the same, but
+  # with --report-staged we're checking only whether files
+  # are being brought online.
+  local channel_url="$1"
+  declare -A subscriptions
+  channel_id=$(basename "$channel_url")
+  channel_status_file="${ada_dir}/channels/channel-status-${channel_id}"
+  # If a file exists with the last event for this channel,
+  # We should resume from that event ID.
+  if [ -f "$channel_status_file" ] ; then
+    last_event_id=$(grep -E --max-count=1 --only-matching \
+                         '[0-9]+' "$channel_status_file")
+    if [ -n "$last_event_id" ] ; then
+      echo "Resuming from $last_event_id"
+      last_event_id_header=(-H "Last-Event-ID: $last_event_id")
+    fi
+  else
+    last_event_id_header=()
+  fi
+  (
+    $debug && set -x
+    curl "${curl_authorization[@]}" \
+         "${curl_options_stream[@]}" \
+         -X GET "$channel_url" \
+         "${last_event_id_header[@]}"
+  ) \
+  | while IFS=': ' read -r key value ; do
+      case $key in
+        event )
+          case $value in
+            inotify | SYSTEM )
+              event_type="$value"
+              ;;
+            * )
+              echo 1>&2 "ERROR: don't know how to handle event type '$value'."
+              cat  # Read and show everything from stdin
+              exit 1
+              ;;
+          esac
+          ;;
+        id )
+          # Save event number so we can resume later.
+          event_id="$value"
+          ;;
+        data )
+          case $event_type in
+            inotify )
+              $debug && { echo ; echo "$value" | jq --compact-output ; }
+              # Sometimes there's no .event.name:
+              # then 'select (.!=null)' will output an empty string.
+              object_name=$(jq -r '.event.name | select (.!=null)' <<< "$value")
+              mask=$(jq -r '.event.mask | @csv' <<< "$value" | tr -d '"')
+              cookie=$(jq -r '.event.cookie | select (.!=null)' <<<"$value")
+              subscription=$(jq -r '.subscription' <<< "$value")
+              subscription_id=$(basename "$subscription")
+              # We want to output not only the file name, but the full path.
+              # We get the path from the API, but we cache the result
+              # in an array for performance.
+              if [ ! ${subscriptions[$subscription_id]+_} ] ; then
+                # Not cached yet; get the path and store it in an array.
+                subscriptions[$subscription_id]=$(get_path_from_subscription "$subscription")
+              fi
+              path="${subscriptions[$subscription_id]}"
+              #
+              # If recursion is requested, we need to start following new directories.
+              if $recursive ; then
+                if [ "$mask" = "IN_CREATE,IN_ISDIR" ] ; then
+                  channel_subscribe "$channel_url" "$path/$object_name" "$recursive"
+                fi
+              fi
+              #
+              # A move or rename operation consists of two events,
+              # an IN_MOVED_FROM and an IN_MOVED_FROM, both with
+              # a cookie (ID) to relate them.
+              if [ -n "$cookie" ] ; then
+                cookie_string="  cookie:$cookie"
+              else
+                cookie_string=
+              fi
+              # Is the user doing --events or --report-staged? The output differs a lot.
+              case $command in
+                events )
+                  # Here comes the output.
+                  echo -e "$event_type  ${path}/${object_name}  ${mask}${cookie_string}"
+                  ;;
+                report-staged )
+                  # User wants to see only the staged files.
+                  path_type=$(pathtype "${path}/${object_name}")
+                  case $path_type in
+                    REGULAR )
+                      # Is it an attribute event?
+                      if grep --silent -e IN_ATTRIB -e IN_MOVED_TO <<<"$mask" ; then
+                        # Show file properties (locality, QoS, name)
+                        encoded_path=$(urlencode "${path}/${object_name}")
+                        (
+                          $debug && set -x   # If --debug is specified, show curl, jq & sed command
+                          curl "${curl_authorization[@]}" \
+                               "${curl_options_common[@]}" \
+                               -X GET "$api/namespace/$encoded_path?locality=true&qos=true" \
+                          | jq -r '[ .fileLocality ,
+                                   if .targetQos then (.currentQos + "→" + .targetQos) else .currentQos end ,
+                                   "'"${path}/${object_name}"'" ]
+                                 | @tsv' \
+                          | sed -e 's/\t/  /g'
+                        )
+                      fi
+                      ;;
+                    '' )
+                      # File may have been deleted or moved
+                      echo "WARNING: could not get object type of ${path}/${object_name}." \
+                           "It may have been deleted or moved."
+                      ;;
+                  esac
+                  ;;
+              esac
+              #
+              # When done with this event's data, save the event ID.
+              # This can be used to resume the channel.
+              echo "$event_id" > "$channel_status_file"
+              ;;
+            SYSTEM )
+              # For system type events we just want the raw output.
+              echo -e "$event_type  $value"
+              ;;
+            '' )
+              # If we get a data line that was not preceded by an
+              # event line, something is wrong.
+              echo "Unexpected data line: '$value' near event ID '$event_id'."
+              ;;
+          esac
+          ;;
+        '' )
+          # Empty line: this ends the current event.
+          event_type=
+          ;;
+        * )
+          echo 1>&2 "ERROR: don't know how to handle '$key: $value'."
+          exit 1
+          ;;
+      esac
+  done
+}
+
+
+list_online_files () {
+  local path="$1"
+  local recursive="$2"
+  case $recursive in
+    true | false ) ;;  # No problem
+    * )
+      echo 1>&2 "ERROR: list_online_files: recursive is '$recursive' but should be true or false."
+      exit 1
+      ;;
+  esac
+  # Show online files in this dir with locality and QoS
+  encoded_path=$(urlencode "$path")
+  (
+    $debug && set -x   # If --debug is specified, show curl, jq & sed command
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$api/namespace/$encoded_path?children=true&locality=true&qos=true" \
+    | jq -r '.children
+           | .[]
+           | if .fileType == "REGULAR" then . else empty end
+           | [ .fileLocality ,
+               if .targetQos then (.currentQos + "→" + .targetQos) else .currentQos end ,
+               "'"$path"'/" + .fileName ]
+           | @tsv' \
+    | sed -e 's/\t/  /g'
+  )
+  # If recursion is requested, do the same in subdirs.
+  if $recursive ; then
+    get_subdirs "$path" \
+    | while read -r subdir ; do
+      list_online_files "$path/$subdir" "$recursive"
+    done
+  fi
+}
+
+
+get_dcache_versions () {
+  # Prints the version(s) of dCache.
+  # Why multiple versions? Each dCache cell (service) can have its own unique version,
+  # depending on considerations of the sysadmin.
+  # We print a JSON array of all unique versions.
+  (
+    $debug && set -x   # If --debug is specified, show curl & jq command
+    curl "${curl_authorization[@]}" \
+         "${curl_options_common[@]}" \
+         -X GET "$api/cells" \
+    | jq -c 'map(.version) | unique'
+  )
+}
+
+
+get_quota () {
+  # Show quotas, for disk and tape, and for user(s) and group(s).
+  # We use bash arrays for this. For that, we need a fresh bash.
+  if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
+    echo 1>&2 "Unable to show quota. Get a newer bash version" \
+              "('brew install bash') if you need to view quota."
+    return 1
+  fi
+  declare -A quota
+  has_quota=false
+  # First we collect the user (UID) quota, then the group (GID) quota.
+  # After that, we do the handling & processing.
+  for quota_type in user group ; do
+    # We use curl's "--writeout" to collect the HTTP return code.
+    # If the code is 404, it means the user doesn't have this type of quota.
+    response=$(curl "${curl_authorization[@]}" \
+                    "${curl_options_common[@]}" \
+                    --silent --show-error \
+                    --write-out "\nHTTP_CODE_%{http_code}" \
+                    -X GET "$api/quota/${quota_type}?user=true" 2>&1
+              )
+    status=$(echo "$response" | grep '^HTTP_CODE')    # HTTP return code
+    case $status in
+      HTTP_CODE_200 )
+        # Quota was found! Process it later.
+        has_quota=true
+        quota[$quota_type]=$(echo "$response" | grep -v '^HTTP_CODE')
+        ;;
+      HTTP_CODE_404 )
+        # No quota of this type found.
+        quota[$quota_type]=""
+        ;;
+      * )
+        # If it's not a 404 but another error message, there is something wrong.
+        # So we print the error message and then quit this function.
+        echo 1>&2 "Unable to get $quota_type quota."
+        echo 1>&2 "$response"
+        return 1
+        ;;
+    esac
+  done
+  # If there's either a user quota or a group quota, we print it.
+  # We use tabs as separators and then use column -t to format it in a table.
+  if $has_quota ; then
+    {
+      # Print header
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+             "Quota:" "custodial (tape)" "custodialLimit" "%" "replica (disk)" "replicaLimit" "%"
+      # Print user & group quota as tab separated values
+      for quota_type in user group ; do
+        jq -r ' .[] |
+                [
+                  (.type + ":" + (.id|tostring)),
+                  (.custodial | tostring | gsub("(?<=\\d)(?=(\\d{3})+$)"; ",")),
+                  (.custodialLimit | tostring | gsub("(?<=\\d)(?=(\\d{3})+$)"; ",")),
+                  # custodial percentage (avoid division by null or 0)
+                  (
+                    if (.custodialLimit // 0) > 0 then
+                      ((.custodial / .custodialLimit * 100) | tostring | capture("^(?<n>-?\\d+(?:\\.\\d)?)") | .n + "%")
+                    else
+                      "-"
+                    end
+                  ),
+                  (.replica | tostring | gsub("(?<=\\d)(?=(\\d{3})+$)"; ",")),
+                  (.replicaLimit | tostring | gsub("(?<=\\d)(?=(\\d{3})+$)"; ",")),
+                  # replica percentage
+                  (
+                    if (.replicaLimit // 0) > 0 then
+                      ((.replica / .replicaLimit * 100) | tostring | capture("^(?<n>-?\\d+(?:\\.\\d)?)") | .n + "%")
+                    else
+                      "-"
+                    end
+                  )
+                ] | @tsv
+              ' <<< "${quota[$quota_type]}"
+      done
+    } | column -t -s $'\t'
+  else
+    # No quota found. If user ran `ada --quota`, show message.
+    # If the user ran `ada --whoami`, we don't need to show a message; it would only be confusing.
+    if [ "$command" == "quota" ] ; then
+      echo 1>&2 "You do not have any quota set on your user ID or primary group ID."
+    fi
+  fi
+}
+
+
+to_json () {
+  # Analyze metadata and convert it to JSON so we can feed it to "set-xattr"
+  #
+  # This function handles key-value pair input with various delimiters.
+  # It will first detect which delimiter is being used (equal sign, comma or tab)
+  #
+  # Is it empty?
+  if [ -z "$1" ] ; then
+    echo 1>&2 "ERROR: Provided metadata is empty. Nothing to do."
+    return 1
+  fi
+  # Is it JSON?
+  if echo "$1" | jq empty > /dev/null 2>&1 ; then
+    # It is already JSON. No need to convert! Just compact it to one line.
+    echo "$1" | jq --compact-output .
+    return 0
+  fi
+  # We need to know which is the delimiter of the input data.
+  # Each line must have such a delimiter, otherwise it can't be the right delimiter.
+  # Test: If we remove all lines containing the delimiter, is the result empty?
+  if ! echo "$1" | grep --silent -v '=' ; then
+    delimiter='='
+  elif ! echo "$1" | grep --silent -v $'\t' ; then
+    delimiter=$'\t'
+  elif ! echo "$1" | grep --silent -v ',' ; then
+    delimiter=','
+  else
+    echo 1>&2 "ERROR: unable to detect the format of the provided metadata."
+    return 1
+  fi
+  echo "$1" | awk -F "$delimiter" '
+    {
+      # Split the line based on the delimiter
+      split($0, a, FS)
+      # Trim whitespace
+      gsub(/^[ \t]+|[ \t]+$/, "", a[1])
+      gsub(/^[ \t]+|[ \t]+$/, "", a[2])
+      # Remove surrounding quotes
+      gsub(/^["'"'"']|["'"'"']$/, "", a[1])
+      gsub(/^["'"'"']|["'"'"']$/, "", a[2])
+      # Print key-value pairs in JSON format
+      print "{ \"" a[1] "\": \"" a[2] "\" }"
+    }
+  ' | jq --slurp --compact-output add
+}
+#
+# End of internal functions
+#
+
+
+#
+# Validate input
+#
+validate_input() {
+  # Check lifetime
+  if ! [[ "$lifetime" =~ ^[0-9]+$ ]] ; then
+    echo 1>&2 "ERROR: lifetime is not given in correct format."
+    exit 1
+  fi
+  case $lifetime_unit in
+    S )
+      lifetime_unit=SECONDS
+      ;;
+    M )
+      lifetime_unit=MINUTES
+      ;;
+    H )
+      lifetime_unit=HOURS
+      ;;
+    D )
+      lifetime_unit=DAYS
+      ;;
+    * )
+      echo 1>&2 "ERROR: lifetime unit is '$lifetime_unit' but should be S, M, H, or D."
+      exit 1
+      ;;
+  esac
+
+  # We need some external commands.
+  for external_command in curl jq sed grep column sort tr ; do
+    if ! command -v "$external_command" >/dev/null 2>&1 ; then
+      echo >&2 "ERROR: I require '$external_command' but it's not installed."
+      exit 1
+    fi
+  done
+
+  # If the API address ends with a /, strip it
+  if [[ $api =~ /$ ]] ; then
+    echo 1>&2 "WARNING: stripping trailing slash from API address ($api)."
+    api=${api%/}
+  fi
+
+  if [[ ! $api =~ ^https://.*/api/v[12]$ ]] ; then
+    echo 1>&2 "WARNING: the API address ($api) should start with 'https://' and end with '/api/v1'."
+  fi
+
+  # Command line option --igtf is already validated,
+  # but it may have been provided as a configuration setting,
+  # so we need to check again.
+  if [[ $igtf != 'true' && $igtf != 'false' ]] ; then
+    echo 1>&2 "ERROR: option igtf requires either 'true' or 'false' as a value."
+    exit 1
+  fi
+
+  case $auth_method in
+    token )
+      if [ -n "$tokenfile" ] ; then
+        if ! [ -f "$tokenfile" ] ; then
+          echo 1>&2 "ERROR: specified tokenfile does not exist."
+          exit 1
+        fi
+        # Tokenfile must never be world readable or writable!
+        if get_permissions "$tokenfile" | grep '^........w.$' ; then
+          echo 1>&2 "ERROR: Tokenfile '$tokenfile' is world writable." \
+                    "This may be unsafe on shared systems. Use chmod to change the permissions."
+          exit 1
+        fi
+        if get_permissions "$tokenfile" | grep '^.......r..$' ; then
+          echo 1>&2 "ERROR: Tokenfile '$tokenfile' is world readable." \
+                    "This may be unsafe on shared systems. Use chmod to change the permissions."
+          exit 1
+        fi
+        #
+        # First, we assume the tokenfile is an Rclone config file.
+        token=$(sed -n 's/^bearer_token *= *//p' "$tokenfile")
+        if [ "$(wc -l <<<"$token")" -gt 1 ] ; then
+          echo 1>&2 "ERROR: file '$tokenfile' contains multiple tokens."
+          exit 1
+        fi
+        # If it was not an rclone config file, it may be a
+        # plain text file with only the token.
+        if [ -z "$token" ] ; then
+          token=$(head -n 1 "$tokenfile")
+        fi
+        if [ -z "$token" ] ; then
+          echo 1>&2 "ERROR: could not read token from tokenfile."
+          exit 1
+        fi
+      elif [ -z "$token" ] ; then
+        echo 1>&2 "ERROR: no tokenfile, nor variable BEARER_TOKEN specified."
+        exit 1
+      fi
+      # Token should be valid - unless we want to view the token!
+      # We should be able to view also invalid tokens (to check what's wrong with them).
+      if [[ $command != 'viewtoken' ]] ; then
+        # We also send the command, so we can check if the token
+        # has the necessary permissions for the job.
+        check_token "$token" "$token_debug_info" "$command" || exit 1
+      fi
+      ;;
+    netrc )
+      if [ ! -f "$netrcfile" ] ; then
+        echo 1>&2 "ERROR: could not open netrc file '$netrcfile'."
+        exit 1
+      fi
+      # Curl's netrc file shouldn't be world readable or writable!
+      if get_permissions "$netrcfile" | grep '^........w.$' ; then
+        echo 1>&2 "ERROR: Curl's config file '$netrcfile' is world writable." \
+                  "This may be unsafe on shared systems. Use chmod to change the permissions."
+        exit 1
+      fi
+      if get_permissions "$netrcfile" | grep '^.......r..$' ; then
+        echo 1>&2 "ERROR: Curl's config file '$netrcfile' is world readable." \
+                  "This may be unsafe on shared systems. Use chmod to change the permissions."
+        exit 1
+      fi
+      ;;
+    proxy )
+      if [ ! -f "$proxyfile" ] ; then
+        echo 1>&2 "ERROR: could not open proxy '$proxyfile'."
+        exit 1
+      fi
+      if [ ! -d "$certdir" ] ; then
+        echo 1>&2 "ERROR: could not find '$certdir'." \
+            "Please install the Grid root certificates if you want to use your proxy."
+        exit 1
+      fi
+      # Check if the proxy is still valid; if not, exit after the error message.
+      if [ -x "$(command -v voms-proxy-info)" ]; then
+        voms-proxy-info --exists --file "$proxyfile" 1>&2 || exit 1
+      fi
+      ;;
+    * )
+      echo 1>&2 "ERROR: you have to specify a valid authentication method."
+      exit 1
+      ;;
+  esac
+
+  case $command in
+    list | stat | mkdir | mv | delete | \
+    setlabel | lslabel | findlabel | rmlabel | \
+    setxattr | lsxattr | findxattr | rmxattr )
+      if [[ -z $path || $path =~ ^-- ]] ; then
+        echo 1>&2 "ERROR: command $command requires a path."
+        exit 1
+      fi
+      case $command in
+        mv )
+          if [[ -z $destination || $destination =~ ^-- ]] ; then
+            echo 1>&2 "ERROR: command $command requires a destination."
+            exit 1
+          fi
+          ;;
+        setlabel )
+          # Next argument is empty, but we need a label
+          if [[ -z $label ]] ; then
+            echo 1>&2 "ERROR: command $command requires a label."
+            exit 1
+          fi
+          # If you accidentally '--setlabel --all', you might end up with a label
+          # '--all' that is difficult to remove without throwing all labels away.
+          if [[ $label == '--all' ]] ; then
+            echo 1>&2 "ERROR: you specified '--all' with command $command;" \
+                      "did you want to do '--rmlabel --all'?"
+            exit 1
+          fi
+          ;;
+        rmlabel )
+          # Next argument is empty, but we need a label
+          if [[ -z $label ]] ; then
+            echo 1>&2 "ERROR: command $command requires a label."
+            exit 1
+          fi
+          # Next argument is another option but not '--all'
+          if [[ $label =~ ^-- &&  $label != '--all' ]] ; then
+            echo 1>&2 "ERROR: command $command requires a label."
+            exit 1
+          fi
+          ;;
+        findlabel )
+          if [[ -z $regex || $regex =~ ^-- ]] ; then
+            echo 1>&2 "ERROR: command $command requires a regular expression."
+            exit 1
+          fi
+          ;;
+        findxattr )
+          if [[ -z $attribute_name ]] ; then
+            echo 1>&2 "ERROR: command $command requires an attribute name, or '--all' to search through all attribute values."
+            exit 1
+          fi
+          if [[ -z $regex || $regex =~ ^-- ]] ; then
+            echo 1>&2 "ERROR: command $command requires a regular expression."
+            exit 1
+          fi
+          ;;
+      esac
+      ;;
+    events | report-staged )
+      if [[ -z $channel_name || $channel_name =~ ^-- ]] ; then
+        echo 1>&2 "ERROR: command $command requires a channel name and a directory."
+        exit 1
+      fi
+      if [[ -z $path || $path =~ ^-- ]] ; then
+        echo 1>&2 "ERROR: command $command requires a directory."
+        exit 1
+      fi
+      ;;
+    longlist | checksum | stage | unstage )
+      if [[ -z $pathlist || $pathlist =~ ^-- ]] ; then
+        echo 1>&2 "ERROR: command $command requires a path or a path list."
+        exit 1
+      fi
+      ;;
+    viewtoken )
+      if [ -z "$token" ] ; then
+        echo 1>&2 "ERROR: command --viewtoken requires a token, but no token was found."
+        echo 1>&2 "Please refer to the help text on how to provide a token."
+        exit 1
+      fi
+      ;;
+    delete-channel )
+      if [[ -z $channel_name || $channel_name =~ ^-- ]] ; then
+        echo 1>&2 "ERROR: command $command requires a channel name."
+        exit 1
+      fi
+      ;;
+    whoami | channels | space | quota )
+      # These commands do not require additional input validation
+      ;;
+    '' )
+      echo 1>&2 "ERROR. Please specify a command. See --help for more information."
+      exit 1
+      ;;
+    * )
+      echo 1>&2 "ERROR: command '$command' is not implemented."
+      exit 1
+      ;;
+  esac
+
+  if [ -z "$api" ] ; then
+    echo 1>&2 "ERROR: no API specified. Use --api <api> or specify a default API in one of the configuration files (" \
+        "${configfiles[@]}" \
+        ")."
+    exit 1
+  fi
+}
+#
+# End of internal functions
+#
+
+
+
+#
+# Construct the authorization part of the curl command.
+#
+construct_auth() {
+  case $auth_method in
+    token )
+      # We can't specify the token as a command line argument,
+      # because others could read that with the ps command.
+      # So we have to put the authorization header in a temporary file.
+      case $OSTYPE in
+        darwin* )  curl_authorization_header_file=$(mktemp "$ada_dir"/headers/authorization_header_XXXXXXXXXXXX)     ;;
+        * )        curl_authorization_header_file=$(mktemp -p "$ada_dir"/headers authorization_header_XXXXXXXXXXXX)  ;;
+      esac
+      chmod 600 "$curl_authorization_header_file"
+      # File should be cleaned up when we're done,
+      # unless we're debugging
+      if $debug ; then
+        trap "{
+                echo
+                echo 'WARNING: Debug mode detected. The authorization header file' \
+                     '($curl_authorization_header_file) will not be deleted immediately,' \
+                     'so that you may use it for further debugging.' \
+                     'Ada will clean up authorization header files older than 10 hours.' \
+                     'If security is a concern, please manually delete the file to ensure immediate cleanup.'
+              }" EXIT
+      else
+        trap 'rm -f "$curl_authorization_header_file"' EXIT
+      fi
+      # Save the header in the file
+      echo "header \"Authorization: Bearer $token\"" > "$curl_authorization_header_file"
+      # Refer to the file with the header
+      curl_authorization=( "--config" "$curl_authorization_header_file" )
+      ;;
+    netrc )
+      curl_authorization=( "--netrc-file" "$netrcfile" )
+      ;;
+    proxy )
+      if $igtf ; then
+        curl_authorization=( --capath "$certdir"
+                             --cert   "$proxyfile"
+                             --cacert "$proxyfile" )
+      else
+        curl_authorization=( --cert   "$proxyfile"
+                             --cacert "$proxyfile" )
+      fi
+      ;;
+  esac
+  # Let's check whether we can successfully authenticate.
+  # Except when we want to view a token!
+  # The token may be viewed even if it is invalid.
+  if [[ "$command" != "viewtoken" ]] ; then
+    check_authentication || exit 1
+  fi
+}
+# End construct_auth()
+
+#
+# Execute API call(s).
+#
+
+api_call () {
+  case $command in
+    viewtoken )
+      view_token "$token" "$token_debug_info"
+      ;;
+    whoami )
+      echo "dCache API: $api"
+      echo -n "dCache version(s): "
+      get_dcache_versions
+      echo "User identity:"
+      (
+        $debug && set -x   # If --debug is specified, show curl & jq command
+        curl "${curl_authorization[@]}" \
+             "${curl_options_common[@]}" \
+             -X GET "$api/user" \
+        | jq .
+      )
+      get_quota
+      ;;
+    list )
+      type=$(pathtype "$path")
+      case $type in
+        DIR )
+          (
+            $debug && set -x   # If --debug is specified, show curl & jq command
+            curl "${curl_authorization[@]}" \
+                 "${curl_options_common[@]}" \
+                 -X GET "$api/namespace/$(urlencode "$path")?children=true" \
+            | jq -r '.children | .[] | [ .fileName , .fileType ] | @tsv' \
+            | sed -e $'s@\tREGULAR@@' \
+                -e $'s@\tDIR@/@' \
+                -e $'s@\tLINK@@' \
+            | sort
+          )
+          ;;
+        REGULAR | LINK )
+          # User asked listing of a regular file (not a dir).
+          # No addition data is needed, the pathtype function
+          # has already checked that the file exists;
+          # So we only list the file name. Nothing more.
+          echo "$path"
+          ;;
+        '' )
+          # The path may not exist, or we may not have permission to see it.
+          echo "ERROR: could not determine object type for '$path'" 1>&2
+          exit 1
+          ;;
+        * )
+          echo "Unknown object type '$type'. Please create an issue for this in Github." 1>&2
+          exit 1
+          ;;
+      esac
+      ;;
+    longlist )
+      while read -r path ; do
+        type=$(pathtype "$path")
+        encoded_path=$(urlencode "$path")
+        case $type in
+          DIR )
+            (
+              $debug && set -x   # If --debug is specified, show curl & jq  command
+              curl "${curl_authorization[@]}" \
+                   "${curl_options_common[@]}" \
+                   -X GET "$api/namespace/$encoded_path?children=true&locality=true&qos=true" \
+              | jq -r '.children | .[]
+                     | [ .fileName ,
+                         .fileType ,
+                         (.size // "-") ,
+                         (.mtime / 1000 | strftime("%Y-%m-%d %H:%M UTC")) ,
+                         if .targetQos then (.currentQos + "→" + .targetQos) else .currentQos end ,
+                         .fileLocality ]
+                     | @tsv' \
+              | sed -e $'s@\tREGULAR@@' \
+                  -e $'s@\tDIR@/@' \
+                  -e $'s@\tLINK@§@'
+            )
+            # Note: it would be better to use strflocaltime instead of strftime,
+            # but that requires a newer version of jq than Centos 7 has.
+            ;;
+          REGULAR | LINK )
+            (
+              $debug && set -x   # If --debug is specified, show curl & jq command
+              curl "${curl_authorization[@]}" \
+                   "${curl_options_common[@]}" \
+                    -X GET "$api/namespace/$encoded_path?locality=true&qos=true" \
+              | jq -r '[ .size ,
+                       (.mtime / 1000 | strftime("%Y-%m-%d %H:%M UTC")) ,
+                       if .targetQos then (.currentQos + "→" + .targetQos) else .currentQos end ,
+                       .fileLocality ]
+                     | @tsv' \
+              | sed -e "s@^@$path\t@"
+            )
+            ;;
+          '' )
+            # The path may not exist, or we may not have permission to see it.
+            echo "ERROR: could not determine object type for '$path'" 1>&2
+            exit 1
+            ;;
+          * )
+            echo "Unknown object type '$type'. Please create an issue for this in Github." 1>&2
+            exit 1
+            ;;
+        esac
+      done <<<"$pathlist" \
+      | column -t -s $'\t' \
+      | sort
+      ;;
+    stat )
+      encoded_path=$(urlencode "$path")
+      (
+        $debug && set -x
+        curl "${curl_authorization[@]}" \
+             "${curl_options_common[@]}" \
+             -X GET "$api/namespace/$encoded_path?children=true&locality=true&locations=true&qos=true&xattr=true&labels=true&checksum=true&optional=true" \
+        | jq .
+      )
+      ;;
+    mkdir )
+      if is_dir "$path" ; then
+        echo 1>&2 "Directory '$path' already exists."
+        exit 0
+      fi
+      create_path "$path" "$recursive"
+      ;;
+    mv )
+      # dCache may overwrite an empty directory.
+      # If target already exists, quit.
+      # Function pathtype() produces an error message if the target
+      # does not exist, but we don't care, so we throw it away.
+      case $(pathtype "$destination" 2> /dev/null) in
+        DIR | REGULAR | LINK )
+          echo 1>&2 "ERROR: target '$destination' already exists."
+          exit 1
+          ;;
+      esac
+      encoded_path=$(urlencode "$path")
+      (
+        $debug && set -x   # If --debug is specified, show curl & jq command
+        curl "${curl_authorization[@]}" \
+             "${curl_options_common[@]}" \
+             "${curl_options_post[@]}" \
+             -X POST "$api/namespace/$encoded_path" \
+             -d "{\"action\":\"mv\",\"destination\":\"$destination\"}" \
+        | jq -r .status
+      )
+      ;;
+    delete )
+      case $(pathtype "$path") in
+        REGULAR | LINK )
+          delete_path "$path" "$recursive" "$force"
+          ;;
+        DIR )
+          if $recursive || ! dir_has_items "$path" ; then
+            delete_path "$path" "$recursive" "$force"
+          else
+            echo "WARNING: directory '$path' is not empty. If you want to remove it" \
+                 "and its contents, you can add the --recursive argument."
+            exit 1
+          fi
+          ;;
+        '' )
+          # The path may not exist, or we may not have permission to see it.
+          echo "ERROR: could not determine object type for '$path'" 1>&2
+          exit 1
+          ;;
+        * )
+          echo "ERROR: unknown object type '$type'. Please create an issue for this in Github."
+          exit 1
+          ;;
+      esac
+      ;;
+    setlabel | lslabel | rmlabel )
+      case $(pathtype "$path") in
+        DIR )
+          echo 1>&2 "ERROR: target '$path' is a directory. dCache does not support labels on directories."
+          exit 1
+          ;;
+        LINK )
+          echo 1>&2 "WARNING: target '$path' is a symlink. A symlink can point to a file or a directory." \
+                    "dCache does not support labels on directories." \
+                    "Ada will continue. But if this symlink point to a direcory, the result may be unexpected."
+          ;;
+      esac
+      encoded_path=$(urlencode "$path")
+      case $command in
+        setlabel )
+          (
+            $debug && set -x   # If --debug is specified, show curl & jq command
+            curl "${curl_authorization[@]}" \
+                 "${curl_options_common[@]}" \
+                 "${curl_options_post[@]}" \
+                 -X POST "$api/namespace/$encoded_path" \
+                 -d "{\"action\":\"set-label\",\"label\":\"$label\"}" \
+            | jq -r .status
+          )
+          ;;
+        rmlabel  )
+          case $label in
+            --all )
+              # User wants to remove all labels of this file.
+              # The API does not support this in a single operation.
+              # So first we ask the API for the list of labels and then
+              # we remove each of them with a separate API call.
+              labels=$(
+                        $debug && set -x   # If --debug is specified, show curl & jq command
+                        curl "${curl_authorization[@]}" \
+                             "${curl_options_common[@]}" \
+                             "${curl_options_post[@]}" \
+                             -X GET "$api/namespace/$encoded_path?labels=true" \
+                        | jq -r '.labels[]'
+                      )
+              if [ "$labels" == "" ] ; then
+                echo "No labels to remove."
+                exit 0
+              else
+                echo "Removing labels: $(echo "$labels" | tr '\n' ' ')"
+              fi
+              ;;
+            * )
+              # User specified only a single label.
+              labels="$label"
+              ;;
+          esac
+          for label in $labels ; do
+            (
+              $debug && set -x   # If --debug is specified, show curl & jq command
+              curl "${curl_authorization[@]}" \
+                   "${curl_options_common[@]}" \
+                   "${curl_options_post[@]}" \
+                   -X POST "$api/namespace/$encoded_path" \
+                   -d "{\"action\":\"rm-label\",\"label\":\"$label\"}" \
+              | jq -r .status
+            )
+          done
+          ;;
+        lslabel )
+          labels=$(
+                    $debug && set -x   # If --debug is specified, show curl command
+                    curl "${curl_authorization[@]}" \
+                    "${curl_options_common[@]}" \
+                    "${curl_options_post[@]}" \
+                    -X GET "$api/namespace/$encoded_path?labels=true"
+                  )
+          if [ -n "$label"  ] ; then
+            result=$(echo "$labels" \
+                     | jq -r 'if (.labels | index("'$label'")) then "'$label'" else null end'
+                    )
+            if [ "$result" == "null" ]; then
+                echo "ERROR: file '$path' does not have label '$label'."
+                exit 1
+            else
+                echo "$result"
+            fi
+          else
+            echo "$labels" | jq -r '.labels | sort | .[]'
+          fi
+          ;;
+        * )
+        echo 1>&2 "Unexpected label command '$command'."
+        exit 1
+        ;;
+    esac
+    ;;
+  findlabel )
+    find_label "$path" "$regex" "$recursive"
+    ;;
+  setxattr | lsxattr | rmxattr )
+    case $(pathtype "$path") in
+      DIR )
+        echo 1>&2 "ERROR: target '$path' is a directory." \
+                  "dCache does not support extended attributes on directories."
+        exit 1
+        ;;
+      LINK )
+        echo 1>&2 "WARNING: target '$path' is a symlink. A symlink can point to a file or a directory." \
+                  "dCache does not support extended attributes on directories." \
+                  "Ada will continue. But if this symlink point to a direcory," \
+                  "the result may be unexpected."
+        ;;
+      esac
+      encoded_path=$(urlencode "$path")
+      case $command in
+        setxattr )
+          attributes=$(cat "$xattr_file")
+          xattr_json=$(to_json "$attributes") || exit 1
+          echo "$xattr_json"
+          (
+            $debug && set -x   # If --debug is specified, show curl & jq command
+            curl "${curl_authorization[@]}" \
+                 "${curl_options_common[@]}" \
+                 "${curl_options_post[@]}" \
+                 -X POST "$api/namespace/$encoded_path" \
+                   -d "{\"action\":\"set-xattr\",\"attributes\":$xattr_json}" \
+            | jq -r .status
+          )
+          ;;
+        lsxattr )
+          attributes=$(
+                        $debug && set -x   # If --debug is specified, show curl command
+                        curl "${curl_authorization[@]}" \
+                             "${curl_options_common[@]}" \
+                             "${curl_options_post[@]}" \
+                             -X GET "$api/namespace/$encoded_path?xattr=true"
+                      )
+          if [ -n "$attribute_name"  ] ; then
+            attribute_value=$(echo "$attributes" | jq ".extendedAttributes.$attribute_name")
+            if [ "$attribute_value" == "null" ]; then
+                echo "ERROR: file '$path' does not have attribute '$attribute_name'."
+                exit 1
+            else
+                echo "$attribute_value"
+            fi
+          else
+            echo "$attributes" | jq .extendedAttributes
+          fi
+          ;;
+        rmxattr  )
+          case $attribute_name in
+            --all )
+              # User wants to remove all attributes of this file. We ask the API for a list.
+              names_json=$(
+                            $debug && set -x   # If --debug is specified, show curl & jq command
+                            curl "${curl_authorization[@]}" \
+                                 "${curl_options_common[@]}" \
+                                 "${curl_options_post[@]}" \
+                                 -X GET "$api/namespace/$encoded_path?xattr=true" \
+                            | jq --compact-output '.extendedAttributes | keys'
+                          )
+              if [ "$names_json" == "[]" ] ; then
+                echo "No attributes to remove."
+                exit 0
+              else
+                echo "Removing attributes: $names_json"
+              fi
+              ;;
+            --* )
+              echo 1>&2 "ERROR: unexpected argument '$attribute_name'."
+              exit 1
+              ;;
+            '' )
+              echo 1>&2 "ERROR: expected attribute names to remove, or --all."
+              exit 1
+              ;;
+            * )
+              # User specified which attribute must be removed.
+              # dCache expects a list, but Ada supports only a single item at a time (or --all).
+              names_json=$(jq -n --compact-output --arg name "$attribute_name" '[$name]')
+              ;;
+          esac
+          (
+            $debug && set -x   # If --debug is specified, show curl & jq command
+            curl "${curl_authorization[@]}" \
+                 "${curl_options_common[@]}" \
+                 "${curl_options_post[@]}" \
+                 -X POST "$api/namespace/$encoded_path" \
+                 -d "{\"action\":\"rm-xattr\",\"names\":$names_json}" \
+            | jq -r .status
+          )
+          ;;
+        * )
+          echo 1>&2 "Unexpected xattr command '$command'."
+          exit 1
+          ;;
+      esac
+      ;;
+    findxattr )
+      find_xattr "$path" "$attribute_name" "$regex" "$recursive"
+      ;;
+    checksum )
+      while read -r path ; do
+        type=$(pathtype "$path")
+        case $type in
+          DIR )
+            # It's a directory. Show checksums for files in directory.
+            with_files_in_dir_do get_checksums "$path" "$recursive"
+            ;;
+          REGULAR )
+            # It's a file. Show its checksums.
+            get_checksums "$path"
+            echo
+            ;;
+          '')
+            echo "Warning: could not determine type of object '$path'."
+            ;;
+          LINK )
+            # Do nothing
+            ;;
+          * )
+            echo "Unknown object type '$type'. Please create an issue for this in Github."
+            ;;
+        esac
+      done <<<"$pathlist"
+      ;;
+    stage | unstage )
+      case $command in
+        stage   )  activity='PIN'     ;;
+        unstage )  activity='UNPIN'   ;;
+      esac
+      bulk_request "$activity" "$pathlist" "$recursive"
+      ;;
+    events | report-staged )
+      if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
+        echo 1>&2 "ERROR: your bash version is too old: $BASH_VERSION." \
+             "You need version 4 or newer to use this Ada option."
+        case $OSTYPE in
+          darwin* )
+            echo 1>&2 "Please install a newer bash with:"
+            echo 1>&2 "    brew install bash"
+            ;;
+          * )
+            echo 1>&2 "Please use a system with a newer bash version."
+            ;;
+        esac
+        exit 1
+      fi
+      # Some additional input validation, after construct_auth().
+      # We need an existing directory.
+      if ! is_dir "$path" ; then
+        echo 1>&2 "ERROR: '$path' is not a directory."
+        exit 1
+      fi
+      # Setting up channel
+      channel_url=$(get_channel_by_name "$channel_name")
+      channel_id=$(basename "$channel_url")
+      if [ "$channel_url" = "" ] ; then
+        # Channel doesn't exist; create it.
+        # The new channel's URL will be returned with a "Location:" header.
+        # We catch it with "--dump-header -" (dump headers to stdout) and then an awk.
+        # Elsewhere in Ada, we run curl in a subshell, but we can't do that here,
+        # because then the value of $channel_url would be lost.
+        $debug && set -x
+        channel_url=$(curl "${curl_authorization[@]}" \
+                           "${curl_options_common[@]}" \
+                           "${curl_options_post[@]}" \
+                           --dump-header - \
+                           -X POST "$api/events/channels" -d "{\"client-id\":\"$channel_name\"}" \
+                      | awk '/Location:/ {print $2}' \
+                      | tr -d '\r'
+                     )
+        $debug && set +x
+        if [ -z "$channel_url" ] ; then
+          echo 1>&2 "ERROR: failed to create channel name '$channel_name'."
+          exit 1
+        fi
+        channel_id=$(basename "$channel_url")
+        # There is no API call to translate channel ID back to
+        # channel name. So we keep track of the name ourselves.
+        echo "$channel_name" > "${ada_dir}/channels/channel-name-${channel_id}"
+        # Set channel timeout
+        (
+          $debug && set -x
+          curl "${curl_authorization[@]}" \
+               "${curl_options_common[@]}" \
+               "${curl_options_post[@]}" \
+               -X PATCH "$channel_url" \
+               -d "{\"timeout\": $channel_timeout}"
+        )
+      elif ! $resume ; then
+        # Channel already exists; add --resume to continue
+        echo 1>&2 "ERROR: channel name '$channel_name' is already used. To resume following this channel, add  --resume."
+        exit 1
+      elif [ ! -f "${ada_dir}/channels/channel-name-${channel_id}" ] && ! $force ; then
+        # Channel already exists but channel_name was not saved locally; add --resume and --force to continue      
+        echo 1>&2 "ERROR: channel name '$channel_name' is already used but was not saved locally. Add --force if you still want to resume."
+        exit 1
+      fi
+      echo "Channel: $channel_url"
+      channel_subscribe "$channel_url" "$path" "$recursive"
+      for subscription in $(get_subscriptions_by_channel "$channel_url") ; do
+        list_subscription "$subscription"
+      done
+      case $command in
+        events )
+          echo "Following..."
+          ;;
+        report-staged )
+          echo "Listing initial file status..."
+          list_online_files "$path" "$recursive"
+          echo "Listening for file status changes..."
+          ;;
+      esac
+      follow_channel "$channel_url"
+      ;;
+    channels )
+      first=true
+      get_channels "$channel_name" \
+      | while read -r channel_url ; do
+        # Show empty line between channels
+        ! $first && echo
+        first=false
+        # Show channel ID
+        echo -n "$(basename "$channel_url")"
+        # Show channel name, if that was saved locally
+        # (There is no API call to retrieve the channel name)
+        channel_id=$(basename "$channel_url")
+        if [ -f "${ada_dir}/channels/channel-name-${channel_id}" ] ; then
+          channel_name=$(< "${ada_dir}/channels/channel-name-${channel_id}")
+          echo -n "  name=$channel_name"
+        fi
+        # Show channel properties (for now only the timeout)
+        channel_properties=$(
+          curl "${curl_authorization[@]}" \
+               "${curl_options_common[@]}" \
+               -X GET "$channel_url" \
+          | jq -r 'to_entries[] | [.key, .value] | @tsv' \
+          | tr '\t' '='
+        )
+        # Show event ID, if available
+        channel_status_file="${ada_dir}/channels/channel-status-${channel_id}"
+        if [ -f "$channel_status_file" ] ; then
+          last_event_id=$(grep -E --max-count=1 --only-matching \
+                               '[0-9]+' "$channel_status_file")
+          if [ -n "$last_event_id" ] ; then
+            echo -n "  last-event-id=$last_event_id"
+          fi
+        fi
+        echo "  $channel_properties"
+        # Next, show all subscribed paths in this channel.
+        get_subscriptions_by_channel "$channel_url" \
+        | while read -r subscription ; do
+          {
+            echo -n "$(basename "$subscription")  "
+            list_subscription "$subscription"
+          }
+        done \
+        | sort -k 2,2 \
+        | sed -e 's/^/  /'
+      done
+      ;;
+    delete-channel )
+      channel_url=$(get_channel_by_name "$channel_name")
+      channel_id=$(basename "$channel_url")
+      if [ -z "$channel_url" ] ; then      
+        # Channel doesn't exist
+        echo "Channel '$channel_name' does not exist."
+      else
+        (
+          $debug && set -x
+          curl "${curl_authorization[@]}" \
+               "${curl_options_common[@]}" \
+               "${curl_options_post[@]}" \
+               -X DELETE "$api"/events/channels/"$channel_id"
+        )
+        # delete local channelfiles
+        rm -f "${ada_dir}/channels/channel-name-${channel_id}"
+        rm -f "${ada_dir}/channels/channel-status-${channel_id}"        
+      fi
+      ;;
+    space )
+      if [ -z "$poolgroup" ] ; then
+        (
+          $debug && set -x
+          curl "${curl_authorization[@]}" \
+               "${curl_options_common[@]}" \
+               -X GET "$api/poolgroups" \
+          | jq -r '.[] | .name'
+        )
+      else
+        (
+          $debug && set -x
+          curl "${curl_authorization[@]}" \
+               "${curl_options_common[@]}" \
+               -X GET "$api/poolgroups/$poolgroup/space" \
+          | jq '.groupSpaceData'
+        )
+      fi
+      ;;
+    quota )
+      get_quota
+      ;;
+    * )
+      echo "Command '$command' is not implemented (yet)."
+      ;;
+  esac
+}
+# End api_call()
+
+#
+# Main program
+#
+main() {
+  set_defaults
+  get_args "$@"
+  validate_input
+  setup_dirs
+  construct_auth
+  api_call
+}
+
+
+# Determine if the script is being sourced or executed (run).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    # This script is being run.
+    __name__="__main__"
+else
+    # This script is being sourced.
+    __name__="__source__"
+fi
+
+if [ "$__name__" = "__main__" ]; then
+    main "$@"
+fi

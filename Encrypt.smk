@@ -13,7 +13,6 @@ module Aligner:
 rule Encrypt_all:
     input: 
         expand("{cram}/{sample}.mapped_hg38.cram.copied",sample=sample_names, cram = CRAM)
-    default_target: True
 
 sk = pj(RESOURCES,".c4gh/master_key_for_encryption")
 pk1 = config.get("path_to_public_key_1",  pj(RESOURCES, ".c4gh/recipient1.pub"))
@@ -37,7 +36,7 @@ rule Encrypt_crams:
         n="0.3"
     shell:
         """
-        crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
+        python -m crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
         """
 
 rule copy_to_dcache:
@@ -45,44 +44,67 @@ rule copy_to_dcache:
         cram=rules.Encrypt_crams.output.enCRAM,
         crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai")
     resources:
-        mem_mb=2000,
-        n="0.1"
+        mem_mb=1500,
+        n="0.2"
+    params:
+        ada_script = srcdir(ADA) #temporarily as ada on Snellius is out of date
     output:
-        copied = pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
-        sum = pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32")
+        copied = temp(pj(CRAM,"{sample}.mapped_hg38.cram.copied")),
+        sum = temp(pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32"))
     run:
 
         sample = SAMPLEINFO[wildcards['sample']]
         target = sample['target']
+        samplefile = os.path.basename(sample['samplefile'])
 
         if target is None:
-            target = sample['study'] + '/' + sample['samplefile'] 
+            target = os.path.join(sample['study'], samplefile)
 
         if target.endswith('/'):
             target = target[:-1]
 
+        target_cram = os.path.join(target, "cram")
+
         input_cram = os.path.basename(input['cram'])
         input_crai = os.path.basename(input['crai'])
 
+        ADLER32_local = 1
         with open(input.cram, 'rb') as f:
-            data = f.read()
-            ADLER32_local = zlib.adler32(data)
+            for chunk in iter(lambda: f.read(16 * 1024 * 1024), b''):
+                ADLER32_local = zlib.adler32(chunk, ADLER32_local)
+        ADLER32_local &= 0xffffffff
+
+        import sys
+        sys.stderr.write('PATHS: ' + target + ' ' +  sample['study'] + ' ' +  sample['samplefile'] + ' ' +  input_cram)
+        sys.stderr.flush()
        
         ADLER32_remote = ''
         retry_counter = 0
+        sys.stderr.write(f'\nCH {ADLER32_local:08x}\n')
+        sys.stderr.flush()
+
         while f'{ADLER32_local:08x}' != ADLER32_remote and retry_counter <= 3:
-            try:
-                shell("rclone --config {agh_dcache} copy {input.cram} agh_processed:{target}/{input_cram}")
-                shell("rclone --config {agh_dcache} copy {input.crai} agh_processed:{target}/{input_crai}")
-                shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
-            except:
-                shell("{ada} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target}/{input_cram} | awk '{{print$2}}' | awk -F '=' '{{print$2}}' > {output.sum}")
+            shell("rclone --config {agh_dcache} mkdir -v agh_processed:{target_cram}")            
+            
+            shell("rclone --config {agh_dcache} -v copyto {input.cram} agh_processed:{target_cram}/{input_cram}")
+            
+            shell("rclone --config {agh_dcache} -v copyto {input.crai} agh_processed:{target_cram}/{input_crai}")
+
+            shell("{params.ada_script} --tokenfile {agh_dcache} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {target_cram}/{input_cram} | awk '{{print $2}}' | awk -F '=' '{{print $2}}' > {output.sum}")
+              
             with open(output.sum, 'r') as sum_file:
                 ADLER32_remote = sum_file.readline().rstrip('\n')
             retry_counter += 1
+
+            sys.stderr.write(f'\nCOMPARE #{ADLER32_local:08x}# != #{ADLER32_remote}#\n')
+            sys.stderr.write(f'{target}\n')
+            sys.stderr.write(f'{input_cram}\n')
+            sys.stderr.write(f'{input_crai}\n')
+            sys.stderr.flush()
+
             if f'{ADLER32_local:08x}' != ADLER32_remote:
-                shell("rclone --config {agh_dcache} delete agh_processed:{target}/{input_cram}")
-                shell("rclone --config {agh_dcache} deletefile agh_processed:{target}/{input_crai}")
+                shell("rclone --config {agh_dcache} -v deletefile  agh_processed:{target_cram}/{input_cram}")
+                shell("rclone --config {agh_dcache} -v deletefile agh_processed:{target_cram}/{input_crai}")
                 time.sleep(60)
                 
 

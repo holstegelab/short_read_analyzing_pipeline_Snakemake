@@ -10,11 +10,12 @@ dependencies:
 - pigz=2.6
 - bcftools=1.17
 - bedtools=2.30.0
-- scipy=1.9.1
-- cnvkit=0.9.9
+- scipy
+- biopython
 - r-ggplot2=3.3.6
 - python-crypt4gh=1.6
-- python=3.10
+- python=3.12
 - h5py
 - numpy
+- bwa=0.7.17
 name: preprocess

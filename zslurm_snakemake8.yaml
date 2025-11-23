@@ -4,6 +4,7 @@ use-conda: True
 use-singularity: True
 conda-prefix: /home/hulsmanm/.snakemake
 apptainer-prefix: /home/hulsmanm/.apptainer
+singularity-args: "-B /scratch-node:/scratch-node"
 executor: zslurm
 default-resources:
     - partition=compute
@@ -18,6 +19,8 @@ default-resources:
     - mem_mb=500
     - input_mb=input.size_mb
     - limit_auto_threads=8
+    - ssd_gb=0
+    - ssd_use="no"
 set-resource-scopes:
     - n=local
 jobs: 100000
