@@ -606,7 +606,7 @@ rule hs_stats:
         validated_sex=pj(KMER,"{sample}.result.yaml"),
         targets=ancient(TARGETS_IVL),
     output:
-        HS_metrics=temp(pj(STAT,"{sample}.hs_metrics"))
+        HS_metrics=(pj(STAT,"{sample}.hs_metrics"))
     priority: 99
     params:
         ref=get_ref_by_validated_sex,
@@ -1173,22 +1173,28 @@ rule mospeth_mergedCK:
 
 
 rule get_capture_kit:
-    input: bam = pj(BAM,"{sample}.markdup.bam"),
-            target = MERGED_CAPTURE_KIT_BED,
-            precomputed_data = PRECOMPUTEED_BED,
-    output: capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv"),
-            cov_decompressed = temp(pj(STAT,"cov","{sample}.regions.bed")),
-    params: expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
-            CAPTURE_KIT_CHECKER = srcdir(CAPTURE_KIT_CHECKER)
+    input: 
+        bam = pj(BAM,"{sample}.markdup.bam"),
+        target = MERGED_CAPTURE_KIT_BED,
+    output: 
+        capture_kit_stats = pj(STAT,"{sample}.capture_kit_stats.tsv"),
+        cov_decompressed = temp(pj(STAT,"cov","{sample}.regions.bed")),
+    params: 
+        expected_kit = lambda wildcards: SAMPLEINFO[wildcards['sample']]['capture_kit'],
+        CAPTURE_KIT_CHECKER = srcdir(CAPTURE_KIT_CHECKER)
     conda: CONDA_CK_FINDER
-    resources: n = "16",
-               mem_mb = 8000
+    resources: 
+        n = "16",
+        mem_mb = 8000
     shell:
         """
-        mosdepth --threads 16 -n --by {input.target} {wildcards.sample} {input.bam}
-        pigz {output.cov_decompressed}.gz
-        python scripts/infer_capture_kit.py \
+        set -ex
+        mosdepth --threads {resources.n} -n --by {input.target} {wildcards.sample} {input.bam}
+        mkdir -p $(dirname {output.cov_decompressed})
+        gunzip -c {wildcards.sample}.regions.bed.gz > {output.cov_decompressed}
+        python {params.CAPTURE_KIT_CHECKER} \
             --coverage {output.cov_decompressed} \
             --metadata_capture {params.expected_kit} \
-            --output {output.capture_kit_stats} \
+            --output {output.capture_kit_stats}
+        rm {wildcards.sample}.regions.bed.gz {wildcards.sample}.mosdepth.summary.txt
         """
