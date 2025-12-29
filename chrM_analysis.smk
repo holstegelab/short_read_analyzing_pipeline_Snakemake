@@ -358,6 +358,40 @@ rule mutect_bp_resolution_both:
         tabix {output.merged_vcf_with_anno_NUMT}
         """
 
-######################################
-#####   Process NUMTs regions   ######
-######################################
+rule estimate_mtdna_copy_number_wes:
+    input:
+        cov_file="stats/cov/{sample}.regions.bed.gz"
+    output:
+        cn_file=ensure(pj(chrM, "stats", "{sample}.mtDNA_CN.txt"), non_empty=True)
+    resources:
+        n=1,
+        mem_mb=100
+    shell:
+        r"""
+        zcat {input.cov_file} | \
+        awk 'BEGIN {{ total_len=0; total_cov=0; mt_len=0; mt_cov=0; }}
+             $1 ~ /^chr/ {{
+                 len=$3-$2;
+                 if ($1 == "chrM") {{
+                     mt_len += len;
+                     mt_cov += $4 * len;
+                 }} else if ($1 ~ /^chr[0-9XY]+$/) {{
+                     total_len += len;
+                     total_cov += $4 * len;
+                 }}
+             }}
+             END {{
+                 if (total_len > 0 && mt_len > 0) {{
+                     nuc_cov = total_cov / total_len;
+                     mt_mean_cov = mt_cov / mt_len;
+                     if (nuc_cov > 0) {{
+                         mtdna_cn = (mt_mean_cov / nuc_cov) * 2;
+                         print "{wildcards.sample}\t"mtdna_cn;
+                     }} else {{
+                         print "{wildcards.sample}\tNA";
+                     }}
+                 }} else {{
+                     print "{wildcards.sample}\tNA";
+                 }}
+             }}' > {output.cn_file}
+        """

@@ -11,4 +11,5 @@ dependencies:
   - pybedtools
   - pandas
   - pigz = 2.6
+  - mosdepth
 name: capture_kit_finder
