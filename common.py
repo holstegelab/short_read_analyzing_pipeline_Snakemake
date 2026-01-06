@@ -368,11 +368,9 @@ def get_strref_by_validated_sex(wildcards, input):
     sex = get_validated_sex_file(input)
     return REF_FEMALE_STR if sex == 'female' else REF_MALE_STR
 
-def node_ssd_base():
+def node_ssd_base(tmpdir_fallback=None):
     user = os.environ.get('USER','')
     slurm_tmp = os.environ.get('SLURM_TMPDIR')
-    if slurm_tmp and os.path.isdir(slurm_tmp) and os.access(slurm_tmp, os.W_OK):
-        return slurm_tmp
     job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID')
     if job_id:
         p = f"/scratch-node/{user}.{job_id}"
@@ -388,6 +386,10 @@ def node_ssd_base():
         if entries:
             entries.sort(key=lambda q: os.stat(q).st_mtime, reverse=True)
             return entries[0]
+    if tmpdir_fallback:
+        return tmpdir_fallback
+    if slurm_tmp and os.path.isdir(slurm_tmp) and os.access(slurm_tmp, os.W_OK):
+        return slurm_tmp
     if os.path.isdir(TMPDIR_ALT) and os.access(TMPDIR_ALT, os.W_OK):
         return os.path.join(TMPDIR_ALT, user)
     if os.path.isdir('/tmp') and os.access('/tmp', os.W_OK):

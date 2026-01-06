@@ -12,6 +12,44 @@ from Bio.Seq import Seq
 from bam_utils import *
 from fastq_utils import *
 
+QUAL_SHIFT = 0
+
+def _qual_norm(q):
+    return q.replace('#', '!')
+
+def _qual_shift(q, shift):
+    if shift == 0:
+        return q
+    return ''.join(chr(ord(c) + shift) for c in q)
+
+def _apply_known_shift(fastqrecord):
+    global QUAL_SHIFT
+    if QUAL_SHIFT == 0:
+        return fastqrecord
+    name, seq1, seq2, qual1, qual2 = fastqrecord
+    return (name, seq1, seq2, _qual_shift(qual1, QUAL_SHIFT), _qual_shift(qual2, QUAL_SHIFT))
+
+def _bam_oriented_qual_prefix(read, fastq_qual):
+    if read.is_reversed():
+        rqual = fastq_qual[::-1]
+        return rqual[-len(read.qual):]
+    return fastq_qual[:len(read.qual)]
+
+def _maybe_enable_phred64_shift(read, fastq_qual):
+    global QUAL_SHIFT
+    if QUAL_SHIFT != 0:
+        return
+    if read is None:
+        return
+    if read.qual == '*' or read.qual is None:
+        return
+    q1 = _bam_oriented_qual_prefix(read, fastq_qual)
+    q2 = read.qual
+    if _qual_norm(q1) == _qual_norm(q2):
+        return
+    if _qual_norm(_qual_shift(q1, -31)) == _qual_norm(q2):
+        QUAL_SHIFT = -31
+
 def check_qual(read_name, q1, q2):
     if q1 == q2:
         return
@@ -111,6 +149,7 @@ def adapt_supplementary(read, length, stats):
     read.tags['XT'] = length
 
 def process(querygroup, fastqrecord, stats):
+    fastqrecord = _apply_known_shift(fastqrecord)
     name, seq1, seq2, qual1, qual2 = fastqrecord
     
     stats['alignments'] = stats.get('alignments',0) + len(querygroup)
@@ -120,6 +159,16 @@ def process(querygroup, fastqrecord, stats):
     
     reads1 = process_readgroup([row for row in querygroup if row.flag & 0x40])
     reads2 = process_readgroup([row for row in querygroup if row.flag & 0x80])
+
+
+    _maybe_enable_phred64_shift(reads1.get('primary'), qual1)
+    if QUAL_SHIFT != 0:
+        qual1 = _qual_shift(qual1, QUAL_SHIFT)
+        qual2 = _qual_shift(qual2, QUAL_SHIFT)
+    _maybe_enable_phred64_shift(reads2.get('primary'), qual2)
+    if QUAL_SHIFT != 0:
+        qual1 = _qual_shift(qual1, QUAL_SHIFT)
+        qual2 = _qual_shift(qual2, QUAL_SHIFT)
 
 
     r1_ncigar, r1_tags, r1_len = derive_missing_sequence_tags(reads1['primary'], seq1, qual1, stats)
@@ -174,6 +223,7 @@ def process(querygroup, fastqrecord, stats):
 
 
 def fastqtosam(fastqrecord, rg, stats):
+    fastqrecord = _apply_known_shift(fastqrecord)
     name, seq1, seq2, qual1, qual2 = fastqrecord
     stats['restored_bp_read1'] = stats.get('restored_bp_read1', 0) + len(seq1)
     stats['restored_bp_read2'] = stats.get('restored_bp_read2', 0) + len(seq2)

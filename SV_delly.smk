@@ -2,7 +2,6 @@ import pandas as pd
 import read_stats
 import os
 configfile: srcdir("Snakefile.cluster.json")
-configfile: srcdir("Snakefile.paths.yaml")
 
 gatk = config['gatk']
 samtools = config['samtools']

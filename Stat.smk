@@ -8,6 +8,7 @@ import glob
 from shlex import quote
 import math
 import read_samples
+import datetime
 
 onsuccess: shell("rm -fr logs/Stats/*")
 
@@ -52,9 +53,6 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
         SAMPLEINFO[sample] = sinfo
     return sinfo  #}}}
 
-
-
-
 rule Stat_all:
     input:
         expand("{samplefile}.oxo_quality.tab",samplefile=SAMPLE_FILES),
@@ -66,7 +64,6 @@ rule Stat_all:
         expand("{samplefile}.deepvariant_bcftools.tab",samplefile=SAMPLE_FILES),
         expand("{samplefile}.phase_quality.tab",samplefile=SAMPLE_FILES),
         # expand(pj(STAT,"{sample}.capture_kit_stats.tsv"), sample=sample_names),
-
 
 def get_rg_files(wildcards):
     """Get sorted bam index files for all readgroups for a given sample."""
@@ -81,8 +78,6 @@ def get_rg_files(wildcards):
         files.append(pj(STAT, f"{wildcards['sample']}.{readgroup['info']['ID']}.dechimer_stats.tsv"))
        
     return files
-
-
 
 rule tar_stats_per_sample:
     input:
@@ -115,7 +110,6 @@ rule tar_stats_per_sample:
             tar -czvf {output.tar} {input.error_summary} {input.mosdepth_dist} {input.ancestry} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} {input.sex_y} {input.rg_logs} {input.chrM} {input.numt} {input.phase}
             """
 
-
 rule coverage:
     """Estimates coverage using the mosdepth tool"""
     input:
@@ -141,7 +135,6 @@ rule coverage:
             mosdepth  --threads 2 -b {params.bed} --no-per-base {params.prefix} {input.bam}
         """
 
-
 rule chrM_and_numt_read_stats:
     input:
         chrm_bam=pj(chrM, '{sample}_chrM_orig.reads.bam'),
@@ -163,7 +156,6 @@ rule chrM_and_numt_read_stats:
         shell(f"python {quote(script)} --bam {quote(str(input.chrm_bam))} --threads {n} --exclude-flags 1024 --output {quote(str(output.chrM))}")
         shell(f"python {quote(script)} --bam {quote(str(input.numt_bam))} --threads {n} --exclude-flags 1024 --output {quote(str(output.numt))}")
 
-
 def get_whatsHap_stats_inputs(wildcards):  #{{{
     sample = wildcards['sample']
     # For WGS, stats are produced for level0 regions (F, X, Y)
@@ -174,9 +166,7 @@ def get_whatsHap_stats_inputs(wildcards):  #{{{
         regions = level0_regions
     return [pj(STAT, 'whatshap_dvphasing', f"{sample}.{region}.stats") for region in regions]
 
-
 #}}}
-
 
 rule whatsHap_phase_stats:
     input:
@@ -197,7 +187,6 @@ rule whatsHap_phase_stats:
         cmd = f"python {params.script} --sample {quote(wildcards.sample)} --sex-yaml {quote(sex_yaml)} --inputs {inputs_q} --output {quote(str(output[0]))}"
         shell(cmd)
 
-
 rule copy_stats_tar_to_dcache:
     input:
         tar=pj(STAT, "{samplefile}.stats_bundle.tar.gz")
@@ -217,7 +206,6 @@ rule copy_stats_tar_to_dcache:
 
         copy_with_checksum(str(input.tar), remote_dir, remote_name, str(output.checksum), AGH_DCACHE_CONFIG, params.ada_script)
         shell(f"touch {quote(str(output.copied))}")
-
 
 rule copy_excluded_to_dcache:
     input:
@@ -353,7 +341,6 @@ rule copy_excluded_to_dcache:
 
         shell(f"touch {quote(str(output.copied))}")
 
-
 def _samplefile_local_path(samplefile):
     return os.path.realpath(samplefile + '.tsv')
 
@@ -362,7 +349,6 @@ def _exclude_filename(samplefile_path):
     if base.endswith('.tsv'):
         base = base[:-4]
     return base + '.exclude'
-
 
 rule copy_samplefile_stats_to_dcache:
     input:
@@ -418,7 +404,6 @@ rule copy_samplefile_stats_to_dcache:
 
         shell(f"touch {quote(str(output.copied))}")
 
-
 rule tar_badmap_fastqs:
     input:
         fastq1=pj(FQ_BADMAP, "{sample}.badmap.R1.fastq.gz"),
@@ -444,7 +429,6 @@ rule tar_badmap_fastqs:
                 tar_handle.add(local_path, arcname=arcname)
 
         os.replace(staging_path, out_path)
-
 
 rule copy_badmap_to_dcache:
     input:
@@ -479,13 +463,11 @@ rule copy_badmap_to_dcache:
 
         shell(f"touch {quote(str(output.copied))}")
 
-
 rule badmap_tar_all:
     input:
         expand(pj(FQ_BADMAP, "{sample}.badmap.tar.copied"), sample=sorted(sample_names))
     output:
         done=touch(pj(FQ_BADMAP, "badmap_uploads.done"))
-
 
 rule stats_to_dcache_all:
     input:
@@ -495,31 +477,26 @@ rule stats_to_dcache_all:
     output:
         done=touch(pj(STAT, "stats_uploads.done"))
 
-
 rule excluded_to_dcache_all:
     input:
         expand(pj(STAT, "{samplefile}.excluded.copied"), samplefile=SAMPLE_FILES)
     output:
         done=touch(pj(STAT, "excluded_uploads.done"))
 
-
 def get_regions(wildcards):  #{{{
     samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
     samples.sort()
     return [pj(STAT,'cov','{sample}.regions.bed.gz'.format(sample=sample)) for sample in samples]  #}}}
-
 
 def get_stats_samtools(wildcards):  #{{{
     samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
     samples.sort()
     return [pj(STAT,'{sample}.samtools.stat'.format(sample=sample)) for sample in samples]  #}}}
 
-
 def get_samplefile_stat_tars(wildcards):  #{{{
     samples = list(SAMPLEFILE_TO_SAMPLES[wildcards['samplefile']])
     samples.sort()
     return [pj(STAT, f"{sample}.stats.tar.gz") for sample in samples]  #}}}
-
 
 rule bundle_stats_tar_per_samplefile:
     input:
@@ -535,7 +512,6 @@ rule bundle_stats_tar_per_samplefile:
             for path in input:
                 print(path)
                 tar_handle.add(path, arcname=os.path.basename(path))
-
 
 rule write_samplefile_coverage_hdf5:
     input:
@@ -554,12 +530,10 @@ rule write_samplefile_coverage_hdf5:
 
         read_stats.write_coverage_to_hdf5(annotation,samples,list(input.mapped),list(input.cov),output.hdf5)
 
-
 def get_svd(wildcards):  #{{{
     """Returns the VerifyBamID SVD file for the sample type of the sample"""
     sinfo = SAMPLEINFO[wildcards['sample']]
     return VERIFYBAMID_WGS if 'wgs' in sinfo['sample_type'] else VERIFYBAMID_EXOME  #}}}
-
 
 rule verifybamid:
     """Estimates contamination in a sample using the verifybamid2 tool"""
@@ -595,7 +569,6 @@ def get_capture_kit_interval_list(wildcards):  #{{{
         else: 
             capture_kit = pj(INTERVALS_DIR,SAMPLEINFO[wildcards['sample']]['capture_kit'] + '.interval_list')
     return capture_kit  #}}}
-
 
 rule hs_stats:
     """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
@@ -722,7 +695,6 @@ rule bamstats_all_and_exome:
         samtools view -s 0.05 -h {input.bam} --threads {resources.n} -L {params.bed_interval} | pypy {params.py_stats} stats > {output.exome}
         """
 
-
 def get_quality_stats(wildcards):  #{{{
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     samples = sorted(sampleinfo.keys())
@@ -744,7 +716,6 @@ def get_quality_stats(wildcards):  #{{{
         )
 
     return required
-
 
 #}}}
 
@@ -794,9 +765,11 @@ rule gatherstats:
 def get_rg_quality_stats(wildcards):  #{{{
     smsinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
     sample_readgroups = []
-    for sample in sorted(smsinfo.keys()):
+    samples = sorted(smsinfo.keys())    
+    for i, sample in enumerate(samples):        
         x = sampleinfo(SAMPLEINFO, sample, checkpoint=True)
-        for readgroup in x['readgroups']:
+        rgs = x['readgroups']        
+        for readgroup in rgs:
             sample_readgroups.append((sample, readgroup['info']['ID']))
 
     sample_readgroups.sort()
@@ -808,9 +781,8 @@ def get_rg_quality_stats(wildcards):  #{{{
         required.append(pj(STAT, f"{sample}.{rg}.merge_stats.tsv"))
         required.append(pj(STAT, f"{sample}.{rg}.dragmap.log"))
         required.append(pj(STAT, f"{sample}.{rg}.dechimer_stats.tsv"))
-
+    
     return required
-
 
 #}}}
 
@@ -869,9 +841,11 @@ rule gather_rg_stats:
     run:
         smsinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
         sample_readgroups = []
-        for sample in sorted(smsinfo.keys()):
+        samples = sorted(smsinfo.keys())
+        for i, sample in enumerate(samples):
             x = sampleinfo(SAMPLEINFO, sample, checkpoint=True)
-            for readgroup in x['readgroups']:
+            rgs = x['readgroups']
+            for readgroup in rgs:
                 sample_readgroups.append((sample, readgroup['info']['ID']))
 
         sample_readgroups.sort()
@@ -881,10 +855,14 @@ rule gather_rg_stats:
         mergestats = [pj(STAT, f"{sample}.{rg}.merge_stats.tsv") for sample, rg in sample_readgroups]
         dragmap_stats = [pj(STAT, f"{sample}.{rg}.dragmap.log") for sample, rg in sample_readgroups]
         dechimer_stats = [pj(STAT, f"{sample}.{rg}.dechimer_stats.tsv") for sample, rg in sample_readgroups]
-
-        header, data = read_stats.combine_rg_quality_stats(sample_readgroups,aremoval,aidentify,mergestats,dragmap_stats,dechimer_stats)
-        read_stats.write_tsv(str(output),header,data)
-
+        
+        missing_inputs = [p for p in list(input) if not os.path.exists(str(p))]
+        if missing_inputs:
+            raise FileNotFoundError(f"gather_rg_stats missing {len(missing_inputs)} inputs; first_missing={missing_inputs[:5]}")
+        
+        header, data = read_stats.combine_rg_quality_stats(sample_readgroups,aremoval,aidentify,mergestats,dragmap_stats,dechimer_stats)        
+        out_path = str(output[0])        
+        read_stats.write_tsv(out_path,header,data)        
 
 def get_oxo_stats(wildcards):  #{{{
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]

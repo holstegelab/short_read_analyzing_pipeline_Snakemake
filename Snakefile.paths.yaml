@@ -53,7 +53,7 @@ dragmap: 'dragen-os'
 verifybamid2: 'verifybamid2'
 
 #custom scripts
-BAMMERGE: 'scripts/bam_merge.py'
+BAMMERGE: 'scripts/bam_merge'
 BAMSTATS: 'scripts/bam_stats.py'
 DECHIMER: 'scripts/bam_dechimer'
 DECHIMER_THRESHOLD: 0.005

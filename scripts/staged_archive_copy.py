@@ -591,7 +591,7 @@ class Copier:
             run_command(["rclone", "--config", str(self.config_path), "mkdir", f"{self.remote}:{remote_dir}"])
 
     def _rclone_copy(self, local_path: Path, remote_dir: str, remote_name: str):
-        run_command(["rclone", "--config", str(self.config_path), "-v", "copyto", str(local_path), f"{self.remote}:{remote_dir}/{remote_name}"])
+        run_command(["rclone", "--config", str(self.config_path), "-v", "--timeout", "600m", "copyto", str(local_path), f"{self.remote}:{remote_dir}/{remote_name}"])
 
     def _rclone_delete(self, remote_dir: str, remote_name: str):
         run_command(["rclone", "--config", str(self.config_path), "-v", "deletefile", f"{self.remote}:{remote_dir}/{remote_name}"])

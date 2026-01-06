@@ -317,12 +317,55 @@ def read_merge_stats(filename):
         row = rows.pop(0).strip()
         if not row:
             break 
-        key,value = row.split('\t')
-        result['merge_' + key] = float(value)
-    result['merge_readded_fragments_ratio'] = result['merge_readded_fragments'] / result['merge_fragments']
-    result['merge_supplementary_alignments_ratio'] = result['merge_supplementary_alignments'] / result['merge_alignments']
-    result['merge_restored_read_ratio'] = (result['merge_restored_read1s'] + result['merge_restored_read2s']) / (2.0 * result['merge_fragments'])
-    result['merge_restored_bp_ratio'] = (result['merge_restored_bp_read1'] + result['merge_restored_bp_read2']) / result['merge_total_bp']
+        if '\t' not in row:
+            break
+        key,value = row.split('\t', 1)
+        try:
+            result['merge_' + key] = float(value)
+        except ValueError:
+            break
+    for _k in [
+        'merge_fragments',
+        'merge_alignments',
+        'merge_total_bp',
+        'merge_primary_soft_clipped_bp_ratio',
+        'merge_supplementary_bp_ratio',
+        'merge_supplementary_alignments',
+        'merge_readded_fragments',
+        'merge_restored_read1s',
+        'merge_restored_read2s',
+        'merge_restored_bp_read1',
+        'merge_restored_bp_read2',
+    ]:
+        result.setdefault(_k, 0.0)
+    def _safe_div(numerator, denominator, default=0.0):
+        try:
+            if denominator == 0 or denominator == 0.0:
+                return default
+            return numerator / denominator
+        except Exception:
+            return default
+
+    merge_fragments = result.get('merge_fragments', 0.0)
+    merge_alignments = result.get('merge_alignments', 0.0)
+    merge_total_bp = result.get('merge_total_bp', 0.0)
+
+    result['merge_readded_fragments_ratio'] = _safe_div(
+        result.get('merge_readded_fragments', 0.0),
+        merge_fragments,
+    )
+    result['merge_supplementary_alignments_ratio'] = _safe_div(
+        result.get('merge_supplementary_alignments', 0.0),
+        merge_alignments,
+    )
+    result['merge_restored_read_ratio'] = _safe_div(
+        (result.get('merge_restored_read1s', 0.0) + result.get('merge_restored_read2s', 0.0)),
+        (2.0 * merge_fragments),
+    )
+    result['merge_restored_bp_ratio'] = _safe_div(
+        (result.get('merge_restored_bp_read1', 0.0) + result.get('merge_restored_bp_read2', 0.0)),
+        merge_total_bp,
+    )
     return result
 
 def read_dechimer_stats(filename):
@@ -340,6 +383,82 @@ def read_dechimer_stats(filename):
                                         (2.0 * result.get('dechimer_fragment_counter',1.0))
         
     return result
+def read_dragmap_stats(filename):
+    result_values = {}
+    result_ratio = {}
+    with open(filename, 'r') as f:
+        rows = f.readlines()
+
+    mappingrows = [e.split(',')[2:] for e in rows if 'MAPPING' in e]
+    print(filename)
+
+    def _parse_dragmap_number(text: str, metric_key: str) -> float:
+        s = text.strip()
+        if s.upper() == 'NA' or s == '':
+            print(
+                f"Warning: dragmap metric {metric_key} has value '{s}' in {filename}; using NaN",
+                flush=True,
+            )
+            return float('nan')
+        return float(s)
+
+    for row in mappingrows:
+        key = 'dm_' + valid_name(row[0].strip())
+        value = _parse_dragmap_number(row[1], key)
+        if len(row) > 2:
+            ratio = _parse_dragmap_number(row[2], key)
+            result_ratio[key] = ratio
+        result_values[key] = value
+
+    missing_ratio_keys = set()
+    missing_value_keys = set()
+
+    def _get_ratio(key: str) -> float:
+        if key not in result_ratio:
+            missing_ratio_keys.add(key)
+            return 0.0
+        return result_ratio[key]
+
+    def _get_value(key: str) -> float:
+        if key not in result_values:
+            missing_value_keys.add(key)
+            return 0.0
+        return result_values[key]
+
+    r_indel_r1 = _get_ratio('dm_reads_with_indel_r1')
+    r_indel_r2 = _get_ratio('dm_reads_with_indel_r2')
+    result_ratio['dm_reads_with_indel'] = (r_indel_r1 + r_indel_r2) / 2.0
+
+    sc_r1 = _get_ratio('dm_soft_clipped_bases_r1')
+    sc_r2 = _get_ratio('dm_soft_clipped_bases_r2')
+    result_ratio['dm_soft_clipped_bases'] = (sc_r1 + sc_r2) / 2.0
+
+    mm_r1 = _get_ratio('dm_mismatched_bases_r1')
+    mm_r2 = _get_ratio('dm_mismatched_bases_r2')
+    result_ratio['dm_mismatched_bases'] = (mm_r1 + mm_r2) / 2.0
+
+    mm_excl_r1 = _get_ratio('dm_mismatched_bases_r1_excl_indels')
+    mm_excl_r2 = _get_ratio('dm_mismatched_bases_r2_excl_indels')
+    result_ratio['dm_mismatched_bases_excl_indels'] = (mm_excl_r1 + mm_excl_r2) / 2.0
+
+    result_ratio['dm_q30_bases_diff'] = _get_ratio('dm_q30_bases_r1') - _get_ratio('dm_q30_bases_r2')
+    result_ratio['dm_soft_clipped_bases_diff'] = sc_r1 - sc_r2
+    result_ratio['dm_reads_with_indel_diff'] = r_indel_r1 - r_indel_r2
+    result_ratio['dm_mismatched_bases_diff'] = mm_r1 - mm_r2
+
+    mapped_bases_r1 = _get_value('dm_mapped_bases_r1')
+    mapped_bases_r2 = _get_value('dm_mapped_bases_r2')
+    result_values['dm_mapped_bases'] = mapped_bases_r1 + mapped_bases_r2
+
+    if missing_ratio_keys:
+        missing_sorted = ', '.join(sorted(missing_ratio_keys))
+        print(f"Warning: Missing dragmap ratio metrics [{missing_sorted}] in {filename}; using 0.0 defaults", flush=True)
+    if missing_value_keys:
+        missing_sorted = ', '.join(sorted(missing_value_keys))
+        print(f"Warning: Missing dragmap value metrics [{missing_sorted}] in {filename}; using 0.0 defaults", flush=True)
+    return (result_values, result_ratio)
+
+
 def valid_name(name):
     name = name.lower()
     newname = []
@@ -359,36 +478,9 @@ def valid_name(name):
         
     return str(newname)
 
-def read_dragmap_stats(filename):
-    result_values = {}
-    result_ratio = {}
-    with open(filename, 'r') as f:
-        rows = f.readlines()
-    
-    mappingrows = [e.split(',')[2:] for e in rows if 'MAPPING' in e]
-    print(filename)
-    for row in mappingrows:
-        key = 'dm_' + valid_name(row[0].strip())
-        value = float(row[1].strip())
-        if len(row) > 2:
-            ratio = float(row[2].strip())
-            result_ratio[key] = ratio
-        result_values[key] = value
-
-    result_ratio['dm_reads_with_indel'] = (result_ratio['dm_reads_with_indel_r1'] + result_ratio['dm_reads_with_indel_r2']) / 2.0        
-    result_ratio['dm_soft_clipped_bases'] = (result_ratio['dm_soft_clipped_bases_r1'] + result_ratio['dm_soft_clipped_bases_r2']) / 2.0
-    result_ratio['dm_mismatched_bases'] = (result_ratio['dm_mismatched_bases_r1'] + result_ratio['dm_mismatched_bases_r2']) / 2.0
-    result_ratio['dm_mismatched_bases_excl_indels'] = (result_ratio['dm_mismatched_bases_r1_excl_indels'] + result_ratio['dm_mismatched_bases_r2_excl_indels']) / 2.0
-    result_ratio['dm_q30_bases_diff'] = (result_ratio['dm_q30_bases_r1'] - result_ratio['dm_q30_bases_r2'])
-    result_ratio['dm_soft_clipped_bases_diff'] = (result_ratio['dm_soft_clipped_bases_r1'] - result_ratio['dm_soft_clipped_bases_r2'])
-    result_ratio['dm_reads_with_indel_diff'] = (result_ratio['dm_reads_with_indel_r1'] - result_ratio['dm_reads_with_indel_r2'])
-    result_ratio['dm_mismatched_bases_diff'] = (result_ratio['dm_mismatched_bases_r1'] - result_ratio['dm_mismatched_bases_r2'])
-    result_values['dm_mapped_bases'] = result_values['dm_mapped_bases_r1'] + result_values['dm_mapped_bases_r2']
-    return (result_values, result_ratio)
-        
 
 def combine_rg_quality_stats(sample_readgroups, adapter_removals, adapters, merge_stats, dragmaps, dechimers):
-    
+    # ... rest of the code remains the same ...
     header = ['sample','readgroup']
     header_adapterr = ['ar_read_pairs', 'ar_aligned_fraction', 'ar_adapter_fraction', 'ar_retained_fraction', 'ar_average_read_length_retained']
     header_adapteri = ['ai_reads_aligned','ai_n_adapter','ai_adapter1','ai_adapter2']
