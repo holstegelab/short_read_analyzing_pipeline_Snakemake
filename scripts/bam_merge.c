@@ -160,11 +160,11 @@ static void print_unmapped_sam_pair(FILE *out, const FastqPair *fq, const char *
 }
 
 // --- FASTQ reader via pigz -dc ---
-typedef struct { FILE *fa; FILE *fb; Hash buf; size_t max_buf; int eof_a; int eof_b; } FastqCtx;
+typedef struct { FILE *fa; FILE *fb; Hash buf; size_t max_buf; int eof_a; int eof_b; int qual_shift; } FastqCtx;
 
 static FILE* pigz_open(const char *path){
     char *cmd=NULL; size_t n = strlen(path)+20; cmd = (char*)malloc(n);
-    snprintf(cmd, n, "pigz -dc %s", path);
+    snprintf(cmd, n, "pigz -dc '%s'", path);
     FILE *fp = popen(cmd, "r");
     free(cmd);
     return fp;
@@ -175,6 +175,7 @@ static void fqctx_init(FastqCtx *fc, const char *a, const char *b){
     fc->fb = pigz_open(b);
     hash_init(&fc->buf, 8192);
     fc->max_buf = 200000; fc->eof_a=0; fc->eof_b=0;
+    fc->qual_shift = 0;
     if(fc->fa) setvbuf(fc->fa, NULL, _IOFBF, 1<<20);
     if(fc->fb) setvbuf(fc->fb, NULL, _IOFBF, 1<<20);
 }
@@ -204,10 +205,33 @@ static int read_fastq(FILE *f, char **name, char **seq, char **qual){
     return 1;
 }
 
+static void qual_shift_inplace(char *q, int shift){
+    if(!q || shift==0) return;
+    for(char *p=q; *p; ++p){ *p = (char)((int)(unsigned char)(*p) + shift); }
+}
+
+static void fqctx_apply_shift(FastqCtx *fc, int shift){
+    if(!fc) return;
+    if(fc->qual_shift == shift) return;
+    fc->qual_shift = shift;
+    if(!fc->buf.b) return;
+    for(size_t i=0;i<fc->buf.nb;i++){
+        Entry *e = fc->buf.b[i];
+        while(e){
+            FastqPair *v = e->val;
+            if(v){
+                if(v->qual1) qual_shift_inplace(v->qual1, shift);
+                if(v->qual2) qual_shift_inplace(v->qual2, shift);
+            }
+            e = e->next;
+        }
+    }
+}
+
 static void fq_store_pair(FastqCtx *fc, const char *name, const char *s1, const char *s2, const char *q1, const char *q2){
     FastqPair *v = hash_get_or_insert(&fc->buf, name);
-    if(s1 && q1){ if(v->seq1) free(v->seq1); if(v->qual1) free(v->qual1); v->seq1=sdup(s1); v->qual1=sdup(q1); }
-    if(s2 && q2){ if(v->seq2) free(v->seq2); if(v->qual2) free(v->qual2); v->seq2=sdup(s2); v->qual2=sdup(q2); }
+    if(s1 && q1){ if(v->seq1) free(v->seq1); if(v->qual1) free(v->qual1); v->seq1=sdup(s1); v->qual1=sdup(q1); if(fc && fc->qual_shift) qual_shift_inplace(v->qual1, fc->qual_shift); }
+    if(s2 && q2){ if(v->seq2) free(v->seq2); if(v->qual2) free(v->qual2); v->seq2=sdup(s2); v->qual2=sdup(q2); if(fc && fc->qual_shift) qual_shift_inplace(v->qual2, fc->qual_shift); }
 }
 
 static int fq_pop_by_name(FastqCtx *fc, const char *target, FastqPair **out){
@@ -263,11 +287,8 @@ static int fq_retrieve_any(FastqCtx *fc, FastqPair **out){
     return 0;
 }
 
-// (Removed unused BamLite helpers)
-
-// --- Utility: CIGAR parsing/joining and helpers ---
 typedef struct { char t; int l; } CigTok;
-static int cigar_parse(const char *c, CigTok *v, int maxv){ int n=0, val=0; if(!c||c[0]=='*') return 0; for(const char *p=c; *p; ++p){ if(isdigit((unsigned char)*p)){ val=val*10+(*p-'0'); } else { if(n<maxv){ v[n].t=*p; v[n].l=val; n++; } val=0; } } return n; }
+static int cigar_parse(const char *c, CigTok *v, int maxv){ int n=0, val=0; if(!c||c[0]=='*') return 0; for(const char *p=c; *p; ++p){ if(isdigit((unsigned char)*p)) val = val*10 + (*p-'0'); else { if(n<maxv){ v[n].t=*p; v[n].l=val; n++; } val=0; } } return n; }
 static char* cigar_join(const CigTok *v, int n){ size_t sz=1; for(int i=0;i<n;i++){ int tmp=v[i].l; int digits=1; while(tmp>=10){digits++; tmp/=10;} sz += digits+1; } char *s=(char*)malloc(sz); size_t k=0; for(int i=0;i<n;i++){ k += sprintf(s+k, "%d%c", v[i].l, v[i].t); } s[k]='\0'; return s; }
 static char* cigar_add_hardclip(const char *c, int add_len, int at_front, int reversed){
     (void)reversed; // parameter currently not used
@@ -308,6 +329,16 @@ static char* cigar_extend_hardclip(const char *c, int add_len, int at_front){
 
 // --- Qual check allowing # vs ! ---
 static int qual_equal_norm(const char *a, const char *b, int len){ for(int i=0;i<len;i++){ char ca= a[i]=='#'?'!':a[i]; char cb= b[i]=='#'?'!':b[i]; if(ca!=cb) return 0; } return 1; }
+
+static int qual_equal_norm_shift(const char *a, const char *b, int len, int shift){
+    for(int i=0;i<len;i++){
+        char ca = a[i]=='#'?'!':a[i];
+        char cb = b[i]=='#'?'!':b[i];
+        ca = (char)((int)(unsigned char)ca + shift);
+        if(ca!=cb) return 0;
+    }
+    return 1;
+}
 
 // --- Print SAM with optional new cigar and appended tags ---
 static void sam_print_qname_only(FILE *out, const char *raw, const char *new_qname){
@@ -483,7 +514,61 @@ static void flush_group(FILE *out, gzFile g1, gzFile g2,
     // Retrieve corresponding FASTQ pair and compute fragment-level stats and restoration for primaries
     if(fc){
         FastqPair *fq=NULL; if(!fq_pop_by_name(fc, group[0].qname, &fq)){ fq=NULL; }
-        if(fq){ st->fragments += 1; st->alignments += ng; st->total_bp += (long long)strlen(fq->seq1) + (long long)strlen(fq->seq2);
+         if(fq){ st->fragments += 1; st->alignments += ng; st->total_bp += (long long)strlen(fq->seq1) + (long long)strlen(fq->seq2);
+            if(fc->qual_shift == 0 && (p1 || p2)){
+                int ok0 = 1;
+                int ok64 = 1;
+                int tested = 0;
+                int L1 = p1 ? (int)strlen(p1->qual) : 0;
+                int L2 = p2 ? (int)strlen(p2->qual) : 0;
+                if(p1){
+                    tested = 1;
+                    if(p1->reversed){
+                        for(int i=0;i<L1;i++){
+                            char ca = fq->qual1[L1-1-i]=='#'?'!':fq->qual1[L1-1-i];
+                            char cb = p1->qual[i]=='#'?'!':p1->qual[i];
+                            if(ca!=cb){ ok0=0; break; }
+                        }
+                        if(ok64){
+                            for(int i=0;i<L1;i++){
+                                char ca = fq->qual1[L1-1-i]=='#'?'!':fq->qual1[L1-1-i];
+                                char cb = p1->qual[i]=='#'?'!':p1->qual[i];
+                                ca = (char)((int)(unsigned char)ca - 31);
+                                if(ca!=cb){ ok64=0; break; }
+                            }
+                        }
+                    } else {
+                        if(!qual_equal_norm(fq->qual1, p1->qual, L1)) ok0=0;
+                        if(ok64 && !qual_equal_norm_shift(fq->qual1, p1->qual, L1, -31)) ok64=0;
+                    }
+                }
+                if(p2 && (ok0 || ok64)){
+                    tested = 1;
+                    if(p2->reversed){
+                        for(int i=0;i<L2;i++){
+                            char ca = fq->qual2[L2-1-i]=='#'?'!':fq->qual2[L2-1-i];
+                            char cb = p2->qual[i]=='#'?'!':p2->qual[i];
+                            if(ca!=cb){ ok0=0; break; }
+                        }
+                        if(ok64){
+                            for(int i=0;i<L2;i++){
+                                char ca = fq->qual2[L2-1-i]=='#'?'!':fq->qual2[L2-1-i];
+                                char cb = p2->qual[i]=='#'?'!':p2->qual[i];
+                                ca = (char)((int)(unsigned char)ca - 31);
+                                if(ca!=cb){ ok64=0; break; }
+                            }
+                        }
+                    } else {
+                        if(!qual_equal_norm(fq->qual2, p2->qual, L2)) ok0=0;
+                        if(ok64 && !qual_equal_norm_shift(fq->qual2, p2->qual, L2, -31)) ok64=0;
+                    }
+                }
+                if(tested && !ok0 && ok64){
+                    fqctx_apply_shift(fc, -31);
+                    qual_shift_inplace(fq->qual1, -31);
+                    qual_shift_inplace(fq->qual2, -31);
+                }
+            }
             // precompute primary modifications
             const char *tags1[8]; int nt1=0; char *nc1=NULL; int clip1=0;
             const char *tags2[8]; int nt2=0; char *nc2=NULL; int clip2=0;

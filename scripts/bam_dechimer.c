@@ -571,7 +571,7 @@ int main(int argc, char **argv){
     FILE *inF = NULL; FILE *outF = NULL; FILE *pipe_proc = NULL;
     if(strcmp(in,"-")){
         /* stream BAM via samtools view -h */
-        size_t n = strlen(in) + 32; char *cmd=(char*)malloc(n); snprintf(cmd,n,"samtools view -h %s", in);
+        size_t n = strlen(in) + 32; char *cmd=(char*)malloc(n); snprintf(cmd,n,"samtools view -h '%s'", in);
         pipe_proc = popen(cmd, "r"); free(cmd);
         if(!pipe_proc){ perror("popen samtools"); return 1; }
         inF = pipe_proc;

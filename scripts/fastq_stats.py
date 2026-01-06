@@ -12,6 +12,29 @@ _HAS_FASTCHECK, fastcheck = ensure_fastcheck(logger=_log)
 from fastq_utils import PairedFastQReaderSimple
 from hash_utils import fnv1a64, normalize_qual
 
+def _qual_minmax_update(s: str, minq: int, maxq: int) -> tuple[int, int]:
+    for ch in s:
+        o = ord(ch)
+        if o < minq:
+            minq = o
+        if o > maxq:
+            maxq = o
+    return minq, maxq
+
+def _determine_qual_shift(minq: int, maxq: int) -> int:
+    if minq == 10**9:
+        return 0
+    if minq < 64:
+        return 0
+    if maxq > 74:
+        return -31
+    return 0
+
+def _shift_qual(s: str, shift: int) -> str:
+    if shift == 0:
+        return s
+    return ''.join(chr(ord(ch) + shift) for ch in s)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--f1')
@@ -41,6 +64,11 @@ def main():
             compare_fastq_nrow = 0
             compare_fastq_nbases1 = 0
             compare_fastq_nbases2 = 0
+            qual_buf = []
+            qual_shift = 0
+            shift_determined = False
+            minq = 10**9
+            maxq = 0
             f = sys.stdin if args.input == '-' else open(args.input, 'rt')
             try:
                 while True:
@@ -56,18 +84,39 @@ def main():
                     q2 = f.readline().rstrip('\n')
                     if not s2:
                         break
+
                     q1 = normalize_qual(q1)
                     q2 = normalize_qual(q2)
                     compare_fastq1_checksum_seq ^= fnv1a64(s1)
                     compare_fastq2_checksum_seq ^= fnv1a64(s2)
-                    compare_fastq1_checksum_qual ^= fnv1a64(q1)
-                    compare_fastq2_checksum_qual ^= fnv1a64(q2)
+                    if not shift_determined:
+                        minq, maxq = _qual_minmax_update(q1, minq, maxq)
+                        minq, maxq = _qual_minmax_update(q2, minq, maxq)
+                        qual_buf.append((q1, q2))
+                        if len(qual_buf) >= 2000:
+                            qual_shift = _determine_qual_shift(minq, maxq)
+                            shift_determined = True
+                            for bq1, bq2 in qual_buf:
+                                compare_fastq1_checksum_qual ^= fnv1a64(_shift_qual(bq1, qual_shift))
+                                compare_fastq2_checksum_qual ^= fnv1a64(_shift_qual(bq2, qual_shift))
+                            qual_buf.clear()
+                    else:
+                        compare_fastq1_checksum_qual ^= fnv1a64(_shift_qual(q1, qual_shift))
+                        compare_fastq2_checksum_qual ^= fnv1a64(_shift_qual(q2, qual_shift))
                     compare_fastq_nrow += 1
                     compare_fastq_nbases1 += len(s1)
                     compare_fastq_nbases2 += len(s2)
             finally:
                 if f is not sys.stdin:
                     f.close()
+
+            if qual_buf:
+                if not shift_determined:
+                    qual_shift = _determine_qual_shift(minq, maxq)
+                for bq1, bq2 in qual_buf:
+                    compare_fastq1_checksum_qual ^= fnv1a64(_shift_qual(bq1, qual_shift))
+                    compare_fastq2_checksum_qual ^= fnv1a64(_shift_qual(bq2, qual_shift))
+                qual_buf.clear()
             stats = {
                 'compare_fastq1_checksum_seq': compare_fastq1_checksum_seq,
                 'compare_fastq1_checksum_qual': compare_fastq1_checksum_qual,
@@ -99,16 +148,41 @@ def main():
             compare_fastq_nrow = 0
             compare_fastq_nbases1 = 0
             compare_fastq_nbases2 = 0
+            qual_buf = []
+            qual_shift = 0
+            shift_determined = False
+            minq = 10**9
+            maxq = 0
             for _, seq1, seq2, qual1, qual2 in freader.retrieveRead():
                 qual1 = normalize_qual(qual1)
                 qual2 = normalize_qual(qual2)
                 compare_fastq1_checksum_seq ^= fnv1a64(seq1)
                 compare_fastq2_checksum_seq ^= fnv1a64(seq2)
-                compare_fastq1_checksum_qual ^= fnv1a64(qual1)
-                compare_fastq2_checksum_qual ^= fnv1a64(qual2)
+                if not shift_determined:
+                    minq, maxq = _qual_minmax_update(qual1, minq, maxq)
+                    minq, maxq = _qual_minmax_update(qual2, minq, maxq)
+                    qual_buf.append((qual1, qual2))
+                    if len(qual_buf) >= 2000:
+                        qual_shift = _determine_qual_shift(minq, maxq)
+                        shift_determined = True
+                        for bq1, bq2 in qual_buf:
+                            compare_fastq1_checksum_qual ^= fnv1a64(_shift_qual(bq1, qual_shift))
+                            compare_fastq2_checksum_qual ^= fnv1a64(_shift_qual(bq2, qual_shift))
+                        qual_buf.clear()
+                else:
+                    compare_fastq1_checksum_qual ^= fnv1a64(_shift_qual(qual1, qual_shift))
+                    compare_fastq2_checksum_qual ^= fnv1a64(_shift_qual(qual2, qual_shift))
                 compare_fastq_nrow += 1
                 compare_fastq_nbases1 += len(seq1)
                 compare_fastq_nbases2 += len(seq2)
+
+            if qual_buf:
+                if not shift_determined:
+                    qual_shift = _determine_qual_shift(minq, maxq)
+                for bq1, bq2 in qual_buf:
+                    compare_fastq1_checksum_qual ^= fnv1a64(_shift_qual(bq1, qual_shift))
+                    compare_fastq2_checksum_qual ^= fnv1a64(_shift_qual(bq2, qual_shift))
+                qual_buf.clear()
             stats = {
                 'compare_fastq1_checksum_seq': compare_fastq1_checksum_seq,
                 'compare_fastq1_checksum_qual': compare_fastq1_checksum_qual,

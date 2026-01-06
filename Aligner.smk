@@ -770,6 +770,14 @@ rule adapter_removal:
         f1 = input[0]
         f2 = input[1]
         import gzip, bz2
+        f1_q = shlex.quote(str(f1))
+        f2_q = shlex.quote(str(f2))
+        adapters_q = shlex.quote(str(params.adapters))
+        out_fastq_stats_q = shlex.quote(str(output.fastq_stats))
+        out_adapters_q = shlex.quote(str(output.adapters))
+        out_for_f_q = shlex.quote(str(output.for_f))
+        out_rev_f_q = shlex.quote(str(output.rev_f))
+        out_adapter_removal_q = shlex.quote(str(output.adapter_removal))
         def _detect_fastq_lines(fn):
             if fn.endswith('.gz'):
                 fh = gzip.open(fn, 'rt', encoding='utf-8', errors='replace')
@@ -835,9 +843,19 @@ rule adapter_removal:
         use_rescue = 1 if int(resources.attempt) >= 2 else 0
         if use_rescue == 1:
             print(f"[adapter_removal] Using fastq_pair_rescue (attempt={int(resources.attempt)}; threads={resources.n}; external decompress)", file=sys.stderr)
-            src_line = f"python3 {params.rescuer} --r1 {f1} --r2 {f2} --decompress external --threads {resources.n} --buffer-size 2048 --quiet \\"
+            import fcntl
+            err_path = str(SAMPLEINFO[wildcards['sample']]['samplefile']) + '.errors'
+            with open(err_path, 'a+', encoding='utf-8') as ef:
+                fcntl.flock(ef, fcntl.LOCK_EX)
+                ef.seek(0)
+                existing = set(line.strip() for line in ef if line.strip())
+                if str(wildcards['sample']) not in existing:
+                    ef.write(str(wildcards['sample']) + "\n")
+                    ef.flush()
+                fcntl.flock(ef, fcntl.LOCK_UN)
+            src_line = f"python3 {params.rescuer} --r1 {f1_q} --r2 {f2_q} --decompress external --threads {resources.n} --buffer-size 2048 --quiet \\" 
         else:
-            src_line = (
+            src_line = (                
                 f"paste <(pigz -cd {f1} | paste {flatten1}) <(pigz -cd {f2} | paste {flatten2}) \\\n            | tr '\\t' '\\n' \\"
             )
         if dedup_line:
@@ -845,10 +863,11 @@ rule adapter_removal:
         cmd = f"""
             set -o pipefail
             {src_line}
-            {dedup_line}| tee >(python3 {params.fastq_stats} --interleaved --input - -s {output.fastq_stats}) \
-            | tee >(AdapterRemoval --identify-adapters --adapter-list {params.adapters} --interleaved-input --file1 /dev/stdin --threads 4 {qualitybase_flag} {qualitybase_output_flag} > {output.adapters}) \
-            | AdapterRemoval --adapter-list {params.adapters} --interleaved-input --file1 /dev/stdin --gzip --gzip-level 1 --output1 {output.for_f} --output2 {output.rev_f} --settings {output.adapter_removal} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 {qualitybase_flag} {qualitybase_output_flag} --qualitymax {qualitymax}
+            {dedup_line}| tee >(python3 {params.fastq_stats} --interleaved --input - -s {out_fastq_stats_q}) \
+            | tee >(AdapterRemoval --identify-adapters --adapter-list {adapters_q} --interleaved-input --file1 /dev/stdin --threads 4 {qualitybase_flag} {qualitybase_output_flag} > {out_adapters_q}) \
+            | AdapterRemoval --adapter-list {adapters_q} --interleaved-input --file1 /dev/stdin --gzip --gzip-level 1 --output1 {out_for_f_q} --output2 {out_rev_f_q} --settings {out_adapter_removal_q} --minlength 40 --singleton /dev/null --discarded /dev/null --threads 4 {qualitybase_flag} {qualitybase_output_flag} --qualitymax {qualitymax}
         """
+        cmd = cmd.replace('{', '{{').replace('}', '}}')
         shell(cmd)
 
 def get_readgroup_params(wildcards):  #{{{
@@ -905,7 +924,7 @@ rule kmer_reads:
         tmpdir_fallback = str(params.tmpdir)
         sample = str(wildcards.sample)
         list_path = str(output.lst)
-        ssd_base = node_ssd_base()
+        ssd_base = node_ssd_base(tmpdir_fallback)
         job_tmp = os.path.join(ssd_base, 'kmc', job_id, sample)
 
         shell(f"""
@@ -1036,9 +1055,12 @@ rule merge_bam_alignment_dechimer:
     run:
         import os, shlex, tempfile
         from snakemake.shell import shell
+        job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID') or str(os.getpid())
+        tmpdir_fallback = os.path.dirname(str(output.bam))
+        sample = str(wildcards.sample)
+        tmp_dir = node_ssd_base(tmpdir_fallback)
 
         # Stage 1: merge + fixmate to temporary BAM, teeing to checker
-        tmp_dir = os.path.dirname(str(output.bam))
         fd, merged_tmp = tempfile.mkstemp(prefix=f"{wildcards.sample}.{wildcards.readgroup}.merged.", suffix=".bam", dir=tmp_dir)
         os.close(fd)
 
@@ -1051,7 +1073,7 @@ rule merge_bam_alignment_dechimer:
         check_stats = shlex.quote(str(output.check_stats))
         checked = shlex.quote(str(output.checked))
         out_stats = shlex.quote(str(output.stats))
-        outbam = shlex.quote(str(output.bam))
+        outbam_final = shlex.quote(str(output.bam))
         # Build bam_merge command: run with python3 when using the Python script
         bam_merge_path = str(params.bam_merge)
         bam_merge_q = shlex.quote(bam_merge_path)
@@ -1084,22 +1106,25 @@ rule merge_bam_alignment_dechimer:
         need_dechimer = (ratio > float(DECHIMER_THRESHOLD))
 
         if need_dechimer:
+            fd, dechimer_tmp = tempfile.mkstemp(prefix=f"{wildcards.sample}.{wildcards.readgroup}.dechimer.", suffix=".bam", dir=tmp_dir)
+            os.close(fd)
             fix_threads = 4
             cmd_stage2 = (
                 "set -o pipefail; "
                 f"samtools view -h --threads 2 {shlex.quote(merged_tmp)} "
                 f"| {dechimer} --min_align_length 40 --loose_ends -i - -s {out_stats} "
                 f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} -s {check_stats} -c {checked} > /dev/null) "
-                f"| samtools fixmate -@ {fix_threads} -u -O BAM -m - {outbam}"
+                f"| samtools fixmate -@ {fix_threads} -u -O BAM -m - {shlex.quote(dechimer_tmp)}"
             )
             shell(cmd_stage2)
+            shell(f"mv -f {shlex.quote(dechimer_tmp)} {outbam_final}")
             try:
                 os.unlink(merged_tmp)
             except Exception:
                 pass
         else:
             shell(f"touch {out_stats}")
-            shell(f"mv -f {shlex.quote(merged_tmp)} {outbam}")
+            shell(f"mv -f {shlex.quote(merged_tmp)} {outbam_final}")
 
 
 rule sort_bam_alignment:

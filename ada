@@ -2,37 +2,11 @@
 
 # ADA - Advanced dCache API tool to manage data stored in dCache.
 #
-# Design: Natalie & Onno, SURFsara.
+# Design: Natalie Danezi, Haili Hu & Onno Zweers, SURF.
 #
 # Latest version is available at: https://github.com/sara-nl/SpiderScripts
-#
-# Changes:
-# 2025-06-17 - Haili   - Add option --delete-channel to delete a channel by name
-# 2025-04-10 - Haili   - Add options --resume and --force to events and report-staged
-# 2025-02-20 - Onno    - Fail early when a token is about to expire
-# 2025-02-18 - Haili   - Read config from <script_dir>/etc/ada.conf (as last option)
-# 2025-01-14 - Onno    - Add support for extended attributes
-# 2024-12-30 - Onno    - Add support for labels
-# 2024-12-27 - Onno    - Improved token validation
-# 2024-12-12 - Haili   - Implement unit testing
-# 2024-11-26 - Haili   - Add --recursive to --mkdir
-# 2024-09-12 - Haili   - Added bulk requests for staging and unstaging
-# 2024-08-24 - Haili   - Added option to use env var BEARER_TOKEN
-# 2020-11-04 - Onno    - Added link to Natalie's demo video
-# 2020-09-22 - Onno    - Support environment variables (ada_<variable>)
-# 2020-09-02 - Onno    - Added --space to get poolgroup capacity
-# 2020-08-23 - ahaupt  - Use env vars X509_USER_PROXY and X509_CERT_DIR if set
-# 2020-05-28 - Onno    - Allow curl options to be overridden in config files
-# 2020-04-21 - Onno    - Improved error handling
-# 2020-04-16 - Onno    - Add --recursive to --stage, --unstage, --checksum
-# 2020-04-03 - Onno    - Add --stat to get all possible file/dir info
-# 2020-03-13 - Onno    - Get server-sent events for files being staged
-# 2020-03-11 - Onno    - Added recursive deletes
-# 2020-03-04 - Onno    - Added X509 proxy authentication and netrc authentication
-# 2020-02-24 - Onno    - Don't show bearer tokens on command line
-# 2020-02-18 - Onno    - Recursion with server-sent events
-# 2020-02-14 - Onno    - Support for server-sent events
-# 2020-01-28 - Onno    - Created
+# For releases: https://github.com/sara-nl/SpiderScripts/releases
+
 
 usage() {
   cat <<-EOF
@@ -113,6 +87,9 @@ usage() {
 
 	  --mv <file|directory> <destination>
 	      Rename or move a file or directory.
+	      Please note, that moving a file will not change its
+	      properties. A tape file will remain a tape file,
+	      even when you move it to a disk directory.
 
 	  --delete <file|directory> [--recursive [--force]]
 	      Delete a file or directory.
@@ -121,6 +98,8 @@ usage() {
 	      deletion of each subdir, unless you add --force.
 	      Please note, that dCache storage systems usually
 	      don't have an undelete option.
+	      Deleting a file will also delete its metadata
+	      (labels and extended attributes).
 
 	  --setlabel <file> <label>
 	      Attach a label to a file.
@@ -175,12 +154,19 @@ usage() {
 	  --stage --from-file <file-list>
 	      Stage files or directories in the list.
 
-	  --unstage <file>
+	  --unstage <file> [--request-id <request-id>]
 	      Release file so dCache may purge its online replica.
+	      If --request-id is given, release only the associated pin (not all pins)
 	  --unstage <directory> [--recursive]
 	      Release files in directory.
 	  --unstage --from-file <file-list>
 	      Release files in the list.
+
+	  --stat-request <request-id>
+	      Show status of bulk request for given request-id
+
+    --delete-request <request-id>
+	      Delete bulk request with given request-id
 
 	  --events <channel-name> <path-to-follow> [--resume] [--force] [--recursive] [--timeout s]
 	      Subscribe to changes in the given direcory,
@@ -294,11 +280,17 @@ get_permissions () {
 # Set default values and initialize variables
 #
 set_defaults() {
+  # The ADA_VERSION value will be automatically updated by Github action Update-ada-version.yml
+  # For a release, it will contain the version number (like v3.1).
+  # For a branch, it will contain the branch name.
+  ADA_VERSION="master"
+  args=
   api=
   debug=false
   dry_run=false
   channel_timeout=3600
   auth_method=
+  auth_file=
   certdir=${X509_CERT_DIR:-/etc/grid-security/certificates}
   igtf=true
   lifetime=7
@@ -308,6 +300,7 @@ set_defaults() {
   script_dir=$(dirname "$0")
   command=
   path=
+  request_id=
   recursive=false
   force=false
   resume=false
@@ -337,7 +330,12 @@ set_defaults() {
   for configfile in "${configfiles[@]}" ; do
     if [ -f "$configfile" ] ; then
       # Before loading, check permissions. Source file must never be world writable!
-      permissions=$(get_permissions "$configfile") || exit 1
+      real_configfile=$(realpath "$configfile")
+      permissions=$(get_permissions "$real_configfile") || exit 1
+      if grep '^........w.$' <<<"$permissions" ; then
+        echo 1>&2 "ERROR: Config file '$real_configfile' is world writable. This is a security risk."
+        exit 1
+      fi
       source "$configfile"
     fi
   done
@@ -361,7 +359,7 @@ set_defaults() {
   fi
   if [ -n "$ada_tokenfile" ] ; then
     tokenfile="$ada_tokenfile"
-    auth_method=token
+    auth_method=tokenfile
     token_debug_info="Token source: \$ada_tokenfile=$ada_tokenfile"
   fi
   if [ -n "$BEARER_TOKEN" ] ; then
@@ -380,20 +378,22 @@ get_args() {
   if [ -z "$1" ] ; then
     usage
   fi
+  args=("$@")
   while [ $# -gt 0 ] ; do
     case "$1" in
       --help | -help | -h )
         usage
         ;;
       --version )
-        git_dir=$(dirname "${script_dir}")
-        _VERSION_PLACEHOLDER=$(git --git-dir="${git_dir}/.git" describe --tags --abbrev=0 2>/dev/null || echo "v3.0+")
-        echo "${_VERSION_PLACEHOLDER}"
-        exit 1
+        echo "$ADA_VERSION"
+        exit 0
         ;;
       --tokenfile )
-        auth_method=token
+        check_arg "tokenfile" $2
+        auth_method=tokenfile
         tokenfile="$2"
+        #Check if authentication file is passed as argument
+        auth_file="$2"  
         token_debug_info="Token source: --tokenfile $tokenfile"
         shift ; shift
         ;;
@@ -407,6 +407,8 @@ get_args() {
           * )
             # This must be a file name
             netrcfile="$2"
+            #Check if authentication file is passed as argument
+            auth_file="$2"
             shift
             ;;
         esac
@@ -422,12 +424,15 @@ get_args() {
           * )
             # This must be a file name
             proxyfile="$2"
+            #Check if authentication file is passed as argument
+            auth_file="$2"            
             shift
             ;;
         esac
         shift
         ;;
       --api )
+        check_arg "api" $2
         api="$2"
         shift ; shift
         ;;
@@ -441,55 +446,68 @@ get_args() {
         ;;
       --list )
         command='list'
+        check_arg $command $2
         path="$2"
         shift ; shift
         ;;
       --longlist )
         command='longlist'
         if [ "$2" = "--from-file" ] ; then
+          check_arg "from-file" $3
           $debug && echo "Reading list '$3'"
           pathlist=$(<"$3")
           shift ; shift ; shift
         else
+          check_arg "longlist" $2
           pathlist="$2"
           shift ; shift
         fi
         ;;
       --stat )
+        check_arg "stat" $2
         command='stat'
         path="$2"
         shift ; shift
         ;;
       --mkdir )
         command='mkdir'
+        check_arg $command $2
         path="$2"
         shift ; shift
         ;;
       --mv )
         command='mv'
+        check_arg $command $2
+        check_arg $command $3
         path="$2"
         destination="$3"
         shift ; shift ; shift
         ;;
       --delete )
         command='delete'
+        check_arg $command $2
         path="$2"
         shift ; shift
         ;;
       --setlabel )
         command='setlabel'
+        check_arg $command $2
+        check_arg $command $3
         path="$2"
         label="$3"
         shift ; shift ; shift
         ;;
       --rmlabel )
         command='rmlabel'
+        check_arg $command $2
+        check_arg $command $3
         path="$2"
         label="$3"
         shift ; shift ; shift
         ;;
       --lslabel )
         command='lslabel'
+        check_arg $command $2  
         path="$2"
         shift ; shift
         # Optinal argument: a label the user wants to see.
@@ -506,15 +524,18 @@ get_args() {
         ;;
       --findlabel )
         command='findlabel'
+        check_arg $command $2
+        check_arg $command $3
         path=$(echo "$2" | sed 's:/*$::')
         regex="$3"
         shift ; shift ; shift
         ;;
       --setxattr )
         command='setxattr'
+        check_arg $command $2
         path="$2"
         shift ; shift
-        # Optinal argument: filename containing the attributes (or - for stdin)
+        # Optional argument: filename containing the attributes (or - for stdin)
         case $1 in
           --* | '' )
             # Next argument is another option or absent; not a file name.
@@ -541,6 +562,7 @@ get_args() {
         ;;
       --lsxattr )
         command='lsxattr'
+        check_arg $command $2
         path="$2"
         shift ; shift
         # Optinal argument: name of an attribute
@@ -557,6 +579,9 @@ get_args() {
         ;;
       --findxattr )
         command='findxattr'
+        check_arg $command $2
+        check_arg $command $3
+        check_arg $command $4
         # Strip trailing slashes
         path=$(echo "$2" | sed 's:/*$::')
         attribute_name="$3"
@@ -565,6 +590,10 @@ get_args() {
         ;;
       --rmxattr )
         command='rmxattr'
+        check_arg $command $2
+        if [[ $3 != '--all' ]] ; then
+           check_arg $command $3
+        fi
         path="$2"
         attribute_name="$3"
         shift ; shift ; shift
@@ -572,9 +601,11 @@ get_args() {
       --checksum )
         command='checksum'
         if [ "$2" = "--from-file" ] ; then
+          check_arg "from-file" $3
          	pathlist=$(<"$3")
           shift ; shift ; shift
         else
+          check_arg "checksum" $2
           pathlist="$2"
           shift ; shift
         fi
@@ -582,10 +613,12 @@ get_args() {
       --stage )
         command='stage'
         if [[ $2 =~ ^--from-?file ]] ; then
+          check_arg "from-file" $3
           from_file=true
           pathlist=$(<"$3")
          	shift ;	shift ;	shift
         else
+          check_arg "stage" $2
           from_file=false
           pathlist="$2"
           shift ; shift
@@ -594,23 +627,46 @@ get_args() {
       --unstage )
         command='unstage'
         if [[ $2 =~ ^--from-?file ]] ; then
+          check_arg "from-file" $3  
           from_file=true
           pathlist=$(<"$3")
           shift ; shift ; shift
         else
+          check_arg "unstage" $2
           from_file=false
           pathlist="$2"
           shift ; shift
         fi
         ;;
+      --request-id )
+        check_arg "request_id" $2
+        request_id="$2"
+        shift ; shift
+        ;;
+      --stat-request )
+        command='stat-request'
+        check_arg $command $2
+        request_id="$2"
+        shift ; shift
+        ;;
+      --delete-request )
+        command='delete-request'
+        check_arg $command $2        
+        request_id="$2"
+        shift ; shift
+        ;;          
       --events )
         command='events'
+        check_arg $command $2
+        check_arg $command $3
         channel_name="$2"
         path="$3"
         shift ; shift ; shift
         ;;
       --report-staged )
         command='report-staged'
+        check_arg $command $2
+        check_arg $command $3
         channel_name="$2"
         path="$3"
         shift ; shift ; shift
@@ -628,12 +684,14 @@ get_args() {
         shift
         ;;        
       --lifetime )
+        check_arg "lifetime" $2
         arg="$2"
         lifetime=${arg::${#arg} -1}
         lifetime_unit=${arg: ${#arg}-1}
         shift ; shift
         ;;
       --timeout )
+        check_arg "timeout" $2
         channel_timeout="$2"
         shift ; shift
         ;;
@@ -645,6 +703,7 @@ get_args() {
             ;;
           * )
             # This must be a channel name
+            check_arg $command $2
             channel_name="$2"
             shift
             ;;
@@ -652,7 +711,8 @@ get_args() {
         shift
         ;;
       --delete-channel )
-        command='delete-channel'     
+        command='delete-channel'
+        check_arg $command $2
         channel_name="$2"
         shift ; shift
         ;;        
@@ -664,6 +724,7 @@ get_args() {
             ;;
           * )
             # This must be a poolgroup
+            check_arg $command $2
             poolgroup="$2"
             shift
             ;;
@@ -711,6 +772,15 @@ get_args() {
 # Define internal functions ada needs
 #
 
+check_arg() {
+  option=$1
+  arg=$2
+  if [[ $arg == --* || $arg == '' ]]; then
+    echo 1>&2 "ERROR: option --$option requires next argument"
+    exit 1
+  fi
+}
+
 
 view_token() {
   local token="$1"
@@ -751,7 +821,6 @@ view_token() {
     echo -e "\033[34m\n$macaroon_decoded\n\033[0m" | sed -e 's/^/  /'
   fi
 }
-
 
 
 validate_expiration_timestamp () {
@@ -964,7 +1033,7 @@ check_authentication() {
     proxy )
       echo "Proxy file: $proxyfile"
       ;;
-    token )
+    token | tokenfile )
       view_token "$token" "$token_debug_info"
       ;;
     * )
@@ -1422,10 +1491,53 @@ delete_path () {
 }
 
 
+get_status_requestid () {
+  local request_id="$1"
+  command='$debug && set -x
+          curl "${curl_authorization[@]}" \
+          "${curl_options_common[@]}" \
+          -X GET "${api}"/bulk-requests/"${request_id}"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    result=$(eval "$command")
+    # Check if the request ID is valid
+    valid=$(echo "$result" | jq 'has("uid")') 
+    if [[ $valid == 'true' ]] ; then
+      echo "$result"
+    else
+      echo 1>&2 "ERROR: the request ID '$request_id' is not valid"
+      return 1
+    fi
+  fi
+}
+
+
+delete_requestid () {
+  local request_id="$1"
+  # check if request ID is valid, exit if invalid
+  get_status_requestid ${request_id} > /dev/null 2>&1
+  if [ $? == 1 ] ; then
+    echo 1>&2 "ERROR: cannot delete bulk request, request ID invalid"
+    exit 1
+  fi
+  command='$debug && set -x
+          curl "${curl_authorization[@]}" \
+          "${curl_options_common[@]}" \
+          -X DELETE "${api}"/bulk-requests/"${request_id}"'
+  if $dry_run ; then
+    echo "$command"
+  else
+    eval "$command"
+  fi
+}
+
+
 bulk_request() {
   local activity="$1"
   local pathlist="$2"
   local recursive="$3"
+  local request_id="$4"
   if [ "$from_file" == false ] ; then
     local filepath="$2"
     type=$(pathtype "$filepath")
@@ -1451,7 +1563,7 @@ bulk_request() {
     esac
   else
     if $recursive ; then
-      echo 1>&2 "Error: recursive (un)staging forbidden when using file-list."
+      echo 1>&2 "ERROR: recursive (un)staging forbidden when using file-list."
       exit 1
     else
       expand=TARGETS
@@ -1461,7 +1573,18 @@ bulk_request() {
     PIN   )
       arguments="{\"lifetime\": \"${lifetime}\", \"lifetimeUnit\":\"${lifetime_unit}\"}" ;;
     UNPIN )
-      arguments="{}" ;;
+      if [ -z "$request_id" ] ; then
+         arguments="{}" 
+      else
+         # check if request ID is valid, exit if invalid
+         get_status_requestid ${request_id} > /dev/null 2>&1
+         if [ $? == 1 ] ; then
+            echo 1>&2 "ERROR: cannot unstage, request ID invalid"
+            exit 1
+         fi
+         arguments="{\"id\": \"${request_id}\"}"
+      fi
+      ;;
   esac
   target='['
   while read -r path ; do
@@ -1469,7 +1592,6 @@ bulk_request() {
   done <<<"$pathlist"
   target=${target%?}]
   data="{\"activity\": \"${activity}\", \"arguments\": ${arguments}, \"target\": ${target}, \"expand_directories\": \"${expand}\"}"
-  $debug || echo "$target  "
   # Elsewhere, we do 'set -x' in a subshell, but here we need to catch the return headers.
   $debug && set -x   # If --debug is specified, show curl command
   response=$(curl "${curl_authorization[@]}" \
@@ -1517,8 +1639,21 @@ bulk_request() {
       exit 1
       ;;
     HTTP_CODE_2* )
-      echo "$response" | grep -e request-url -e Date | tee -a "${requests_log}"
-      # ToDo: explain to user what to do with the request-url, see issue #86
+      echo "$response" | grep -e request-url -e Date >> "${requests_log}"
+      request_url=$(echo "$response" | grep -e request-url)
+      request_id=$(basename "${request_url}")
+      echo "Information about bulk request is logged in $requests_log"      
+      echo "To check status of request, paste request URL in browser:"
+      echo "   ${request_url}"      
+      echo "Or use command:"
+      cmd_args=""
+      if [[ "${args[@]}" =~ "api" ]]; then
+         cmd_args="--api $api"
+      fi
+      if [[ "${args[@]}" =~ "netrc" || "${args[@]}" =~ "proxy" || "${args[@]}" =~ "tokenfile" ]]; then
+         cmd_args="$cmd_args --$auth_method $auth_file"
+      fi 
+      echo "   $0 --stat-request $request_id $cmd_args" | tr -d '\r'  
       ;;
     * )
       # Something else went wrong; could be
@@ -1530,7 +1665,6 @@ bulk_request() {
       exit 1
       ;;
   esac
-  $debug && echo "Information about bulk request is logged in $requests_log."
   {
     echo "activity: $activity"
     echo "target: $target" | sed 's/,/,\n         /g'
@@ -1556,7 +1690,7 @@ with_files_in_dir_do () {
   case $recursive in
     true | false )  ;;  # No problem
     * )
-      echo 1>&2 "Error in with_files_in_dir_do: recursive='$recursive'; should be true or false."
+      echo 1>&2 "ERROR in with_files_in_dir_do: recursive='$recursive'; should be true or false."
       exit 1
       ;;
   esac
@@ -2089,20 +2223,21 @@ validate_input() {
   fi
 
   case $auth_method in
-    token )
+    token | tokenfile )
       if [ -n "$tokenfile" ] ; then
         if ! [ -f "$tokenfile" ] ; then
           echo 1>&2 "ERROR: specified tokenfile does not exist."
           exit 1
         fi
         # Tokenfile must never be world readable or writable!
-        if get_permissions "$tokenfile" | grep '^........w.$' ; then
-          echo 1>&2 "ERROR: Tokenfile '$tokenfile' is world writable." \
+        real_tokenfile=$(realpath "$tokenfile")
+        if get_permissions "$real_tokenfile" | grep '^........w.$' ; then
+          echo 1>&2 "ERROR: Tokenfile '$real_tokenfile' is world writable." \
                     "This may be unsafe on shared systems. Use chmod to change the permissions."
           exit 1
         fi
-        if get_permissions "$tokenfile" | grep '^.......r..$' ; then
-          echo 1>&2 "ERROR: Tokenfile '$tokenfile' is world readable." \
+        if get_permissions "$real_tokenfile" | grep '^.......r..$' ; then
+          echo 1>&2 "ERROR: Tokenfile '$real_tokenfile' is world readable." \
                     "This may be unsafe on shared systems. Use chmod to change the permissions."
           exit 1
         fi
@@ -2140,13 +2275,14 @@ validate_input() {
         exit 1
       fi
       # Curl's netrc file shouldn't be world readable or writable!
-      if get_permissions "$netrcfile" | grep '^........w.$' ; then
-        echo 1>&2 "ERROR: Curl's config file '$netrcfile' is world writable." \
+      real_netrcfile=$(realpath "$netrcfile")
+      if get_permissions "$real_netrcfile" | grep '^........w.$' ; then
+        echo 1>&2 "ERROR: Curl's config file '$real_netrcfile' is world writable." \
                   "This may be unsafe on shared systems. Use chmod to change the permissions."
         exit 1
       fi
-      if get_permissions "$netrcfile" | grep '^.......r..$' ; then
-        echo 1>&2 "ERROR: Curl's config file '$netrcfile' is world readable." \
+      if get_permissions "$real_netrcfile" | grep '^.......r..$' ; then
+        echo 1>&2 "ERROR: Curl's config file '$real_netrcfile' is world readable." \
                   "This may be unsafe on shared systems. Use chmod to change the permissions."
         exit 1
       fi
@@ -2247,6 +2383,12 @@ validate_input() {
         exit 1
       fi
       ;;
+    stat-request | delete-request)
+      if [[ -z $request_id || $request_id =~ ^-- ]] ; then
+        echo 1>&2 "ERROR: command $command requires a request-id."
+        exit 1
+      fi
+      ;;    
     viewtoken )
       if [ -z "$token" ] ; then
         echo 1>&2 "ERROR: command --viewtoken requires a token, but no token was found."
@@ -2291,7 +2433,7 @@ validate_input() {
 #
 construct_auth() {
   case $auth_method in
-    token )
+    token | tokenfile )
       # We can't specify the token as a command line argument,
       # because others could read that with the ps command.
       # So we have to put the authorization header in a temporary file.
@@ -2744,8 +2886,14 @@ api_call () {
         stage   )  activity='PIN'     ;;
         unstage )  activity='UNPIN'   ;;
       esac
-      bulk_request "$activity" "$pathlist" "$recursive"
+      bulk_request "$activity" "$pathlist" "$recursive" "$request_id"
       ;;
+    stat-request )
+      get_status_requestid "$request_id"
+      ;;
+    delete-request )
+      delete_requestid "$request_id"
+      ;;      
     events | report-staged )
       if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
         echo 1>&2 "ERROR: your bash version is too old: $BASH_VERSION." \
