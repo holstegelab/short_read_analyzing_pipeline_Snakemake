@@ -21,7 +21,7 @@ wildcard_constraints:
 module Aligner:
     snakefile: 'Aligner.smk'
     config: config
-use rule * from Aligner
+# use rule * from Aligner
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
@@ -101,7 +101,7 @@ rule chrM_sample_done:
         done=touch(pj(chrM, "{sample}.done"))
 
 rule extract_chrM_reads:
-    input: rules.markdup.output.mdbams
+    input: pj(BAM,"{sample}.markdup.bam")
     output:
         fq1 = ensure(temp(pj(chrM, '{sample}_chrM.R1.fastq.gz')), non_empty = True),
         fq2 = ensure(temp(pj(chrM, '{sample}_chrM.R2.fastq.gz')), non_empty = True)
@@ -122,7 +122,7 @@ rule extract_chrM_reads:
         """
  
 rule extract_NUMTs_reads:
-    input: rules.markdup.output.mdbams
+    input: pj(BAM,"{sample}.markdup.bam")
     output:
         fq1 = ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs.R1.fastq.gz')), non_empty = True),
         fq2 = ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs.R2.fastq.gz')), non_empty = True)
