@@ -322,9 +322,9 @@ rule mutect_bp_resolution_both:
         tbi_shift_back_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_backshifted_BP_res.g.vcf.gz.tbi')), non_empty=True),
         merged_vcf_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz')), non_empty=True),
         merged_tbi_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_with_anno_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz')), non_empty=True),
-        merged_vcf_with_anno_tbi_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_norm_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')), non_empty=True)
+        merged_vcf_with_anno_NUMT=ensure((pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz')), non_empty=True),
+        merged_vcf_with_anno_tbi_NUMT=ensure((pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi')), non_empty=True),
+        merged_vcf_norm_NUMT=ensure((pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')), non_empty=True)
     conda: CONDA_VCF
     params:
         mt_ref=pj(ORIG_MT_fa),
@@ -375,7 +375,7 @@ rule estimate_mtdna_copy_number_wes:
                  if ($1 == "chrM") {{
                      mt_len += len;
                      mt_cov += $4 * len;
-                 }} else if ($1 ~ /^chr[0-9XY]+$/) {{
+                 }} else if ($1 ~ /^chr([1-9]|1[0-9]|2[0-2])$/) {{
                      total_len += len;
                      total_cov += $4 * len;
                  }}
