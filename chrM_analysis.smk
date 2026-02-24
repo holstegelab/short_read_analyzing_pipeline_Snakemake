@@ -31,10 +31,10 @@ cur_dir = os.getcwd()
 
 
 rule chrM_analysis_all:
-    input:
+    input: expand(pj(chrM, "stats", "{sample}.mtDNA_CN.txt"), sample=sample_names),
         # rules.Aligner_all.input,
-        expand("{chrM}/variants/gvcf/{sample}.chrM_merged_BP_annotated.g.vcf.gz", chrM = chrM, sample=sample_names),
-        pj(chrM, "chrM_tar_uploads.done"),
+        # expand("{chrM}/variants/gvcf/{sample}.chrM_merged_BP_annotated.g.vcf.gz", chrM = chrM, sample=sample_names),
+        # pj(chrM, "chrM_tar_uploads.done"),
 
 
 def chrM_gvcf_inputs(wildcards):
