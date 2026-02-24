@@ -4,6 +4,12 @@ import os
 import getpass
 import utils
 from shlex import quote
+
+if config.get("skip_fastq_validation_for_cn", False):
+    os.environ["SKIP_FASTQ_VALIDATION"] = "1"
+else:
+    os.environ.pop("SKIP_FASTQ_VALIDATION", None)
+
 from common import *
 onsuccess: shell("rm -fr logs/chrM/*")
 

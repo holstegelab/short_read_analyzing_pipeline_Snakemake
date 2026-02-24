@@ -21,6 +21,11 @@ from collections import OrderedDict
 PROTOCOLS = ['archive','dcache']
 
 
+def _env_is_true(var_name):
+    value = os.environ.get(var_name, '')
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+
+
 def _exclude_filename(samplefile_path):
     base = os.path.realpath(samplefile_path)
     if base.endswith('.tsv'):
@@ -337,9 +342,33 @@ def read_samplefile(filename, prefixpath=None):
 
                res['from_external'] = protocols.pop()
             else:
-                res, warnings = get_readgroups(res, prefixpath)
-                for w in warnings:
-                    warning(False, w)
+                if _env_is_true('SKIP_FASTQ_VALIDATION') and file_type == 'fastq_paired':
+                    readgroups = []
+                    for pos, (f1, f2) in enumerate(zip(filenames1, filenames2)):
+                        readgroup_info = {
+                            'ID': sample_id + '_rg%d' % pos,
+                            'PL': sample_type,
+                            'PU': sample_id + '.rg%d' % pos,
+                            'LB': sample_id,
+                            'DT': '1970-01-01T00:00:00+00:00',
+                            'CN': study,
+                            'SM': sample_id
+                        }
+                        readgroup = {
+                            'info': readgroup_info,
+                            'file_type': file_type,
+                            'file1': append_prefix(prefixpath, f1),
+                            'file2': append_prefix(prefixpath, f2),
+                            'prefix': prefixpath
+                        }
+                        readgroups.append(readgroup)
+                    res['readgroups'] = readgroups
+                    res['nreadgroups'] = len(readgroups)
+                    warning(False, f"Skipping FASTQ validation for sample {sample_id} (SKIP_FASTQ_VALIDATION enabled)")
+                else:
+                    res, warnings = get_readgroups(res, prefixpath)
+                    for w in warnings:
+                        warning(False, w)
                 res['from_external'] = False
 
             samples.append(res)
