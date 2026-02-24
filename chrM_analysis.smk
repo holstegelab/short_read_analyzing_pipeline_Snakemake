@@ -15,7 +15,7 @@ wildcard_constraints:
 module Aligner:
     snakefile: 'Aligner.smk'
     config: config
-use rule * from Aligner
+# use rule * from Aligner
 module Reference_preparation:
     snakefile: "Reference_preparation.smk"
     config: config
@@ -26,7 +26,7 @@ cur_dir = os.getcwd()
 
 rule chrM_analysis_all:
     input:
-        rules.Aligner_all.input,
+        # rules.Aligner_all.input,
         expand("{chrM}/variants/gvcf/{sample}.chrM_merged_BP_annotated.g.vcf.gz", chrM = chrM, sample=sample_names),
         pj(chrM, "chrM_tar_uploads.done"),
 
