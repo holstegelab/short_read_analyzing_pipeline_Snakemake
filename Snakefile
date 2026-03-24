@@ -445,7 +445,7 @@ rule pipeline:
         chrM_rule,
         #SV_rule,
         #CNV_rule,
-        rules.Encrypt_all.input,
+        # rules.Encrypt_all.input,
     output:
         done=touch('pipeline.done')
 
