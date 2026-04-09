@@ -49,8 +49,8 @@ rule copy_to_dcache:
     params:
         ada_script = srcdir(ADA) #temporarily as ada on Snellius is out of date
     output:
-        copied = temp(pj(CRAM,"{sample}.mapped_hg38.cram.copied")),
-        sum = temp(pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32"))
+        copied = (pj(CRAM,"{sample}.mapped_hg38.cram.copied")),
+        sum = (pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32"))
     run:
 
         sample = SAMPLEINFO[wildcards['sample']]
