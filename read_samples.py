@@ -196,6 +196,10 @@ def error(test, message):
     return not test
 
 
+def error_message_with_file(message, filename):
+    return message + '\nFile:' + str(filename)
+
+
 filetypes = set(
     ['fastq_paired', 'bam', 'extracted_bam', 'recalibrated_bam', 'cram', 'recalibrated_cram', 'extracted_cram',
      'sra_paired', 'sra_single', 'gvcf'])
@@ -260,7 +264,8 @@ def read_samplefile(filename, prefixpath=None):
         for rowpos, row in enumerate(c):
             alternative_names = set()
 
-            error(len(row) == 7 or len(row) == 8 or len(row) == 9, 'Row encountered with != 8 or 9 fields: ' + str(row))
+            error(len(row) == 7 or len(row) == 8 or len(row) == 9,
+                  error_message_with_file('Row encountered with != 8 or 9 fields: ' + str(row), filename))
             if len(row) == 8:
                 study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2 = row
                 sample_config = {}
@@ -277,7 +282,7 @@ def read_samplefile(filename, prefixpath=None):
             sys.stdout.write('- Checking sample ' + sample_id + ' (%d/%d)\r' % (rowpos + 1, len(c)))
             warning(sample_type in sampletypes, 'Unknown sample_type: ' + sample_type)
             warning(sex in sexes, 'Unknown sex: ' + sex)
-            error(file_type in filetypes, 'Unknown file_type: ' + file_type)
+            error(file_type in filetypes, error_message_with_file('Unknown file_type: ' + file_type, filename))
 
             if 'cram' in file_type:
                 base_filesize_factor = 0.5
@@ -307,7 +312,9 @@ def read_samplefile(filename, prefixpath=None):
                 if len(filenames2) == 0:
                     file_type = 'fastq_interleaved'
                     error(False,
-                          'Handling interleaved fastq files is not yet implemented, let me know if you need this')
+                          error_message_with_file(
+                              'Handling interleaved fastq files is not yet implemented, let me know if you need this',
+                              filename))
                 else:
                     warning(len(filenames1) == len(filenames2),
                             'Number of fastq files is not equal for filenames_read1 and filenames_read2 for sample ' + sample_id)
@@ -318,7 +325,8 @@ def read_samplefile(filename, prefixpath=None):
                 warning(len(filenames1) == 1, 'Only a single GVCF file can be given: ' + sample_id)
             elif file_type == 'cram' or file_type == 'recalibrated_cram' or file_type == 'extracted_cram':
                 error(len(filenames2) == 1 and (filenames2[0].endswith('fa') or filenames2[0].endswith('fasta')),
-                      'Second filename for CRAM filetype should be fasta reference file')
+                      error_message_with_file('Second filename for CRAM filetype should be fasta reference file',
+                                              filename))
                 cram_refs = filenames2
                 filenames2 = []
             else:
@@ -632,8 +640,10 @@ def read_fastqfile(filename):
             machine_info, read_info = header.split('#')
             machine_fields = machine_info.split(':')
             read_fields = read_info.split('/')
-            error(len(machine_fields) == 5, 'Unexpected fastq header format: ' + header)
-            error(len(read_fields) == 2, 'Unexpected fastq header format: ' + header)
+            error(len(machine_fields) == 5,
+                  error_message_with_file('Unexpected fastq header format: ' + header, filename))
+            error(len(read_fields) == 2,
+                  error_message_with_file('Unexpected fastq header format: ' + header, filename))
             instrument_name, flowcell_lane, tile_number, x, y = machine_fields
             index_seq, pairid = read_fields
             run_id = '0'
@@ -641,7 +651,7 @@ def read_fastqfile(filename):
 
         elif ' ' in header:  # casava 1.8
             header = header.strip()
-            error(' ' in header, 'Unexpected fastq header format: ' + header)
+            error(' ' in header, error_message_with_file('Unexpected fastq header format: ' + header, filename))
             machine_info, read_info = header.split(' ')
             machine_fields = machine_info.split(':')
             
@@ -661,7 +671,7 @@ def read_fastqfile(filename):
                 x = '0'
                 y = '0'                   
             else:     
-                error(False, 'Unexpected fastq header format: ' + header)
+                error(False, error_message_with_file('Unexpected fastq header format: ' + header, filename))
 
             if '/' in read_info:   
                 read_info, pairid = read_info.split('/')
@@ -680,7 +690,7 @@ def read_fastqfile(filename):
                 instrument_name, run_id, flowcell_id, flowcell_lane, tile_number, x, y = read_fields
                 index_seq = ''
             else:
-                error(False, 'Unexpected fastq header format: ' + header)
+                error(False, error_message_with_file('Unexpected fastq header format: ' + header, filename))
             
             
         elif '/' in header:  # french format, no multiplex
@@ -700,13 +710,13 @@ def read_fastqfile(filename):
                 x = '0'
                 y = '0'
             else:
-                error(False, 'Unexpected fastq header format: ' + header)
+                error(False, error_message_with_file('Unexpected fastq header format: ' + header, filename))
 
             index_seq = '0'
             pairid = read_fields.strip('\n')
         else:
             pairid = '0'
-            error(False, 'Unexpected fastq header formaat: ' + header)
+            error(False, error_message_with_file('Unexpected fastq header formaat: ' + header, filename))
         # BONN has pair id of 3 which means 2 .....???
         if pairid.strip() == '3':
             pairid = '2'
