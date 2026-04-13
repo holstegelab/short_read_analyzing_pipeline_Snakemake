@@ -1,4 +1,6 @@
 import os
+import shutil
+import tarfile
 from common import *
 current_dir = os.getcwd()
 import concurrent.futures
@@ -8,6 +10,7 @@ wildcard_constraints:
     sample=r"[\w\d_\-@]+",
     chr = r"[\w\d]+",
     region = r"[\w\d]+",
+    tar_kind = r"wes|wgs",
     genotype_mode = r"WES|WGS",
     # readgroup="[\w\d_\-@]+"
 
@@ -20,6 +23,63 @@ print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {sample_types}")
 print(f"Filtration setting: {glnexus_filtration}")
 parts = level2_regions_diploid
+
+
+def is_wgs_sample(sample):
+    sample_type = SAMPLEINFO[sample]["sample_type"]
+    return "wgs" in sample_type or "WGS" in sample_type
+
+
+def deepvariant_local_gvcf_path(samplefile, sample, region):
+    samplefile_folder = get_samplefile_folder(samplefile)
+    if is_wgs_sample(sample):
+        chunk = convert_to_level1(region)
+        if genotype_mode == "WES":
+            return pj(samplefile_folder, DEEPVARIANT, "gVCF", "exome_extract", chunk, f"{sample}.{chunk}.wg.vcf.gz")
+        return pj(samplefile_folder, DEEPVARIANT, "gVCF", chunk, f"{sample}.{chunk}.wg.vcf.gz")
+    chunk = convert_to_level0(region)
+    return pj(samplefile_folder, DEEPVARIANT, "gVCF", chunk, f"{sample}.{chunk}.wg.vcf.gz")
+
+
+def deepvariant_dcache_tar_kind(sample):
+    if genotype_mode == "WES":
+        return "wes"
+    if is_wgs_sample(sample):
+        return "wgs"
+    return None
+
+
+def deepvariant_cached_gvcf_path(sample, region):
+    return pj(current_dir, "GLnexus_cache", "deepvariant", genotype_mode, region, f"{sample}.g.vcf.gz")
+
+
+def deepvariant_cached_tar_path(samplefile, region, tar_kind):
+    return pj(current_dir, GVCF_TAR, f"deepvariant_level2_{tar_kind}", f"{samplefile}.{region}.dv.{tar_kind}.gvcf.tar")
+
+
+def deepvariant_remote_tar_path(samplefile, region, tar_kind):
+    remote_dir = os.path.join(remote_base_for_samplefile(samplefile), "gvcf", "deepvariant", "level2", tar_kind)
+    remote_name = f"{samplefile}.{region}.dv.{tar_kind}.gvcf.tar"
+    return os.path.join(remote_dir, remote_name)
+
+
+def deepvariant_tar_member_name(sample, region, tar_kind):
+    return f"{sample}.{region}.dv.{tar_kind}.g.vcf.gz"
+
+
+def resolve_deepvariant_gvcf_input(samplefile, sample, region):
+    local_gvcf = deepvariant_local_gvcf_path(samplefile, sample, region)
+    local_tbi = local_gvcf + ".tbi"
+    if os.path.exists(local_gvcf) and os.path.exists(local_tbi):
+        return local_gvcf
+
+    tar_kind = deepvariant_dcache_tar_kind(sample)
+    if tar_kind is None:
+        raise FileNotFoundError(
+            f"DeepVariant gVCF for sample {sample} region {region} is missing locally and "
+            f"no dCache fallback exists for genotype_mode={genotype_mode} sample_type={SAMPLEINFO[sample]['sample_type']}"
+        )
+    return deepvariant_cached_gvcf_path(sample, region)
 
 def generate_gvcf_input_HC(wildcards):
     region = wildcards['region']
@@ -67,24 +127,12 @@ def generate_gvcf_input_DV(wildcards):
     res = []
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
-        samplefile_folder = get_samplefile_folder(samplefile)
-        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'))
+        sample_sex = read_sexchrom(pj(get_samplefile_folder(samplefile), samplefile + '.sex_chrom.tab'))
         gvcf_input = []
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
                 continue
-            # Determine if it is WGS or WES
-            if 'wgs' in SAMPLEINFO[sample]["sample_type"] or "WGS" in SAMPLEINFO[sample]["sample_type"] :
-                chunk = convert_to_level1(region)
-                if genotype_mode == 'WES':
-                    filenames = expand("{cd}/{GVCF}/gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=DEEPVARIANT,region = chunk, sample=sample,allow_missing=True)
-                else:
-                    filenames = expand("{cd}/{GVCF}/gVCF/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=DEEPVARIANT,region = chunk, sample=sample,allow_missing=True)
-            else:  # WES
-                chunk = convert_to_level0(region)
-                # 'gVCF', 'DIVIDED', '{region}', '{sample}.{region}.wg.vcf.gz'
-                filenames = expand("{cd}/{GVCF}/gVCF/{region}/{sample}.{region}.wg.vcf.gz",cd=samplefile_folder,GVCF=DEEPVARIANT,region = chunk, sample=sample,allow_missing=True)
-            gvcf_input.extend(filenames)
+            gvcf_input.append(resolve_deepvariant_gvcf_input(samplefile, sample, region))
         res.extend(gvcf_input)
     return res
 
@@ -208,6 +256,57 @@ def run_bcftools_DV(i, bed, region):
     cmd = f"bcftools view -R {bed} {i} -O v -o {region}_gvcfs_DV/{samplename}.vcf"
     return cmd
 
+
+rule fetch_deepvariant_tar_from_dcache:
+    output:
+        tar=pj(current_dir, GVCF_TAR, "deepvariant_level2_{tar_kind}", "{samplefile}.{region}.dv.{tar_kind}.gvcf.tar")
+    params:
+        remote_tar=lambda wc: deepvariant_remote_tar_path(wc.samplefile, wc.region, wc.tar_kind)
+    resources:
+        mem_mb=2000,
+        n="0.2",
+        dcache_use_add=config.get('dcache_use_add', 0),
+        dcache_use_remove=config.get('dcache_use_remove', 0)
+    run:
+        os.makedirs(os.path.dirname(output.tar), exist_ok=True)
+        shell(
+            "rclone --config {AGH_DCACHE_CONFIG} copyto agh_processed:{params.remote_tar} {output.tar}"
+        )
+
+
+rule materialize_deepvariant_gvcf_for_glnexus:
+    input:
+        tar=lambda wc: deepvariant_cached_tar_path(
+            os.path.basename(SAMPLEINFO[wc.sample]["samplefile"]),
+            wc.region,
+            deepvariant_dcache_tar_kind(wc.sample)
+        )
+    output:
+        gvcf=deepvariant_cached_gvcf_path("{sample}", "{region}"),
+        tbi=deepvariant_cached_gvcf_path("{sample}", "{region}") + ".tbi"
+    run:
+        tar_kind = deepvariant_dcache_tar_kind(wildcards.sample)
+        if tar_kind is None:
+            raise ValueError(
+                f"No dCache DeepVariant tar mapping for sample {wildcards.sample} in genotype_mode={genotype_mode}"
+            )
+
+        member_gvcf = deepvariant_tar_member_name(wildcards.sample, wildcards.region, tar_kind)
+        member_tbi = member_gvcf + ".tbi"
+        os.makedirs(os.path.dirname(output.gvcf), exist_ok=True)
+
+        with tarfile.open(input.tar, "r") as tar_handle:
+            members = {member.name: member for member in tar_handle.getmembers()}
+            missing = [name for name in (member_gvcf, member_tbi) if name not in members]
+            if missing:
+                raise FileNotFoundError(
+                    f"Missing members in {input.tar}: {', '.join(missing)}"
+                )
+            with tar_handle.extractfile(members[member_gvcf]) as src, open(output.gvcf, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            with tar_handle.extractfile(members[member_tbi]) as src, open(output.tbi, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
 rule glnexus_DV:
     input: generate_gvcf_input_DV
     output: vcf= pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
@@ -233,9 +332,17 @@ rule glnexus_DV:
         glnexus_cli  --dir {params.scratch_dir} --bed {params.bed} --threads 63 --mem-gbytes {params.mem_gb} --config {params.conf_filters}  {params.generate_gvcf_input_DV_divided} 2> {log}  |  bcftools view --threads 64 -  | bgzip -@ 64 -c > {output} 2>> {log}
         rm -rf {wildcards.region}_gvcfs_DV
         """)
-use rule index_deep as index_deep_2 with:
-    input: rules.glnexus_DV.output.vcf
-    output: tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
+rule index_deep_2:
+    input:
+        rules.glnexus_DV.output.vcf
+    output:
+        tbi = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz.tbi")
+    conda: CONDA_VCF
+    resources:
+        n = "1",
+        active_use_remove = 500,
+        mem_mb = 2500
+    shell: "gatk IndexFeatureFile -I {input}"
 
 rule check_glnexus_lof_file:
     input: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Haplotypecaller" + dir_appendix, "{region}.vcf.gz"),
@@ -251,10 +358,21 @@ rule check_glnexus_lof_file:
         fi
          """
 
-use rule check_glnexus_lof_file as check_glnexus_lof_file_2 with:
-    input: vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
-            log= pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
-    output: pj(current_dir,"{genotype_mode}_GLnexus_on_Deepvariant","{region}.vcf_is_ok")  # file to staret annotation {wildcard.region}
+rule check_glnexus_lof_file_2:
+    input:
+        vcf = pj(current_dir, "{genotype_mode}_" + "GLnexus_on_Deepvariant" + dir_appendix, "{region}.vcf.gz"),
+        log= pj(current_dir,"logs","glnexus","glnexus_DV_{region}.{genotype_mode}.log")
+    output:
+        pj(current_dir,"{genotype_mode}_GLnexus_on_Deepvariant","{region}.vcf_is_ok")
+    shell:
+        """
+        if grep -q "genotyping complete!" {input.log}; then
+            touch {output}
+        else
+            mkdir error_vcfs
+            mv {input.vcf} error_vcfs/
+        fi
+         """
 
 
 rule split_multiallelic:
