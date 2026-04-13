@@ -18,6 +18,8 @@ gvcf_caller = config.get("caller", "BOTH")
 glnexus_filtration = config.get("glnexus_filtration", "custom")
 sample_types = config.get("sample_types","WES")
 genotype_mode = config.get("genotype_mode", "WES") #or WGS
+dcache_read_token = config.get("token", "/gpfs/home1/gozhegov/macarons/agh_full_snellius.conf")
+dcache_read_prefix = config.get("prefix", "agh_full_snellius:/tape/processed")
 
 print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {sample_types}")
@@ -61,6 +63,13 @@ def deepvariant_remote_tar_path(samplefile, region, tar_kind):
     remote_dir = os.path.join(remote_base_for_samplefile(samplefile), "gvcf", "deepvariant", "level2", tar_kind)
     remote_name = f"{samplefile}.{region}.dv.{tar_kind}.gvcf.tar"
     return os.path.join(remote_dir, remote_name)
+
+
+def deepvariant_remote_tar_target(samplefile, region, tar_kind):
+    return os.path.join(
+        dcache_read_prefix.rstrip("/"),
+        deepvariant_remote_tar_path(samplefile, region, tar_kind)
+    )
 
 
 def deepvariant_tar_member_name(sample, region, tar_kind):
@@ -261,7 +270,8 @@ rule fetch_deepvariant_tar_from_dcache:
     output:
         tar=pj(current_dir, GVCF_TAR, "deepvariant_level2_{tar_kind}", "{samplefile}.{region}.dv.{tar_kind}.gvcf.tar")
     params:
-        remote_tar=lambda wc: deepvariant_remote_tar_path(wc.samplefile, wc.region, wc.tar_kind)
+        remote_tar=lambda wc: deepvariant_remote_tar_target(wc.samplefile, wc.region, wc.tar_kind),
+        token=dcache_read_token
     resources:
         mem_mb=2000,
         n="0.2",
@@ -270,7 +280,7 @@ rule fetch_deepvariant_tar_from_dcache:
     run:
         os.makedirs(os.path.dirname(output.tar), exist_ok=True)
         shell(
-            "rclone --config {AGH_DCACHE_CONFIG} copyto agh_processed:{params.remote_tar} {output.tar}"
+            "rclone --config {params.token} copyto {params.remote_tar} {output.tar}"
         )
 
 
