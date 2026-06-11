@@ -439,7 +439,7 @@ def remote_base_for_samplefile(samplefile):
     return remote_base_for_sample(samples[0])
 
 
-def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, config_path, ada_script):
+def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, config_path, ada_script, remote_profile='agh_processed'):
     adler_local = 1
     with open(local_path, 'rb') as fhandle:
         for chunk in iter(lambda: fhandle.read(16 * 1024 * 1024), b''):
@@ -448,7 +448,7 @@ def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, confi
 
     adler_remote = ''
     retries = 0
-    remote_dir_full = f"agh_processed:{remote_dir}"
+    remote_dir_full = f"{remote_profile}:{remote_dir}"
     remote_file = f"{remote_dir}/{remote_name}"
     remote_file_full = f"{remote_dir_full}/{remote_name}"
     config_q = quote(config_path)
