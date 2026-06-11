@@ -121,10 +121,22 @@ rule glnexus_to_irods_all:
         )
 
 
+rule index_joint_vcf_for_irods:
+    input:
+        vcf=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz")
+    output:
+        tbi=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi")
+    conda:
+        CONDA_MAIN
+    shell:
+        """
+        tabix -fp vcf {input.vcf}
+        """
+
+
 rule prepare_joint_vcf_irods_metadata:
     input:
-        vcf=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
-        tbi=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi")
+        vcf=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz")
     output:
         samples_tsv=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.samples.tsv"),
         metadata_json=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.json")
@@ -157,7 +169,7 @@ rule prepare_joint_vcf_irods_metadata:
 rule copy_joint_vcf_bundle_to_irods:
     input:
         vcf=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
-        tbi=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz.tbi"),
+        tbi=rules.index_joint_vcf_for_irods.output.tbi,
         samples_tsv=rules.prepare_joint_vcf_irods_metadata.output.samples_tsv,
         metadata_json=rules.prepare_joint_vcf_irods_metadata.output.metadata_json
     output:
