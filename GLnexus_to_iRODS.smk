@@ -1,14 +1,19 @@
 import gzip
 import json
 import os
+import re
+import subprocess
+import tempfile
 
 from common import *
 
 current_dir = os.getcwd()
 
-gvcf_caller = config.get("caller", "BOTH")
+gvcf_caller = config.get("caller", "Deepvariant")
 glnexus_filtration = config.get("glnexus_filtration", "custom")
-genotype_mode = config.get("genotype_mode", "WES")
+genotype_mode = config.get("genotype_mode", "WGS")
+_COMMAND_VERSION_CACHE = {}
+_CONTAINER_METADATA_CACHE = {}
 
 
 def analysis_name():
@@ -85,8 +90,20 @@ def remote_annotated_dir(wildcards):
     )
 
 
+def remote_analysis_stat_dir():
+    return os.path.join(
+        "projects",
+        analysis_name(),
+        "stat"
+    )
+
+
 def remote_namespace_path(remote_dir, remote_name):
     return "/" + os.path.join(remote_dir, remote_name)
+
+
+def remote_namespace_dir(remote_dir):
+    return "/" + remote_dir
 
 
 def read_vcf_samples(vcf_path):
@@ -106,6 +123,196 @@ def compute_adler32_hex(path):
     return f"{adler_value & 0xffffffff:08x}"
 
 
+def _git_output(args):
+    try:
+        return subprocess.check_output(
+            ["git"] + args,
+            cwd=current_dir,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
+
+
+def pipeline_git_metadata():
+    commit = _git_output(["rev-parse", "HEAD"])
+    commit_short = _git_output(["rev-parse", "--short", "HEAD"])
+    branch = _git_output(["branch", "--show-current"])
+    status = _git_output(["status", "--short"])
+    return {
+        "commit": commit,
+        "commit_short": commit_short,
+        "branch": branch,
+        "is_dirty": bool(status) if status is not None else None,
+    }
+
+
+def _command_output(command):
+    cache_key = tuple(command)
+    if cache_key in _COMMAND_VERSION_CACHE:
+        return _COMMAND_VERSION_CACHE[cache_key]
+
+    try:
+        output = subprocess.check_output(
+            command,
+            text=True,
+            stderr=subprocess.STDOUT,
+        ).strip()
+        result = output.splitlines()[0] if output else None
+    except Exception:
+        result = None
+
+    _COMMAND_VERSION_CACHE[cache_key] = result
+    return result
+
+
+def configured_or_detected_version(config_key, command):
+    version = config.get(config_key)
+    if version:
+        return str(version)
+    return _command_output(command)
+
+
+def container_metadata(snakefile_name, image_token, config_prefix):
+    cache_key = (snakefile_name, image_token, config_prefix)
+    if cache_key in _CONTAINER_METADATA_CACHE:
+        return _CONTAINER_METADATA_CACHE[cache_key]
+
+    image = config.get(f"{config_prefix}_container")
+    snakefile_path = pj(current_dir, snakefile_name)
+    if image is None and os.path.exists(snakefile_path):
+        pattern = re.compile(r"container:\s*['\"]([^'\"]*" + re.escape(image_token) + r"[^'\"]*)['\"]")
+        with open(snakefile_path, "r") as handle:
+            for line in handle:
+                match = pattern.search(line)
+                if match:
+                    image = match.group(1)
+                    break
+
+    version = config.get(f"{config_prefix}_version")
+    if version is None and image and ":" in image.rsplit("/", 1)[-1]:
+        version = image.rsplit(":", 1)[-1]
+
+    result = {
+        "version": str(version) if version else None,
+        "container": image,
+    }
+    _CONTAINER_METADATA_CACHE[cache_key] = result
+    return result
+
+
+def tool_versions_metadata():
+    return {
+        "dragen_os": {
+            "version": configured_or_detected_version("dragen_os_version", [dragmap, "--version"]),
+            "command": dragmap,
+            "version_command": f"{dragmap} --version",
+        },
+        "glnexus": container_metadata("GLnexus.smk", "glnexus", "glnexus"),
+        "deepvariant": container_metadata("Deepvariant.smk", "deepvariant", "deepvariant"),
+        "haplotypecaller": {
+            "version": configured_or_detected_version(
+                "haplotypecaller_version",
+                [gatk, "--version"]
+            ),
+            "command": gatk,
+            "version_command": f"{gatk} --version",
+            "tool": "GATK HaplotypeCaller",
+        },
+    }
+
+
+def reference_build():
+    return str(config.get("reference_build", config.get("genome_build", "GRCh38")))
+
+
+def aligner_metadata():
+    return {
+        "name": "DRAGMAP",
+        "command": dragmap,
+    }
+
+
+def caller_metadata(wildcards):
+    return {
+        "assay_type": wildcards.genotype_mode,
+        "per_sample_caller": "DeepVariant" if wildcards.types_of_gl == "GLnexus_on_Deepvariant" else "HaplotypeCaller",
+        "joint_caller": "GLnexus",
+        "joint_filtration": glnexus_filtration,
+    }
+
+
+def samplefile_for_sample(sample):
+    return os.path.basename(SAMPLEINFO[sample]["samplefile"])
+
+
+def capture_kit_for_sample(sample):
+    sample_type = str(SAMPLEINFO[sample].get("sample_type", "")).lower()
+    if "wgs" in sample_type:
+        return "WGS"
+    return SAMPLEINFO[sample].get("capture_kit")
+
+
+def bed_file_for_region(wildcards):
+    return region_to_file(
+        wildcards.region,
+        wgs=wildcards.genotype_mode == "WGS",
+        extension="bed"
+    )
+
+
+def read_bed_coordinates(bed_path):
+    coordinates = []
+    with open(bed_path, "r") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith(("#", "track", "browser")):
+                continue
+            fields = line.split("\t")
+            if len(fields) < 3:
+                raise ValueError(f"Invalid BED line in {bed_path}: {line}")
+            coordinates.append({
+                "chrom": fields[0],
+                "start": int(fields[1]),
+                "end": int(fields[2]),
+            })
+    if not coordinates:
+        raise ValueError(f"No BED coordinates found in {bed_path}")
+    return coordinates
+
+
+def ingest_marker_inputs(wildcards):
+    return expand(
+        pj(
+            current_dir,
+            "{genotype_mode}_{types_of_gl}" + dir_appendix,
+            "ANNOTATED",
+            "{region}.annotated.irods.copied"
+        ),
+        genotype_mode=[wildcards.genotype_mode],
+        types_of_gl=[wildcards.types_of_gl],
+        region=level2_regions_diploid
+    )
+
+
+def stat_copy_inputs(wildcards):
+    vcf_path = pj(
+        current_dir,
+        f"{wildcards.genotype_mode}_{wildcards.types_of_gl}{dir_appendix}",
+        "ANNOTATED",
+        f"{wildcards.region}.annotated.vcf.gz"
+    )
+    if not os.path.exists(vcf_path):
+        return []
+
+    samplefiles = sorted({samplefile_for_sample(sample) for sample in read_vcf_samples(vcf_path)})
+    return expand(
+        pj(STAT, "{samplefile}.analysis_stat.copied"),
+        samplefile=samplefiles
+    )
+
+
 rule glnexus_to_irods_all:
     input:
         expand(
@@ -113,11 +320,10 @@ rule glnexus_to_irods_all:
                 current_dir,
                 "{genotype_mode}_{types_of_gl}" + dir_appendix,
                 "ANNOTATED",
-                "{region}.annotated.irods.copied"
+                ".ingest.created"
             ),
             genotype_mode=[genotype_mode],
             types_of_gl=glnexus_dirs,
-            region=level2_regions_diploid
         )
 
 
@@ -134,6 +340,62 @@ rule index_joint_vcf_for_irods:
         """
 
 
+rule copy_analysis_stats_to_irods:
+    input:
+        bam=pj("{samplefile}.bam_quality.tab"),
+        bam_rg=pj("{samplefile}.bam_rg_quality.tab"),
+        oxo=pj("{samplefile}.oxo_quality.tab"),
+        sex=pj("{samplefile}.sex_chrom.tab"),
+        cov=pj("{samplefile}.coverage.hdf5"),
+        kraken=pj("{samplefile}.kraken.tab")
+    output:
+        copied=temp(pj(STAT, "{samplefile}.analysis_stat.copied")),
+        checksums=pj(STAT, "{samplefile}.analysis_stat.transfer_checksums.tsv")
+    params:
+        ada_script=srcdir(ADA),
+        token=lambda wc: transfer_token_path(),
+        remote_name=lambda wc: transfer_remote_name(),
+        remote_dir=lambda wc: remote_analysis_stat_dir()
+    resources:
+        mem_mb=2000,
+        n="0.1",
+        dcache_use_add=config.get("dcache_use_add", 0),
+        dcache_use_remove=config.get("dcache_use_remove", 0)
+    run:
+        remote_dir = params.remote_dir
+        token = params.token
+        remote_name = params.remote_name
+
+        files = [
+            (str(input.bam), os.path.basename(str(input.bam))),
+            (str(input.bam_rg), os.path.basename(str(input.bam_rg))),
+            (str(input.oxo), os.path.basename(str(input.oxo))),
+            (str(input.sex), os.path.basename(str(input.sex))),
+            (str(input.cov), os.path.basename(str(input.cov))),
+            (str(input.kraken), os.path.basename(str(input.kraken))),
+        ]
+
+        checksum_entries = []
+        for local_path, remote_file_name in files:
+            checksum_tmp = f"{output.checksums}.{remote_file_name}.tmp"
+            copy_with_checksum(
+                local_path,
+                remote_dir,
+                remote_file_name,
+                checksum_tmp,
+                token,
+                params.ada_script,
+                remote_profile=remote_name
+            )
+            with open(checksum_tmp, "r") as handle:
+                checksum_entries.append(f"{remote_file_name}\t{handle.readline().strip()}\n")
+
+        with open(output.checksums, "w") as handle:
+            handle.writelines(checksum_entries)
+
+        shell(f"touch {quote(str(output.copied))}")
+
+
 rule prepare_joint_vcf_irods_metadata:
     input:
         vcf=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz")
@@ -147,6 +409,22 @@ rule prepare_joint_vcf_irods_metadata:
         local_vcf_checksum = compute_adler32_hex(str(input.vcf))
         remote_dir = remote_annotated_dir(wildcards)
         remote_samples_name = os.path.basename(str(output.samples_tsv))
+        region_coordinates = read_bed_coordinates(bed_file_for_region(wildcards))
+        pipeline_version = pipeline_git_metadata()
+        callers = caller_metadata(wildcards)
+        sample_capture_kit_mapping = {
+            sample: capture_kit_for_sample(sample)
+            for sample in samples
+        }
+        capture_kits = sorted({kit for kit in sample_capture_kit_mapping.values() if kit})
+        sample_batch_mapping = {
+            sample: {
+                "samplefile": samplefile_for_sample(sample),
+                "batch": SAMPLE_TO_BATCH.get(sample),
+            }
+            for sample in samples
+        }
+        samplefiles = sorted({entry["samplefile"] for entry in sample_batch_mapping.values()})
 
         with open(output.samples_tsv, "w") as handle:
             handle.write("sample_id\n")
@@ -156,9 +434,23 @@ rule prepare_joint_vcf_irods_metadata:
         metadata = {
             "cohort_id": cohort_id(),
             "n_of_samples": len(samples),
-            "region": wildcards.region,
+            "region": region_coordinates,
+            "reference_build": reference_build(),
+            "reference_fasta": REF,
             "samples_tsv_path": remote_namespace_path(remote_dir, remote_samples_name),
-            "adler32": local_vcf_checksum,
+            "ADLER32": local_vcf_checksum,
+            "pipeline_version": pipeline_version,
+            "assay_type": callers["assay_type"],
+            "capture_kit": capture_kits[0] if len(capture_kits) == 1 else capture_kits,
+            "sample_capture_kit_mapping": sample_capture_kit_mapping,
+            "per_sample_caller": callers["per_sample_caller"],
+            "joint_caller": callers["joint_caller"],
+            "joint_filtration": callers["joint_filtration"],
+            "aligner": aligner_metadata(),
+            "tool_versions": tool_versions_metadata(),
+            "sample_batch_mapping": sample_batch_mapping,
+            "samplefiles": samplefiles,
+            "stat_dir_path": remote_namespace_dir(remote_analysis_stat_dir()),
         }
 
         with open(output.metadata_json, "w") as handle:
@@ -170,6 +462,7 @@ rule copy_joint_vcf_bundle_to_irods:
     input:
         vcf=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", "{region}.annotated.vcf.gz"),
         tbi=rules.index_joint_vcf_for_irods.output.tbi,
+        stats_markers=stat_copy_inputs,
         samples_tsv=rules.prepare_joint_vcf_irods_metadata.output.samples_tsv,
         metadata_json=rules.prepare_joint_vcf_irods_metadata.output.metadata_json
     output:
@@ -216,3 +509,48 @@ rule copy_joint_vcf_bundle_to_irods:
             handle.writelines(checksum_entries)
 
         shell(f"touch {quote(str(output.copied))}")
+
+
+rule create_remote_ingest_marker:
+    input:
+        ingest_marker_inputs
+    output:
+        marker=pj(current_dir, "{genotype_mode}_{types_of_gl}" + dir_appendix, "ANNOTATED", ".ingest.created")
+    params:
+        ada_script=srcdir(ADA),
+        token=lambda wc: transfer_token_path(),
+        remote_name=lambda wc: transfer_remote_name(),
+        remote_dir=remote_annotated_dir
+    resources:
+        mem_mb=1000,
+        n="0.1",
+        dcache_use_add=config.get("dcache_use_add", 0),
+        dcache_use_remove=config.get("dcache_use_remove", 0)
+    run:
+        remote_dir = params.remote_dir
+        token = params.token
+        remote_name = params.remote_name
+        os.makedirs(os.path.dirname(str(output.marker)), exist_ok=True)
+
+        with tempfile.NamedTemporaryFile(prefix="irods_ingest_", suffix=".tmp", dir="/tmp", delete=False) as handle:
+            ingest_tmp = handle.name
+        with tempfile.NamedTemporaryFile(prefix="irods_ingest_checksum_", suffix=".tmp", dir="/tmp", delete=False) as handle:
+            checksum_tmp = handle.name
+
+        try:
+            copy_with_checksum(
+                ingest_tmp,
+                remote_dir,
+                ".ingest",
+                checksum_tmp,
+                token,
+                params.ada_script,
+                remote_profile=remote_name
+            )
+        finally:
+            if os.path.exists(ingest_tmp):
+                os.unlink(ingest_tmp)
+            if os.path.exists(checksum_tmp):
+                os.unlink(checksum_tmp)
+
+        shell(f"touch {quote(str(output.marker))}")
