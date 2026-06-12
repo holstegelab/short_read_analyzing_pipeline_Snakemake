@@ -1,18 +1,20 @@
+import csv
 import gzip
 import json
 import os
 import re
 import subprocess
 import tempfile
+import yaml
 
 from common import *
 
 current_dir = os.getcwd()
+workflow_dir = str(srcdir("."))
 
 gvcf_caller = config.get("caller", "Deepvariant")
 glnexus_filtration = config.get("glnexus_filtration", "custom")
 genotype_mode = config.get("genotype_mode", "WGS")
-_COMMAND_VERSION_CACHE = {}
 _CONTAINER_METADATA_CACHE = {}
 
 
@@ -148,30 +150,62 @@ def pipeline_git_metadata():
     }
 
 
-def _command_output(command):
-    cache_key = tuple(command)
-    if cache_key in _COMMAND_VERSION_CACHE:
-        return _COMMAND_VERSION_CACHE[cache_key]
+def workflow_path(*segments):
+    return pj(workflow_dir, *segments)
 
+
+def configured_version(*keys):
+    for key in keys:
+        value = config.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def workflow_yaml_value(key, yaml_name="Snakefile.paths.yaml"):
+    path = workflow_path(yaml_name)
+    if not os.path.exists(path):
+        return None
     try:
-        output = subprocess.check_output(
-            command,
-            text=True,
-            stderr=subprocess.STDOUT,
-        ).strip()
-        result = output.splitlines()[0] if output else None
+        with open(path, "r") as handle:
+            data = yaml.safe_load(handle) or {}
     except Exception:
-        result = None
+        return None
+    value = data.get(key)
+    return str(value) if value else None
 
-    _COMMAND_VERSION_CACHE[cache_key] = result
-    return result
+
+def conda_dependency_version(env_name, package_name):
+    path = workflow_path(env_name)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as handle:
+            data = yaml.safe_load(handle) or {}
+    except Exception:
+        return None
+
+    for dependency in data.get("dependencies", []):
+        if not isinstance(dependency, str):
+            continue
+        match = re.match(rf"^{re.escape(package_name)}=([^=]+)$", dependency)
+        if match:
+            return match.group(1)
+    return None
 
 
-def configured_or_detected_version(config_key, command):
-    version = config.get(config_key)
-    if version:
-        return str(version)
-    return _command_output(command)
+def gatk_path_from_config():
+    return config.get("GATK") or workflow_yaml_value("GATK") or gatk
+
+
+def gatk_version_from_path(path):
+    match = re.search(r"gatk-package-([^/]+?)\.jar", str(path))
+    if match:
+        return match.group(1)
+    match = re.search(r"gatk[_-](\d+(?:\.\d+)*)", str(path), flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
 
 
 def container_metadata(snakefile_name, image_token, config_prefix):
@@ -180,7 +214,7 @@ def container_metadata(snakefile_name, image_token, config_prefix):
         return _CONTAINER_METADATA_CACHE[cache_key]
 
     image = config.get(f"{config_prefix}_container")
-    snakefile_path = pj(current_dir, snakefile_name)
+    snakefile_path = workflow_path(snakefile_name)
     if image is None and os.path.exists(snakefile_path):
         pattern = re.compile(r"container:\s*['\"]([^'\"]*" + re.escape(image_token) + r"[^'\"]*)['\"]")
         with open(snakefile_path, "r") as handle:
@@ -203,21 +237,18 @@ def container_metadata(snakefile_name, image_token, config_prefix):
 
 
 def tool_versions_metadata():
+    gatk_path = gatk_path_from_config()
     return {
         "dragen_os": {
-            "version": configured_or_detected_version("dragen_os_version", [dragmap, "--version"]),
-            "command": dragmap,
-            "version_command": f"{dragmap} --version",
+            "version": configured_version("dragen_os_version", "dragmap_version") or conda_dependency_version("envs/dragenos.yaml", "dragmap"),
+            "command": config.get("dragmap", dragmap),
         },
         "glnexus": container_metadata("GLnexus.smk", "glnexus", "glnexus"),
         "deepvariant": container_metadata("Deepvariant.smk", "deepvariant", "deepvariant"),
         "haplotypecaller": {
-            "version": configured_or_detected_version(
-                "haplotypecaller_version",
-                [gatk, "--version"]
-            ),
-            "command": gatk,
-            "version_command": f"{gatk} --version",
+            "version": configured_version("haplotypecaller_version", "gatk_version") or gatk_version_from_path(gatk_path),
+            "command": config.get("gatk", gatk),
+            "config_path": gatk_path,
             "tool": "GATK HaplotypeCaller",
         },
     }
@@ -256,6 +287,52 @@ def capture_kit_for_sample(sample):
     if "wgs" in sample_type:
         return "WGS"
     return SAMPLEINFO[sample].get("capture_kit")
+
+
+def sample_metadata(sample):
+    return {
+        "samplefile": samplefile_for_sample(sample),
+        "batch": SAMPLE_TO_BATCH.get(sample),
+        "capture_kit": capture_kit_for_sample(sample),
+    }
+
+
+def _summary_key(value, missing="unknown"):
+    return str(value) if value else missing
+
+
+def increment_count(counts, value, missing="unknown"):
+    key = _summary_key(value, missing=missing)
+    counts[key] = counts.get(key, 0) + 1
+
+
+def sample_summary(samples):
+    batch_counts = {}
+    capture_kit_counts = {}
+    samplefile_data = {}
+
+    for sample in samples:
+        metadata = sample_metadata(sample)
+        samplefile = metadata["samplefile"]
+        if samplefile not in samplefile_data:
+            samplefile_data[samplefile] = {
+                "samplefile": samplefile,
+                "n_samples": 0,
+                "batches": {},
+                "capture_kits": {},
+            }
+
+        samplefile_data[samplefile]["n_samples"] += 1
+        increment_count(samplefile_data[samplefile]["batches"], metadata["batch"], missing="not_staged")
+        increment_count(samplefile_data[samplefile]["capture_kits"], metadata["capture_kit"])
+        increment_count(batch_counts, metadata["batch"], missing="not_staged")
+        increment_count(capture_kit_counts, metadata["capture_kit"])
+
+    return {
+        "batch_counts": batch_counts,
+        "capture_kit_counts": capture_kit_counts,
+        "samplefiles": [samplefile_data[key] for key in sorted(samplefile_data)],
+    }
 
 
 def bed_file_for_region(wildcards):
@@ -416,24 +493,20 @@ rule prepare_joint_vcf_irods_metadata:
         region_coordinates = read_bed_coordinates(bed_file_for_region(wildcards))
         pipeline_version = pipeline_git_metadata()
         callers = caller_metadata(wildcards)
-        sample_capture_kit_mapping = {
-            sample: capture_kit_for_sample(sample)
-            for sample in samples
-        }
-        capture_kits = sorted({kit for kit in sample_capture_kit_mapping.values() if kit})
-        sample_batch_mapping = {
-            sample: {
-                "samplefile": samplefile_for_sample(sample),
-                "batch": SAMPLE_TO_BATCH.get(sample),
-            }
-            for sample in samples
-        }
-        samplefiles = sorted({entry["samplefile"] for entry in sample_batch_mapping.values()})
+        sample_summary_data = sample_summary(samples)
+        capture_kits = sorted(sample_summary_data["capture_kit_counts"])
 
         with open(output.samples_tsv, "w") as handle:
-            handle.write("sample_id\n")
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow(["sample_id", "samplefile", "batch", "capture_kit"])
             for sample in samples:
-                handle.write(f"{sample}\n")
+                metadata = sample_metadata(sample)
+                writer.writerow([
+                    sample,
+                    metadata["samplefile"],
+                    metadata["batch"] or "",
+                    metadata["capture_kit"] or "",
+                ])
 
         metadata = {
             "cohort_id": cohort_id(),
@@ -446,14 +519,14 @@ rule prepare_joint_vcf_irods_metadata:
             "pipeline_version": pipeline_version,
             "assay_type": callers["assay_type"],
             "capture_kit": capture_kits[0] if len(capture_kits) == 1 else capture_kits,
-            "sample_capture_kit_mapping": sample_capture_kit_mapping,
+            "capture_kit_counts": sample_summary_data["capture_kit_counts"],
             "per_sample_caller": callers["per_sample_caller"],
             "joint_caller": callers["joint_caller"],
             "joint_filtration": callers["joint_filtration"],
             "aligner": aligner_metadata(),
             "tool_versions": tool_versions_metadata(),
-            "sample_batch_mapping": sample_batch_mapping,
-            "samplefiles": samplefiles,
+            "batch_counts": sample_summary_data["batch_counts"],
+            "samplefiles": sample_summary_data["samplefiles"],
             "stat_dir_path": remote_namespace_dir(remote_analysis_stat_dir()),
         }
 
