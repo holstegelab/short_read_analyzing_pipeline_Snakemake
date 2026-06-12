@@ -343,8 +343,9 @@ def bed_file_for_region(wildcards):
     )
 
 
-def read_bed_coordinates(bed_path):
-    coordinates = []
+def read_bed_region_span(bed_path):
+    first_interval = None
+    last_interval = None
     with open(bed_path, "r") as handle:
         for line in handle:
             line = line.strip()
@@ -353,14 +354,28 @@ def read_bed_coordinates(bed_path):
             fields = line.split("\t")
             if len(fields) < 3:
                 raise ValueError(f"Invalid BED line in {bed_path}: {line}")
-            coordinates.append({
+            interval = {
                 "chrom": fields[0],
                 "start": int(fields[1]),
                 "end": int(fields[2]),
-            })
-    if not coordinates:
+            }
+            if first_interval is None:
+                first_interval = interval
+            last_interval = interval
+    if first_interval is None:
         raise ValueError(f"No BED coordinates found in {bed_path}")
-    return coordinates
+    if first_interval["chrom"] == last_interval["chrom"]:
+        return {
+            "chrom": first_interval["chrom"],
+            "start": first_interval["start"],
+            "end": last_interval["end"],
+            "bed_file": bed_path,
+        }
+    return {
+        "start": first_interval,
+        "end": last_interval,
+        "bed_file": bed_path,
+    }
 
 
 def ingest_marker_inputs(wildcards):
@@ -490,7 +505,7 @@ rule prepare_joint_vcf_irods_metadata:
         local_vcf_checksum = compute_adler32_hex(str(input.vcf))
         remote_dir = remote_annotated_dir(wildcards)
         remote_samples_name = os.path.basename(str(output.samples_tsv))
-        region_coordinates = read_bed_coordinates(bed_file_for_region(wildcards))
+        region_coordinates = read_bed_region_span(bed_file_for_region(wildcards))
         pipeline_version = pipeline_git_metadata()
         callers = caller_metadata(wildcards)
         sample_summary_data = sample_summary(samples)
