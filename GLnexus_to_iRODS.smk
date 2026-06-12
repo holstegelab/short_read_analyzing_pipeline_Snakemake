@@ -247,6 +247,10 @@ def samplefile_for_sample(sample):
     return os.path.basename(SAMPLEINFO[sample]["samplefile"])
 
 
+def samplefile_stat_path(samplefile, suffix):
+    return pj(get_samplefile_folder(samplefile), f"{samplefile}.{suffix}")
+
+
 def capture_kit_for_sample(sample):
     sample_type = str(SAMPLEINFO[sample].get("sample_type", "")).lower()
     if "wgs" in sample_type:
@@ -342,12 +346,12 @@ rule index_joint_vcf_for_irods:
 
 rule copy_analysis_stats_to_irods:
     input:
-        bam=pj("{samplefile}.bam_quality.tab"),
-        bam_rg=pj("{samplefile}.bam_rg_quality.tab"),
-        oxo=pj("{samplefile}.oxo_quality.tab"),
-        sex=pj("{samplefile}.sex_chrom.tab"),
-        cov=pj("{samplefile}.coverage.hdf5"),
-        kraken=pj("{samplefile}.kraken.tab")
+        bam=lambda wc: samplefile_stat_path(wc.samplefile, "bam_quality.tab"),
+        bam_rg=lambda wc: samplefile_stat_path(wc.samplefile, "bam_rg_quality.tab"),
+        oxo=lambda wc: samplefile_stat_path(wc.samplefile, "oxo_quality.tab"),
+        sex=lambda wc: samplefile_stat_path(wc.samplefile, "sex_chrom.tab"),
+        cov=lambda wc: samplefile_stat_path(wc.samplefile, "coverage.hdf5"),
+        kraken=lambda wc: samplefile_stat_path(wc.samplefile, "kraken.tab")
     output:
         copied=temp(pj(STAT, "{samplefile}.analysis_stat.copied")),
         checksums=pj(STAT, "{samplefile}.analysis_stat.transfer_checksums.tsv")
