@@ -23,6 +23,9 @@ rule clustering_samples:
             file_done = PCA_DONE_FILES
             # groups = pj(STAT, 'PCA_groups.tsv')
     conda: CONDA_PCA
+    resources:
+        n=8,
+        mem_mb=32000
     run:
         os.makedirs(os.path.dirname(str(output.stat)), exist_ok=True)
         hdf5_files = list(input)
