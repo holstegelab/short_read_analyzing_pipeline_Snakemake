@@ -49,7 +49,10 @@ def get_groups_from_hdf5(hdf5_file):
                 unique_groups.add(group)
     return (unique_groups)
 
-hdf5_files = [f"{SF}.coverage.hdf5" for SF in SAMPLE_FILES]
+def samplefile_stat_path(samplefile, suffix):
+    return pj(get_samplefile_folder(samplefile), f"{samplefile}.{suffix}")
+
+hdf5_files = [samplefile_stat_path(SF, "coverage.hdf5") for SF in SAMPLE_FILES]
 groups = set()
 for hdf5_file in hdf5_files:
     groups.update(get_groups_from_hdf5(hdf5_file))
