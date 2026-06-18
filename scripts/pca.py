@@ -56,26 +56,38 @@ main_chrs = ['chr1:', 'chr2:', 'chr3:',
 # MAX_DELTA = np.inf
 # previous_components = 0
 def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 10):
+    total_intervals = 0
+    for file in hdf5_files:
+        with h5py.File(file, 'r') as f:
+            total_intervals = max(total_intervals, f[group_name]['coverage'].shape[1])
+
     ipca = IncrementalPCA(n_components=ncomponents)
-    batch_size = batch_size
     MAX_DELTA = np.inf
-    previous_components = 0
+    previous_components = None
     i = 0
-    while MAX_DELTA > max_delta:
-        batches = []  # Reset batches list for each iteration
+    sample_names = []
+    while i < total_intervals and MAX_DELTA > max_delta:
         df = pd.DataFrame()
-        sample_names = []
+        batch_sample_names = []
         for file in hdf5_files:
             with h5py.File(file, 'r') as f:
                 data_group = f[group_name]
                 samples = [s.decode('utf-8') for s in data_group['samples'][()]]
-                sample_names.extend(samples)
                 chrs = data_group['chrom'][i:i + batch_size]
                 start = data_group['start'][i:i + batch_size]
                 end = data_group['end'][i:i + batch_size]
-                cov = data_group['coverage'][:, i:i + batch_size]
                 index = [f"{chrom.decode('utf-8')}:{s}-{e}" for chrom, s, e in zip(chrs, start, end)]
-                bases_mapped = data_group['bases_mapped'][:][:, np.newaxis] / 1000000000.0
+                bases_mapped_raw = np.asarray(data_group['bases_mapped'][:], dtype=np.float64)
+                valid_samples = np.isfinite(bases_mapped_raw) & (bases_mapped_raw > 0)
+                if not np.all(valid_samples):
+                    skipped = [sample for sample, valid in zip(samples, valid_samples) if not valid]
+                    print(f"Skipping samples with invalid bases_mapped in {file}: {', '.join(skipped)}")
+                if not np.any(valid_samples):
+                    continue
+                samples = [sample for sample, valid in zip(samples, valid_samples) if valid]
+                batch_sample_names.extend(samples)
+                cov = np.asarray(data_group['coverage'][valid_samples, i:i + batch_size], dtype=np.float64)
+                bases_mapped = bases_mapped_raw[valid_samples][:, np.newaxis] / 1000000000.0
                 corrected_cov = cov / bases_mapped
                 temp_df = pd.DataFrame(
                             columns=samples,
@@ -84,18 +96,29 @@ def perform_ipca(hdf5_files, batch_size = 1000, max_delta = 1e-5, ncomponents = 
                         )
                 temp_filtred = temp_df[temp_df.index.str.startswith(tuple(main_chrs))]
                 df = pd.concat([df, temp_filtred], axis=1)
-                # batches.append(corrected_cov)
 
-        # corrected_cov_combined = np.concatenate(tuple(batches), axis=0)
+        df = df.replace([np.inf, -np.inf], np.nan)
+        nonfinite_rows = df.isna().any(axis=1)
+        if nonfinite_rows.any():
+            print(f"Skipping {int(nonfinite_rows.sum())} intervals with non-finite normalized coverage in PCA batch starting at interval {i}")
+            df = df.loc[~nonfinite_rows]
+        if df.empty:
+            i = i + batch_size
+            continue
+        if len(sample_names) == 0:
+            sample_names = batch_sample_names
         ipca.partial_fit(df)
         components = ipca.components_
         explained_variance_ratio = ipca.explained_variance_ratio_
         cum_expl_var = np.cumsum(explained_variance_ratio)
         print(f"Cumulative variance = {cum_expl_var}")
-        delta = np.abs(components - previous_components)
-        MAX_DELTA = np.max(delta)
+        if previous_components is not None:
+            delta = np.abs(components - previous_components)
+            MAX_DELTA = np.max(delta)
         i = i + batch_size
         previous_components = components
+    if previous_components is None:
+        raise ValueError("No finite normalized coverage rows were available for PCA.")
     pca_components = pd.DataFrame(ipca.components_.T, index=sample_names)
     explained_variance_ratio = ipca.explained_variance_ratio_
     cum_expl_var = np.cumsum(explained_variance_ratio)
@@ -157,8 +180,9 @@ def add_cluster_info_to_hdf5(SF, clustred_data, cluster):
         # print(samples_in_file)
         mask = [sample in samples_in_file for sample in clustred_data.index]
         # print(mask)
-        # Get the relevant data for the current file using the mask
-        relevant_data = clustred_data[cluster][mask]
+        # Missing samples were excluded from PCA and get DBSCAN noise label -1.
+        cluster_values = pd.Series(clustred_data[cluster].values, index=clustred_data.index)
+        relevant_data = np.array([cluster_values.get(sample, -1) for sample in samples_in_file], dtype=int)
         # print(len(relevant_data))
         # print(len(list(data_group['samples'])))
 
