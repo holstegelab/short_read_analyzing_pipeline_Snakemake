@@ -1,23 +1,31 @@
 from scripts.pca import *
+import os
 import pandas as pd
 from sklearn.preprocessing import scale
 
 
+def samplefile_stat_path(samplefile, suffix):
+    return pj(get_samplefile_folder(samplefile), f"{samplefile}.{suffix}")
+
+PCA_DONE_FILES = expand('PCA_done_{samplefile}', samplefile=SAMPLE_FILES)
+PCA_HDF5_FILES = [samplefile_stat_path(samplefile, "coverage.hdf5") for samplefile in SAMPLE_FILES]
+
+
 rule PCA_all:
-    input: expand('PCA_done_{samplefile}', samplefile = SAMPLE_FILES)
+    input: PCA_DONE_FILES
     default_target: True
 
 
 
 rule clustering_samples:
-    input: expand('{samplefile}.coverage.hdf5',  samplefile = SAMPLE_FILES)
+    input: PCA_HDF5_FILES
     output: stat = pj(STAT, 'PCA_stat.txt'),
-            file_done = touch(temp('PCA_done_{samplefile}'))
+            file_done = PCA_DONE_FILES
             # groups = pj(STAT, 'PCA_groups.tsv')
     conda: CONDA_PCA
     run:
-        shell("touch {output.stat}")
-        hdf5_files = input
+        os.makedirs(os.path.dirname(str(output.stat)), exist_ok=True)
+        hdf5_files = list(input)
         PCA_t, expl_var = perform_ipca(hdf5_files=hdf5_files)
         # best_dict = get_scores_and_labels(combinations,data=PCA_t)
         PCA_2 = PCA_t[[0, 1]]
@@ -42,7 +50,7 @@ rule clustering_samples:
         PCA_t['cluster_10_cor_cov'] = best_dict_10['best_labels']
         clusters = ['cluster_2_cor_cov', 'cluster_3_cor_cov', 'cluster_4_cor_cov', 'cluster_6_cor_cov',
                     'cluster_10_cor_cov']
-        with open(pj(STAT,'PCA_stat.txt'),'a') as f:
+        with open(output.stat, 'w') as f:
             print(f"Cumulative variance = {expl_var}",file=f)
             print(best_dict_2, file=f)
             print(best_dict_3,file=f)
@@ -50,5 +58,8 @@ rule clustering_samples:
             print(best_dict_6,file=f)
             print(best_dict_10,file=f)
         for cluster in clusters:
-            for SF in SAMPLE_FILES:
-                add_cluster_info_to_hdf5(f'{SF}', clustred_data=PCA_t, cluster=cluster)
+            for hdf5_file in hdf5_files:
+                add_cluster_info_to_hdf5(hdf5_file, clustred_data=PCA_t, cluster=cluster)
+        for done_file in output.file_done:
+            with open(done_file, 'w') as f:
+                f.write("")

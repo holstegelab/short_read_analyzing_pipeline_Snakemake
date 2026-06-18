@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import pandas as pd
 from sklearn.decomposition import IncrementalPCA
 from sklearn.cluster import DBSCAN
@@ -112,6 +113,7 @@ def get_scores_and_labels(combinations, data):
     scores = []
     all_labels_list = []
     X = scale(data)
+    fallback_labels = np.zeros(X.shape[0], dtype=int)
     for i, (eps, num_samples) in enumerate(combinations):
         dbscan_cluster_model = DBSCAN(eps=eps, min_samples=num_samples).fit(X)
         labels = dbscan_cluster_model.labels_
@@ -121,7 +123,7 @@ def get_scores_and_labels(combinations, data):
             num_clusters -= 1
         if (num_clusters < 2):
             scores.append(-10)
-            all_labels_list.append('bad')
+            all_labels_list.append(fallback_labels)
             c = (eps, num_samples)
             print(f"Combination {c} on iteration {i + 1} of {N} has {num_clusters} clusters. Moving on")
             continue
@@ -133,13 +135,20 @@ def get_scores_and_labels(combinations, data):
     best_parameters = combinations[best_index]
     best_labels = all_labels_list[best_index]
     best_score = scores[best_index]
+    if best_score == -10:
+        return {'best_epsilon': None,
+                'best_min_samples': None,
+                'best_labels': fallback_labels,
+                'best_score': None,
+                'fallback': 'single_cluster'}
     return {'best_epsilon': best_parameters[0],
             'best_min_samples': best_parameters[1],
             'best_labels': best_labels,
-            'best_score': best_score}
+            'best_score': best_score,
+            'fallback': None}
 
 def add_cluster_info_to_hdf5(SF, clustred_data, cluster):
-    file_path= f'{SF}.coverage.hdf5'
+    file_path = SF if os.path.exists(SF) else f'{SF}.coverage.hdf5'
     with h5py.File(file_path, 'a') as f:
         data_group = f['coverage']
 
