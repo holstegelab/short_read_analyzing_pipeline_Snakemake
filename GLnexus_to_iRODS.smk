@@ -12,7 +12,15 @@ from common import *
 current_dir = os.getcwd()
 workflow_dir = str(srcdir("."))
 
-gvcf_caller = config.get("caller", "Deepvariant")
+DEFAULT_GVCF_CALLER = "Deepvariant"
+DEFAULT_GLNEXUS_DIR = "GLnexus_on_Deepvariant"
+DEFAULT_PER_SAMPLE_CALLER = "DeepVariant"
+
+wildcard_constraints:
+    genotype_mode="WGS|WES",
+    types_of_gl="GLnexus_on_Deepvariant|GLnexus_on_Haplotypecaller",
+
+gvcf_caller = config.get("caller", DEFAULT_GVCF_CALLER)
 glnexus_filtration = config.get("glnexus_filtration", "custom")
 genotype_mode = config.get("genotype_mode", "WGS")
 _CONTAINER_METADATA_CACHE = {}
@@ -63,9 +71,9 @@ def transfer_remote_name():
 if gvcf_caller == "HaplotypeCaller":
     glnexus_dirs = ["GLnexus_on_Haplotypecaller"]
 elif gvcf_caller == "Deepvariant":
-    glnexus_dirs = ["GLnexus_on_Deepvariant"]
+    glnexus_dirs = [DEFAULT_GLNEXUS_DIR]
 elif gvcf_caller == "BOTH":
-    glnexus_dirs = ["GLnexus_on_Haplotypecaller", "GLnexus_on_Deepvariant"]
+    glnexus_dirs = ["GLnexus_on_Haplotypecaller", DEFAULT_GLNEXUS_DIR]
 else:
     raise ValueError(
         "invalid option provided to 'caller'; please choose either "
@@ -126,15 +134,17 @@ def compute_adler32_hex(path):
 
 
 def _git_output(args):
-    try:
-        return subprocess.check_output(
-            ["git"] + args,
-            cwd=current_dir,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except Exception:
-        return None
+    for cwd in dict.fromkeys([workflow_dir, current_dir]):
+        try:
+            return subprocess.check_output(
+                ["git"] + args,
+                cwd=cwd,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            continue
+    return None
 
 
 def pipeline_git_metadata():
@@ -143,6 +153,7 @@ def pipeline_git_metadata():
     branch = _git_output(["branch", "--show-current"])
     status = _git_output(["status", "--short"])
     return {
+        "version": configured_version("pipeline_version", "workflow_version") or commit_short,
         "commit": commit,
         "commit_short": commit_short,
         "branch": branch,
@@ -266,9 +277,24 @@ def aligner_metadata():
 
 
 def caller_metadata(wildcards):
+    per_sample_callers = {
+        DEFAULT_GLNEXUS_DIR: DEFAULT_PER_SAMPLE_CALLER,
+        "GLnexus_on_Haplotypecaller": "HaplotypeCaller",
+    }
+    types_of_gl = getattr(wildcards, "types_of_gl", DEFAULT_GLNEXUS_DIR)
+    assay_type = getattr(wildcards, "genotype_mode", genotype_mode)
+    if assay_type not in ("WGS", "WES") and "_" in str(assay_type):
+        assay_type = str(assay_type).split("_", 1)[0]
+
+    per_sample_caller = per_sample_callers.get(types_of_gl)
+    if per_sample_caller is None and dir_appendix and str(types_of_gl).endswith(dir_appendix):
+        per_sample_caller = per_sample_callers.get(str(types_of_gl)[:-len(dir_appendix)])
+    if per_sample_caller is None:
+        per_sample_caller = "HaplotypeCaller" if gvcf_caller == "HaplotypeCaller" else DEFAULT_PER_SAMPLE_CALLER
+
     return {
-        "assay_type": wildcards.genotype_mode,
-        "per_sample_caller": "DeepVariant" if wildcards.types_of_gl == "GLnexus_on_Deepvariant" else "HaplotypeCaller",
+        "assay_type": assay_type,
+        "per_sample_caller": per_sample_caller,
         "joint_caller": "GLnexus",
         "joint_filtration": glnexus_filtration,
     }
@@ -333,6 +359,72 @@ def sample_summary(samples):
         "capture_kit_counts": capture_kit_counts,
         "samplefiles": [samplefile_data[key] for key in sorted(samplefile_data)],
     }
+
+
+def metadata_key(value):
+    key = re.sub(r"[^A-Za-z0-9_]+", "_", str(value))
+    key = re.sub(r"_+", "_", key).strip("_")
+    return key or "unknown"
+
+
+def count_metadata(prefix, counts):
+    return {
+        f"{prefix}_{metadata_key(key)}": count
+        for key, count in sorted(counts.items())
+    }
+
+
+def region_interval(coordinates):
+    if "chrom" in coordinates:
+        return f"{coordinates['chrom']}:{coordinates['start']}-{coordinates['end']}"
+
+    start = coordinates.get("start", {})
+    end = coordinates.get("end", {})
+    if not start or not end:
+        return None
+    return f"{start.get('chrom')}:{start.get('start')}-{end.get('chrom')}:{end.get('end')}"
+
+
+def region_metadata(region_name, coordinates):
+    metadata = {
+        "region_id": region_name,
+        "region_interval": region_interval(coordinates),
+        "region_bed_file": coordinates.get("bed_file"),
+    }
+    if "chrom" in coordinates:
+        metadata.update({
+            "region_chrom": coordinates["chrom"],
+            "region_start": coordinates["start"],
+            "region_end": coordinates["end"],
+        })
+    else:
+        start = coordinates.get("start", {})
+        end = coordinates.get("end", {})
+        metadata.update({
+            "region_first_chrom": start.get("chrom"),
+            "region_first_start": start.get("start"),
+            "region_first_end": start.get("end"),
+            "region_last_chrom": end.get("chrom"),
+            "region_last_start": end.get("start"),
+            "region_last_end": end.get("end"),
+        })
+    return metadata
+
+
+def scalar_metadata(metadata):
+    result = {}
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            result[key] = "true" if value else "false"
+        elif isinstance(value, (list, tuple, set)):
+            result[key] = ",".join(str(item) for item in sorted(value))
+        elif isinstance(value, dict):
+            result[key] = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        else:
+            result[key] = value
+    return result
 
 
 def bed_file_for_region(wildcards):
@@ -510,6 +602,8 @@ rule prepare_joint_vcf_irods_metadata:
         callers = caller_metadata(wildcards)
         sample_summary_data = sample_summary(samples)
         capture_kits = sorted(sample_summary_data["capture_kit_counts"])
+        aligner = aligner_metadata()
+        tool_versions = tool_versions_metadata()
 
         with open(output.samples_tsv, "w") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -523,27 +617,39 @@ rule prepare_joint_vcf_irods_metadata:
                     metadata["capture_kit"] or "",
                 ])
 
-        metadata = {
+        metadata = scalar_metadata({
+            "metadata_schema": "joint_vcf_irods_avu_v1",
             "cohort_id": cohort_id(),
             "n_of_samples": len(samples),
-            "region": region_coordinates,
             "reference_build": reference_build(),
             "reference_fasta": REF,
             "samples_tsv_path": remote_namespace_path(remote_dir, remote_samples_name),
             "ADLER32": local_vcf_checksum,
-            "pipeline_version": pipeline_version,
             "assay_type": callers["assay_type"],
             "capture_kit": capture_kits[0] if len(capture_kits) == 1 else capture_kits,
-            "capture_kit_counts": sample_summary_data["capture_kit_counts"],
             "per_sample_caller": callers["per_sample_caller"],
             "joint_caller": callers["joint_caller"],
             "joint_filtration": callers["joint_filtration"],
-            "aligner": aligner_metadata(),
-            "tool_versions": tool_versions_metadata(),
-            "batch_counts": sample_summary_data["batch_counts"],
-            "samplefiles": sample_summary_data["samplefiles"],
+            "pipeline_version": pipeline_version["version"],
+            "pipeline_commit": pipeline_version["commit"],
+            "pipeline_commit_short": pipeline_version["commit_short"],
+            "pipeline_branch": pipeline_version["branch"],
+            "pipeline_is_dirty": pipeline_version["is_dirty"],
+            "aligner_name": aligner["name"],
+            "aligner_command": aligner["command"],
+            "dragen_os_version": tool_versions["dragen_os"]["version"],
+            "deepvariant_version": tool_versions["deepvariant"]["version"],
+            "deepvariant_container": tool_versions["deepvariant"]["container"],
+            "glnexus_version": tool_versions["glnexus"]["version"],
+            "glnexus_container": tool_versions["glnexus"]["container"],
+            "haplotypecaller_version": tool_versions["haplotypecaller"]["version"],
+            "haplotypecaller_tool": tool_versions["haplotypecaller"]["tool"],
+            "samplefile_count": len(sample_summary_data["samplefiles"]),
             "stat_dir_path": remote_namespace_dir(remote_analysis_stat_dir()),
-        }
+            **region_metadata(wildcards.region, region_coordinates),
+            **count_metadata("batch_count", sample_summary_data["batch_counts"]),
+            **count_metadata("capture_kit_count", sample_summary_data["capture_kit_counts"]),
+        })
 
         with open(output.metadata_json, "w") as handle:
             json.dump(metadata, handle, indent=2, sort_keys=True)
