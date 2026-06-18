@@ -19,11 +19,6 @@ module Stat:
     config: config
 use rule * from Stat
 
-module PCA:
-    snakefile: 'PCA.smk'
-    config: config
-use rule * from PCA
-
 module DownloadAndExtractBam:
     snakefile: 'Download_and_extract_bam.smk'
     config: config
