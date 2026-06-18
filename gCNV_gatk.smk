@@ -1,6 +1,7 @@
 from common import *
 import h5py
 import numpy as np
+import os
 
 onsuccess: shell(f"rm -fr {pj(LOG, 'gCNV_gatk')}/*")
 wildcard_constraints:
@@ -9,16 +10,6 @@ wildcard_constraints:
     index=r"\d+",
     scatter=r"\d{4}_of_\d+",
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-use rule * from Aligner
-
-module Stat:
-    snakefile: 'Stat.smk'
-    config: config
-use rule * from Stat
-
 module DownloadAndExtractBam:
     snakefile: 'Download_and_extract_bam.smk'
     config: config
@@ -26,47 +17,105 @@ use rule download_encrypted_cram_from_tape from DownloadAndExtractBam
 use rule decrypt_cram from DownloadAndExtractBam
 use rule cram_to_markdup_bam from DownloadAndExtractBam
 
-module Tools:
-    snakefile: 'Tools.smk'
-    config: config
-# use rule * from Tools
-
-ruleorder: cram_to_markdup_bam > markdup
-
 GCNV_WGS_BIN_LENGTH = int(config.get("gcnv_wgs_bin_length", 1000))
 GCNV_WGS_SCATTER_COUNT = int(config.get("gcnv_wgs_scatter_count", 300))
 GCNV_INTERVALS_DIR = pj(GATK_gCNV, "intervals")
 GCNV_WGS_INTERVALS = pj(GCNV_INTERVALS_DIR, f"wgs_{GCNV_WGS_BIN_LENGTH}bp.preprocessed.interval_list")
 GCNV_WGS_ANNOTATED_INTERVALS = pj(GCNV_INTERVALS_DIR, f"wgs_{GCNV_WGS_BIN_LENGTH}bp.annotated.tsv")
+GCNV_CLUSTER_DATASET = config.get("gcnv_cluster_dataset", "cluster_3_cor_cov")
+GCNV_MISSING_CLUSTER_MODE = config.get("gcnv_missing_cluster_mode", "single")
 
-
-def get_groups_from_hdf5(hdf5_file):
-    unique_groups = set()
-    with h5py.File(hdf5_file, 'r') as f:
-        groups = f['coverage']['cluster_3_cor_cov']
-        for group in groups:
-            if group != -1:
-                unique_groups.add(group)
-    return (unique_groups)
 
 def samplefile_stat_path(samplefile, suffix):
     return pj(get_samplefile_folder(samplefile), f"{samplefile}.{suffix}")
 
-hdf5_files = [samplefile_stat_path(SF, "coverage.hdf5") for SF in SAMPLE_FILES]
-groups = set()
-for hdf5_file in hdf5_files:
-    groups.update(get_groups_from_hdf5(hdf5_file))
+def samples_for_samplefile(samplefile):
+    return sorted(SAMPLEFILE_TO_SAMPLES[samplefile].keys())
 
-def get_samples_in_group(cohort, hdf5_files = hdf5_files):
-    samples = []
-    for hdf5_file in hdf5_files:
-        with h5py.File(hdf5_file, 'r') as f:
-            data_group = f['coverage']
-            sample_list_per_hdf5_file = [s.decode('utf-8') for s in data_group['samples'][()]]
-            cohort_mask = np.equal(data_group['cluster_3_cor_cov'], int(cohort))
-            cohort_samples = [sample_list_per_hdf5_file[i] for i, mask in enumerate(cohort_mask) if mask]
-            samples.extend(cohort_samples)
-    samples.sort()
+
+def decode_hdf5_string(value):
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def missing_cluster_cohort(samplefile_index):
+    if GCNV_MISSING_CLUSTER_MODE == "single":
+        return 0
+    if GCNV_MISSING_CLUSTER_MODE == "samplefile":
+        return samplefile_index
+    if GCNV_MISSING_CLUSTER_MODE == "error":
+        raise ValueError(
+            f"Missing {GCNV_CLUSTER_DATASET}; run PCA.smk first or set "
+            "gcnv_missing_cluster_mode to 'single' or 'samplefile'."
+        )
+    raise ValueError(
+        "Unsupported gcnv_missing_cluster_mode "
+        f"{GCNV_MISSING_CLUSTER_MODE!r}; use 'single', 'samplefile', or 'error'."
+    )
+
+
+def add_fallback_cohort(cohort_to_samples, samplefile, samplefile_index, reason):
+    cohort = missing_cluster_cohort(samplefile_index)
+    cohort_to_samples.setdefault(cohort, []).extend(samples_for_samplefile(samplefile))
+    print(
+        f"gCNV: {reason}; assigning {samplefile} samples to cohort {cohort} "
+        f"with gcnv_missing_cluster_mode={GCNV_MISSING_CLUSTER_MODE!r}."
+    )
+
+
+def get_cohort_to_samples():
+    cohort_to_samples = {}
+    for samplefile_index, samplefile in enumerate(SAMPLE_FILES):
+        hdf5_file = samplefile_stat_path(samplefile, "coverage.hdf5")
+        if not os.path.exists(hdf5_file):
+            add_fallback_cohort(cohort_to_samples, samplefile, samplefile_index, f"{hdf5_file} does not exist")
+            continue
+
+        with h5py.File(hdf5_file, "r") as f:
+            data_group = f["coverage"]
+            if GCNV_CLUSTER_DATASET not in data_group:
+                add_fallback_cohort(
+                    cohort_to_samples,
+                    samplefile,
+                    samplefile_index,
+                    f"{GCNV_CLUSTER_DATASET} is not present in {hdf5_file}",
+                )
+                continue
+
+            hdf5_samples = [decode_hdf5_string(sample) for sample in data_group["samples"][()]]
+            labels = np.asarray(data_group[GCNV_CLUSTER_DATASET][()])
+
+        if len(hdf5_samples) != len(labels):
+            raise ValueError(
+                f"{hdf5_file}:{GCNV_CLUSTER_DATASET} has {len(labels)} labels "
+                f"for {len(hdf5_samples)} samples."
+            )
+
+        selected_samples = set(samples_for_samplefile(samplefile))
+        for sample, label in zip(hdf5_samples, labels):
+            if sample not in selected_samples:
+                continue
+            label = int(label)
+            if label == -1:
+                continue
+            cohort_to_samples.setdefault(label, []).append(sample)
+
+    if not cohort_to_samples:
+        raise ValueError(
+            "No samples were assigned to gCNV cohorts. Check the selected "
+            f"{GCNV_CLUSTER_DATASET} labels or use gcnv_missing_cluster_mode=single."
+        )
+
+    return {cohort: sorted(samples) for cohort, samples in cohort_to_samples.items()}
+
+
+cohort_to_samples = get_cohort_to_samples()
+groups = set(cohort_to_samples)
+
+
+def get_samples_in_group(cohort):
+    samples = cohort_to_samples[int(cohort)]
     idx = list(range(len(samples)))
     return samples, idx
 
