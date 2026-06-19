@@ -5,6 +5,7 @@ channels:
   - conda-forge
 dependencies:
   - python=3.7
+  - pip
   - tensorflow=1.15.0=mkl_py37h28c19af_0
   - pymc3=3.7
   - theano=1.0.4
