@@ -8,8 +8,11 @@ can_import_gcnvkernel() {
 }
 
 install_gatk_python_package() {
+    local already_seen
+    local existing_path
     local package_path
     local package_candidates=()
+    local unique_candidates=()
 
     for package_path in \
         "${GATK_ROOT}/build/gatkPythonPackageArchive.zip" \
@@ -29,6 +32,20 @@ install_gatk_python_package() {
                 -print 2>/dev/null | sort
         )
     fi
+
+    for package_path in "${package_candidates[@]}"; do
+        already_seen=0
+        for existing_path in "${unique_candidates[@]}"; do
+            if [[ "${existing_path}" == "${package_path}" ]]; then
+                already_seen=1
+                break
+            fi
+        done
+        if [[ "${already_seen}" == 0 ]]; then
+            unique_candidates+=("${package_path}")
+        fi
+    done
+    package_candidates=("${unique_candidates[@]}")
 
     for package_path in "${package_candidates[@]}"; do
         if python -m pip install --no-deps "${package_path}" && can_import_gcnvkernel; then
@@ -74,5 +91,6 @@ fi
 if ! can_import_gcnvkernel; then
     echo "Could not make gcnvkernel importable from ${GATK_ROOT}." >&2
     echo "Set GATK_CNV_ROOT to the local GATK 4.4 checkout before creating this env if the path differs." >&2
+    python -c 'import gcnvkernel'
     exit 1
 fi
