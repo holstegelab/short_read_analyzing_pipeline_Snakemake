@@ -1,4 +1,5 @@
 from common import *
+import csv
 import h5py
 import numpy as np
 import os
@@ -24,6 +25,19 @@ GCNV_WGS_INTERVALS = pj(GCNV_INTERVALS_DIR, f"wgs_{GCNV_WGS_BIN_LENGTH}bp.prepro
 GCNV_WGS_ANNOTATED_INTERVALS = pj(GCNV_INTERVALS_DIR, f"wgs_{GCNV_WGS_BIN_LENGTH}bp.annotated.tsv")
 GCNV_CLUSTER_DATASET = config.get("gcnv_cluster_dataset", "cluster_3_cor_cov")
 GCNV_MISSING_CLUSTER_MODE = config.get("gcnv_missing_cluster_mode", "single")
+GCNV_COHORT_PLOT_BATCH_SIZE = max(2, int(config.get("gcnv_cohort_plot_batch_size", 1000)))
+GCNV_COHORT_PLOT_MAX_DELTA = float(config.get("gcnv_cohort_plot_max_delta", 1e-5))
+GCNV_COHORT_REPORT_DIR = pj(GATK_gCNV, "cohort_report")
+GCNV_COHORT_SAMPLE_LIST = pj(GCNV_COHORT_REPORT_DIR, f"{GCNV_CLUSTER_DATASET}.samples_per_cohort.tsv")
+GCNV_UNASSIGNED_SAMPLE_LIST = pj(GCNV_COHORT_REPORT_DIR, f"{GCNV_CLUSTER_DATASET}.unassigned_samples.tsv")
+GCNV_COHORT_PCA_COORDINATES = pj(GCNV_COHORT_REPORT_DIR, f"{GCNV_CLUSTER_DATASET}.pca_2d_coordinates.tsv")
+GCNV_COHORT_DISTANCE_PLOT = pj(GCNV_COHORT_REPORT_DIR, f"{GCNV_CLUSTER_DATASET}.cohort_distance_2d.png")
+GCNV_COHORT_REPORT_OUTPUTS = [
+    GCNV_COHORT_SAMPLE_LIST,
+    GCNV_UNASSIGNED_SAMPLE_LIST,
+    GCNV_COHORT_PCA_COORDINATES,
+    GCNV_COHORT_DISTANCE_PLOT,
+]
 
 
 def samplefile_stat_path(samplefile, suffix):
@@ -57,30 +71,43 @@ def missing_cluster_cohort(samplefile_index):
 
 def add_fallback_cohort(cohort_to_samples, samplefile, samplefile_index, reason):
     cohort = missing_cluster_cohort(samplefile_index)
-    cohort_to_samples.setdefault(cohort, []).extend(samples_for_samplefile(samplefile))
+    samples = samples_for_samplefile(samplefile)
+    cohort_to_samples.setdefault(cohort, []).extend(samples)
     print(
         f"gCNV: {reason}; assigning {samplefile} samples to cohort {cohort} "
         f"with gcnv_missing_cluster_mode={GCNV_MISSING_CLUSTER_MODE!r}."
     )
+    return cohort, samples
 
 
-def get_cohort_to_samples():
+def get_gcnv_cohort_assignments():
     cohort_to_samples = {}
+    sample_to_cohort = {}
+    unassigned_samples = {}
     for samplefile_index, samplefile in enumerate(SAMPLE_FILES):
+        selected_samples = samples_for_samplefile(samplefile)
+        selected_sample_set = set(selected_samples)
         hdf5_file = samplefile_stat_path(samplefile, "coverage.hdf5")
         if not os.path.exists(hdf5_file):
-            add_fallback_cohort(cohort_to_samples, samplefile, samplefile_index, f"{hdf5_file} does not exist")
+            cohort, samples = add_fallback_cohort(
+                cohort_to_samples,
+                samplefile,
+                samplefile_index,
+                f"{hdf5_file} does not exist",
+            )
+            sample_to_cohort.update({sample: cohort for sample in samples})
             continue
 
         with h5py.File(hdf5_file, "r") as f:
             data_group = f["coverage"]
             if GCNV_CLUSTER_DATASET not in data_group:
-                add_fallback_cohort(
+                cohort, samples = add_fallback_cohort(
                     cohort_to_samples,
                     samplefile,
                     samplefile_index,
                     f"{GCNV_CLUSTER_DATASET} is not present in {hdf5_file}",
                 )
+                sample_to_cohort.update({sample: cohort for sample in samples})
                 continue
 
             hdf5_samples = [decode_hdf5_string(sample) for sample in data_group["samples"][()]]
@@ -92,14 +119,23 @@ def get_cohort_to_samples():
                 f"for {len(hdf5_samples)} samples."
             )
 
-        selected_samples = set(samples_for_samplefile(samplefile))
+        seen_samples = set()
         for sample, label in zip(hdf5_samples, labels):
-            if sample not in selected_samples:
+            if sample not in selected_sample_set:
                 continue
+            seen_samples.add(sample)
             label = int(label)
             if label == -1:
+                unassigned_samples[sample] = (samplefile, f"{GCNV_CLUSTER_DATASET}=-1")
                 continue
             cohort_to_samples.setdefault(label, []).append(sample)
+            sample_to_cohort[sample] = label
+
+        for sample in sorted(selected_sample_set - seen_samples):
+            unassigned_samples[sample] = (samplefile, "missing_from_coverage_hdf5")
+
+    for sample in sample_to_cohort:
+        unassigned_samples.pop(sample, None)
 
     if not cohort_to_samples:
         raise ValueError(
@@ -107,7 +143,21 @@ def get_cohort_to_samples():
             f"{GCNV_CLUSTER_DATASET} labels or use gcnv_missing_cluster_mode=single."
         )
 
-    return {cohort: sorted(samples) for cohort, samples in cohort_to_samples.items()}
+    cohort_to_samples = {cohort: sorted(set(samples)) for cohort, samples in cohort_to_samples.items()}
+    return cohort_to_samples, sample_to_cohort, unassigned_samples
+
+
+def get_cohort_to_samples():
+    cohort_to_samples, _, _ = get_gcnv_cohort_assignments()
+    return cohort_to_samples
+
+
+def sample_to_samplefile_map():
+    return {
+        sample: samplefile
+        for samplefile in SAMPLE_FILES
+        for sample in samples_for_samplefile(samplefile)
+    }
 
 
 cohort_to_samples = get_cohort_to_samples()
@@ -181,7 +231,7 @@ gcnv_scatter_shards = generate_scatter_list('0001', GCNV_WGS_SCATTER_COUNT)
 
 rule gCNV_gatk_all:
     input:
-        paths_output
+        paths_output + GCNV_COHORT_REPORT_OUTPUTS
     default_target: True
 
 rule preprocess_wgs_gcnv_intervals:
@@ -335,3 +385,243 @@ rule PostprocessGermlineCNVCalls:
             """
             {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls -R {params.ref} --sequence-dictionary {params.SD}  {params.model_shards} {params.calls_shards} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio} 2> {log}
             """
+
+
+rule write_gcnv_cohort_report:
+    input:
+        calls = paths_output
+    output:
+        samples = GCNV_COHORT_SAMPLE_LIST,
+        unassigned = GCNV_UNASSIGNED_SAMPLE_LIST,
+        coordinates = GCNV_COHORT_PCA_COORDINATES,
+        plot = GCNV_COHORT_DISTANCE_PLOT
+    conda: CONDA_PCA
+    resources:
+        n = 1,
+        mem_mb = 32000
+    run:
+        import pandas as pd
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from sklearn.decomposition import IncrementalPCA
+
+        os.makedirs(GCNV_COHORT_REPORT_DIR, exist_ok=True)
+
+        cohort_to_samples, sample_to_cohort, unassigned_samples = get_gcnv_cohort_assignments()
+        sample_to_samplefile = sample_to_samplefile_map()
+
+        with open(output.samples, "w", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t")
+            writer.writerow(["cohort", "samplefile", "sample"])
+            for cohort in sorted(cohort_to_samples):
+                for sample in cohort_to_samples[cohort]:
+                    writer.writerow([cohort, sample_to_samplefile.get(sample, ""), sample])
+
+        with open(output.unassigned, "w", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t")
+            writer.writerow(["samplefile", "sample", "reason"])
+            for sample, (samplefile, reason) in sorted(
+                unassigned_samples.items(),
+                key=lambda item: (item[1][0], item[0]),
+            ):
+                writer.writerow([samplefile, sample, reason])
+
+        def compute_pca_coordinates():
+            selected_samples = set(sample_to_samplefile)
+            hdf5_files = [
+                samplefile_stat_path(samplefile, "coverage.hdf5")
+                for samplefile in SAMPLE_FILES
+                if os.path.exists(samplefile_stat_path(samplefile, "coverage.hdf5"))
+            ]
+            if len(selected_samples) < 2 or not hdf5_files:
+                return {}
+
+            total_intervals = 0
+            for hdf5_file in hdf5_files:
+                with h5py.File(hdf5_file, "r") as f:
+                    total_intervals = max(total_intervals, f["coverage"]["coverage"].shape[1])
+            if total_intervals < 2:
+                return {}
+
+            main_chr_prefixes = tuple([f"chr{i}:" for i in range(1, 23)] + ["chrX:", "chrY:"])
+            ipca = IncrementalPCA(n_components=2)
+            previous_components = None
+            max_delta = np.inf
+            sample_names = None
+            fitted = False
+            start_interval = 0
+
+            while start_interval < total_intervals and max_delta > GCNV_COHORT_PLOT_MAX_DELTA:
+                batch_df = pd.DataFrame()
+                end_interval = start_interval + GCNV_COHORT_PLOT_BATCH_SIZE
+
+                for hdf5_file in hdf5_files:
+                    with h5py.File(hdf5_file, "r") as f:
+                        data_group = f["coverage"]
+                        coverage = data_group["coverage"]
+                        if start_interval >= coverage.shape[1]:
+                            continue
+                        hdf5_end = min(end_interval, coverage.shape[1])
+                        samples = [decode_hdf5_string(sample) for sample in data_group["samples"][()]]
+                        bases_mapped_raw = np.asarray(data_group["bases_mapped"][:], dtype=np.float64)
+                        selected_mask = np.asarray([sample in selected_samples for sample in samples], dtype=bool)
+                        valid_mask = selected_mask & np.isfinite(bases_mapped_raw) & (bases_mapped_raw > 0)
+                        if not np.any(valid_mask):
+                            continue
+
+                        valid_samples = [
+                            sample
+                            for sample, valid in zip(samples, valid_mask)
+                            if valid
+                        ]
+                        chroms = [decode_hdf5_string(chrom) for chrom in data_group["chrom"][start_interval:hdf5_end]]
+                        starts = data_group["start"][start_interval:hdf5_end]
+                        ends = data_group["end"][start_interval:hdf5_end]
+                        interval_index = [
+                            f"{chrom}:{start}-{end}"
+                            for chrom, start, end in zip(chroms, starts, ends)
+                        ]
+                        coverage_values = np.asarray(
+                            coverage[valid_mask, start_interval:hdf5_end],
+                            dtype=np.float64,
+                        )
+                        bases_mapped = bases_mapped_raw[valid_mask][:, np.newaxis] / 1000000000.0
+                        corrected_coverage = coverage_values / bases_mapped
+                        hdf5_df = pd.DataFrame(
+                            columns=valid_samples,
+                            data=corrected_coverage.T,
+                            index=interval_index,
+                        )
+                        hdf5_df = hdf5_df[hdf5_df.index.str.startswith(main_chr_prefixes)]
+                        batch_df = pd.concat([batch_df, hdf5_df], axis=1)
+
+                batch_df = batch_df.replace([np.inf, -np.inf], np.nan)
+                if sample_names is None:
+                    batch_df = batch_df.dropna(axis=0, how="any")
+                    if batch_df.empty:
+                        start_interval = end_interval
+                        continue
+                    sample_names = list(batch_df.columns)
+                    if len(sample_names) < 2:
+                        return {}
+                else:
+                    batch_df = batch_df.reindex(columns=sample_names)
+                    batch_df = batch_df.dropna(axis=0, how="any")
+                    if batch_df.empty:
+                        start_interval = end_interval
+                        continue
+
+                if batch_df.shape[0] < 2:
+                    start_interval = end_interval
+                    continue
+
+                ipca.partial_fit(batch_df.to_numpy())
+                fitted = True
+                components = ipca.components_.copy()
+                if previous_components is not None:
+                    max_delta = np.max(np.abs(components - previous_components))
+                previous_components = components
+                start_interval = end_interval
+
+            if not fitted:
+                return {}
+
+            return {
+                sample: (float(pc1), float(pc2))
+                for sample, (pc1, pc2) in zip(sample_names, ipca.components_.T)
+            }
+
+        pca_coordinates = compute_pca_coordinates()
+
+        with open(output.coordinates, "w", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t")
+            writer.writerow(["samplefile", "sample", "assignment", "cohort", "pc1", "pc2"])
+            for sample in sorted(sample_to_samplefile, key=lambda s: (sample_to_samplefile[s], s)):
+                cohort = sample_to_cohort.get(sample, "")
+                assignment = "assigned" if sample in sample_to_cohort else "unassigned"
+                pc1, pc2 = pca_coordinates.get(sample, ("", ""))
+                writer.writerow([sample_to_samplefile[sample], sample, assignment, cohort, pc1, pc2])
+
+        fig, ax = plt.subplots(figsize=(9, 6.5))
+        if len(pca_coordinates) < 2:
+            ax.text(
+                0.5,
+                0.5,
+                "2D PCA unavailable\ncoverage HDF5 data had fewer than two usable samples",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_axis_off()
+        else:
+            color_map = plt.get_cmap("tab20")
+            cohorts = sorted(cohort_to_samples)
+            cohort_to_color = {
+                cohort: color_map(index % color_map.N)
+                for index, cohort in enumerate(cohorts)
+            }
+
+            for cohort in cohorts:
+                cohort_samples = [
+                    sample
+                    for sample in cohort_to_samples[cohort]
+                    if sample in pca_coordinates
+                ]
+                if not cohort_samples:
+                    continue
+                xs = [pca_coordinates[sample][0] for sample in cohort_samples]
+                ys = [pca_coordinates[sample][1] for sample in cohort_samples]
+                ax.scatter(
+                    xs,
+                    ys,
+                    s=24,
+                    alpha=0.72,
+                    color=cohort_to_color[cohort],
+                    label=f"Cohort {cohort} (n={len(cohort_samples)})",
+                )
+                centroid_x = float(np.mean(xs))
+                centroid_y = float(np.mean(ys))
+                ax.scatter(
+                    [centroid_x],
+                    [centroid_y],
+                    s=150,
+                    marker="X",
+                    color=cohort_to_color[cohort],
+                    edgecolor="black",
+                    linewidth=0.8,
+                )
+                ax.text(
+                    centroid_x,
+                    centroid_y,
+                    f" {cohort}",
+                    fontsize=9,
+                    fontweight="bold",
+                    va="center",
+                )
+
+            unassigned_with_coordinates = [
+                sample
+                for sample in unassigned_samples
+                if sample in pca_coordinates
+            ]
+            if unassigned_with_coordinates:
+                ax.scatter(
+                    [pca_coordinates[sample][0] for sample in unassigned_with_coordinates],
+                    [pca_coordinates[sample][1] for sample in unassigned_with_coordinates],
+                    s=32,
+                    marker="x",
+                    color="#666666",
+                    label=f"Unassigned (n={len(unassigned_with_coordinates)})",
+                )
+
+            ax.axhline(0, color="#d0d0d0", linewidth=0.6)
+            ax.axvline(0, color="#d0d0d0", linewidth=0.6)
+            ax.set_xlabel("PC1")
+            ax.set_ylabel("PC2")
+            ax.set_title(f"gCNV cohort distances: {GCNV_CLUSTER_DATASET}")
+            ax.legend(loc="best", fontsize=8, frameon=False)
+
+        fig.tight_layout()
+        fig.savefig(output.plot, dpi=200)
+        plt.close(fig)
