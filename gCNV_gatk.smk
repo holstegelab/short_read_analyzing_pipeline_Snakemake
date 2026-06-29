@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 import os
 
-onsuccess: shell(f"rm -fr {pj(LOG, 'gCNV_gatk')}/*")
+onsuccess: shell(f"if [ -d {quote(pj(LOG, 'gCNV_gatk'))} ]; then mkdir -p {quote(pj(GATK_gCNV, 'debug_archives'))}; tar -C {quote(LOG)} -czf {quote(pj(GATK_gCNV, 'debug_archives', 'gcnv_logs.tar.gz'))} gCNV_gatk; find {quote(pj(LOG, 'gCNV_gatk'))} -type f -delete; find {quote(pj(LOG, 'gCNV_gatk'))} -type d -empty -delete; fi")
 wildcard_constraints:
     sample=r"[\w\d_\-@]+",
     cohort=r"\d+",
@@ -229,17 +229,47 @@ def generate_scatter_list(start, end):
     return string_list
 
 gcnv_scatter_shards = generate_scatter_list('0001', GCNV_WGS_SCATTER_COUNT)
+gcnv_debug_archives = [
+    pj(GATK_gCNV, 'debug_archives', f'cohort_{cohort}.gcnv_debug.tar.gz')
+    for cohort in groups
+]
+
+def gcnv_shard_dir(cohort, scatter):
+    return pj(GATK_gCNV, f'{cohort}_scatter_{scatter}')
+
+def gcnv_model_shard_args(wildcards):
+    return " ".join(
+        f"--model-shard-path {quote(pj(gcnv_shard_dir(wildcards.cohort, scatter), f'scatterd_{wildcards.cohort}_{scatter}-model'))}"
+        for scatter in gcnv_scatter_shards
+    )
+
+def gcnv_calls_shard_args(wildcards):
+    return " ".join(
+        f"--calls-shard-path {quote(pj(gcnv_shard_dir(wildcards.cohort, scatter), f'scatterd_{wildcards.cohort}_{scatter}-calls'))}"
+        for scatter in gcnv_scatter_shards
+    )
+
+def gcnv_debug_archive_items(wildcards):
+    ploidy_dirs = [
+        quote(f"{wildcards.cohort}-model"),
+        quote(f"{wildcards.cohort}-calls"),
+    ]
+    shard_dirs = [
+        quote(f"{wildcards.cohort}_scatter_{scatter}")
+        for scatter in gcnv_scatter_shards
+    ]
+    return " ".join(ploidy_dirs + shard_dirs)
 
 rule gCNV_gatk_all:
     input:
-        paths_output + GCNV_COHORT_REPORT_OUTPUTS
+        paths_output + GCNV_COHORT_REPORT_OUTPUTS + gcnv_debug_archives
     default_target: True
 
 rule preprocess_wgs_gcnv_intervals:
     input:
         intervals = GCNV_WGS_INTERVAL_SOURCE
     output:
-        intervals = GCNV_WGS_INTERVALS
+        intervals = temp(GCNV_WGS_INTERVALS)
     params:
         java = java_cnv,
         gatk = gatk_cnv,
@@ -274,7 +304,7 @@ rule collect_read_counts:
 
 rule annotateintervals:
     input: interval = rules.preprocess_wgs_gcnv_intervals.output.intervals
-    output: annotated_tsv = GCNV_WGS_ANNOTATED_INTERVALS
+    output: annotated_tsv = temp(GCNV_WGS_ANNOTATED_INTERVALS)
     conda: CONDA_GATK_CNV
     params: java= java_cnv,
             gatk=gatk_cnv,
@@ -289,7 +319,7 @@ rule filterintervals:
     input: samples = input_func,
             annotation = rules.annotateintervals.output.annotated_tsv,
             intervals = rules.preprocess_wgs_gcnv_intervals.output.intervals,
-    output: filtered_intervals = pj(GATK_gCNV, 'filtered_intervals', '{cohort}_filtered.interval_list')
+    output: filtered_intervals = temp(pj(GATK_gCNV, 'filtered_intervals', '{cohort}_filtered.interval_list'))
     params: inputs = sample_list_per_cohort,
             java= java_cnv,
             gatk=gatk_cnv,
@@ -304,7 +334,7 @@ rule filterintervals:
 
 rule make_scatters:
     input: rules.filterintervals.output.filtered_intervals
-    output: scatterd = expand(pj(GATK_gCNV, 'filtered_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'), scatter = gcnv_scatter_shards, allow_missing = True)
+    output: scatter_dir = temp(directory(pj(GATK_gCNV, 'filtered_intervals', 'cohort-{cohort}')))
     conda: CONDA_GATK_CNV
     log: pj(LOG,"gCNV_gatk",'{cohort}.make_scatters.log')
     params:
@@ -322,7 +352,9 @@ rule make_scatters:
 rule DetermineGCP:
     input: samples = input_func,
             intervals = pj(GATK_gCNV, 'filtered_intervals', '{cohort}_filtered.interval_list')
-    output: CPC = pj(GATK_gCNV,  '{cohort}-model', 'contig_ploidy_prior.tsv'),
+    output:
+            model_dir = temp(directory(pj(GATK_gCNV,  '{cohort}-model'))),
+            calls_dir = temp(directory(pj(GATK_gCNV,  '{cohort}-calls'))),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
@@ -338,13 +370,13 @@ rule DetermineGCP:
 
 rule GermlineCNVCaller:
     input:  samples = input_func,
-            scatters = pj(GATK_gCNV, 'filtered_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'),
-            contig_ploudi_calls = (pj(GATK_gCNV,  '{cohort}-model', 'contig_ploidy_prior.tsv')),
-    output: models = pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model', 'calling_config.json'),
+            scatter_dir = rules.make_scatters.output.scatter_dir,
+            contig_ploudi_calls = rules.DetermineGCP.output.calls_dir,
+    output: shard_dir = temp(directory(pj(GATK_gCNV,'{cohort}_scatter_{scatter}'))),
     params: inputs = sample_list_per_cohort,
             java = java_cnv,
             gatk = gatk_cnv,
-            contig_ploydi_calls = (pj(GATK_gCNV,  '{cohort}-calls')),
+            scatter_interval = pj(GATK_gCNV, 'filtered_intervals', 'cohort-{cohort}', 'temp_{scatter}', 'scattered.interval_list'),
             theano_complie_dir = pj(TMPDIR, '.theano-{cohort}-{scatter}'),
             output_dir = pj(GATK_gCNV, '{cohort}_scatter_{scatter}')
     conda: CONDA_GATK_CNV
@@ -357,14 +389,15 @@ rule GermlineCNVCaller:
         """
             mkdir -p {params.theano_complie_dir}
             export OMP_NUM_THREADS={resources.n} 
-            THEANO_FLAGS="base_compiledir={params.theano_complie_dir}"  {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {input.scatters} --contig-ploidy-calls  {params.contig_ploydi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output {params.output_dir} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter} 2> {log}
+            THEANO_FLAGS="base_compiledir={params.theano_complie_dir}"  {params.java} -jar {params.gatk} GermlineCNVCaller {params.inputs} -L {params.scatter_interval} --contig-ploidy-calls  {input.contig_ploudi_calls} --interval-merging-rule OVERLAPPING_ONLY --run-mode COHORT --output {params.output_dir} --output-prefix scatterd_{wildcards.cohort}_{wildcards.scatter} 2> {log}
+            rm -rf {params.theano_complie_dir}
         """
 
 rule PostprocessGermlineCNVCalls:
     input:
         samples = input_func,
-        models= expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}','scatterd_{cohort}_{scatter}-model','calling_config.json'),scatter = gcnv_scatter_shards, allow_missing = True),
-         # sample_index = expand(pj(GATK_gCNV, '{cohort}_scatter_{scatter}', 'scatterd_{cohort}_{scatter}-calls', 'SAMPLE_{index}', 'sample_name.txt'), scatter = gcnv_scatter_shards, allow_missing = True),
+        shards= expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}'), scatter = gcnv_scatter_shards, allow_missing = True),
+        cpc = rules.DetermineGCP.output.calls_dir,
     output:
         genotyped_intervals = pj(GATK_gCNV, 'GENOTYPED_CALLS_intervals_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
         genotyped_segments = pj(GATK_gCNV, 'GENOTYPED_CALLS_segments_{cohort}', 'COHORT_{cohort}_SAMPLE_{sample}_{index}.vcf.gz'),
@@ -373,9 +406,8 @@ rule PostprocessGermlineCNVCalls:
     params:
         java= java_cnv,
         gatk= gatk_cnv,
-        model_shards = expand(' --model-shard-path {gatk_gcnv}/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-model ', gatk_gcnv=GATK_gCNV, scatter = gcnv_scatter_shards, allow_missing = True),
-        calls_shards = expand(' --calls-shard-path {gatk_gcnv}/{cohort}_scatter_{scatter}/scatterd_{cohort}_{scatter}-calls ', gatk_gcnv=GATK_gCNV, scatter = gcnv_scatter_shards, allow_missing = True),
-        CPC = (pj(GATK_gCNV,  '{cohort}-calls')),
+        model_shards = gcnv_model_shard_args,
+        calls_shards = gcnv_calls_shard_args,
         SD = REF_MALE_DICT,
         ref = REF_MALE
     benchmark: pj(BENCH, '{cohort}.{sample}.{index}.PostprocessGermlineCNVcalls.txt')
@@ -384,8 +416,25 @@ rule PostprocessGermlineCNVCalls:
             mem_mb = lambda wildcards, attempt: (attempt - 1) * 0.5 * 5000 + 9000
     shell:
             """
-            {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls -R {params.ref} --sequence-dictionary {params.SD}  {params.model_shards} {params.calls_shards} --contig-ploidy-calls {params.CPC} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio} 2> {log}
+            {params.java} -jar {params.gatk} PostprocessGermlineCNVCalls -R {params.ref} --sequence-dictionary {params.SD}  {params.model_shards} {params.calls_shards} --contig-ploidy-calls {input.cpc} --sample-index {wildcards.index} --allosomal-contig chrX --allosomal-contig chrY --output-genotyped-intervals {output.genotyped_intervals} --output-genotyped-segments {output.genotyped_segments} --output-denoised-copy-ratios {output.denoised_copy_ratio} 2> {log}
             """
+
+rule archive_gcnv_debug:
+    input:
+        ploidy_model = rules.DetermineGCP.output.model_dir,
+        ploidy_calls = rules.DetermineGCP.output.calls_dir,
+        shards = expand(pj(GATK_gCNV,'{cohort}_scatter_{scatter}'), scatter = gcnv_scatter_shards, allow_missing = True)
+    output:
+        archive = pj(GATK_gCNV, 'debug_archives', 'cohort_{cohort}.gcnv_debug.tar.gz')
+    params:
+        gatk_gcnv = GATK_gCNV,
+        archive_dir = pj(GATK_gCNV, 'debug_archives'),
+        archive_items = gcnv_debug_archive_items
+    shell:
+        """
+        mkdir -p {params.archive_dir}
+        tar -C {params.gatk_gcnv} -czf {output.archive} {params.archive_items}
+        """
 
 
 rule write_gcnv_cohort_report:
