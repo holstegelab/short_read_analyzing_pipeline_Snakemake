@@ -20,6 +20,7 @@ use rule cram_to_markdup_bam from DownloadAndExtractBam
 
 GCNV_WGS_BIN_LENGTH = int(config.get("gcnv_wgs_bin_length", 1000))
 GCNV_WGS_SCATTER_COUNT = int(config.get("gcnv_wgs_scatter_count", 300))
+GCNV_WGS_INTERVAL_SOURCE = config.get("gcnv_wgs_interval_bed", AUTO_ONLY_BED)
 GCNV_INTERVALS_DIR = pj(GATK_gCNV, "intervals")
 GCNV_WGS_INTERVALS = pj(GCNV_INTERVALS_DIR, f"wgs_{GCNV_WGS_BIN_LENGTH}bp.preprocessed.interval_list")
 GCNV_WGS_ANNOTATED_INTERVALS = pj(GCNV_INTERVALS_DIR, f"wgs_{GCNV_WGS_BIN_LENGTH}bp.annotated.tsv")
@@ -236,7 +237,7 @@ rule gCNV_gatk_all:
 
 rule preprocess_wgs_gcnv_intervals:
     input:
-        intervals = MAIN_CHRS_BED
+        intervals = GCNV_WGS_INTERVAL_SOURCE
     output:
         intervals = GCNV_WGS_INTERVALS
     params:
