@@ -1,4 +1,5 @@
 import csv
+import datetime
 import gzip
 import json
 import os
@@ -15,6 +16,8 @@ workflow_dir = str(srcdir("."))
 DEFAULT_GVCF_CALLER = "Deepvariant"
 DEFAULT_GLNEXUS_DIR = "GLnexus_on_Deepvariant"
 DEFAULT_PER_SAMPLE_CALLER = "DeepVariant"
+PIPELINE_NAME = "short_read_analyzing_pipeline_Snakemake"
+PIPELINE_GITHUB_URL = "https://github.com/holstegelab/short_read_analyzing_pipeline_Snakemake"
 
 wildcard_constraints:
     genotype_mode="WGS|WES",
@@ -630,6 +633,9 @@ rule prepare_joint_vcf_irods_metadata:
             "per_sample_caller": callers["per_sample_caller"],
             "joint_caller": callers["joint_caller"],
             "joint_filtration": callers["joint_filtration"],
+            "pipeline_date": datetime.date.today().isoformat(),
+            "pipeline_name": PIPELINE_NAME,
+            "pipeline_github_url": PIPELINE_GITHUB_URL,
             "pipeline_version": pipeline_version["version"],
             "pipeline_commit": pipeline_version["commit"],
             "pipeline_commit_short": pipeline_version["commit_short"],
