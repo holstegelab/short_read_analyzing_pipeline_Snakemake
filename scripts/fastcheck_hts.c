@@ -48,17 +48,44 @@ static uint64_t hash_seq_with_orientation(const char *yb, size_t yb_len,
 
 static uint64_t hash_qual_with_orientation(const char *yq, size_t yq_len,
                                            const char *qual, size_t qual_len,
+                                           const char *yb, size_t yb_len,
+                                           const char *seq, size_t seq_len,
+                                           const char *zb, size_t zb_len,
                                            const char *zq, size_t zq_len,
                                            int reversed) {
     uint64_t h = fnv1a64_init();
     if (!reversed) {
-        for (size_t i = 0; i < yq_len; ++i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(yq[i]));
-        for (size_t i = 0; i < qual_len; ++i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(qual[i]));
-        for (size_t i = 0; i < zq_len; ++i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(zq[i]));
+        for (size_t i = 0; i < yq_len; ++i) {
+            unsigned char c = (unsigned char)qual_norm(yq[i]);
+            if (i < yb_len && (yb[i] == 'N' || yb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (size_t i = 0; i < qual_len; ++i) {
+            unsigned char c = (unsigned char)qual_norm(qual[i]);
+            if (i < seq_len && (seq[i] == 'N' || seq[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (size_t i = 0; i < zq_len; ++i) {
+            unsigned char c = (unsigned char)qual_norm(zq[i]);
+            if (i < zb_len && (zb[i] == 'N' || zb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
     } else {
-        for (ssize_t i = (ssize_t)zq_len - 1; i >= 0; --i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(zq[i]));
-        for (ssize_t i = (ssize_t)qual_len - 1; i >= 0; --i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(qual[i]));
-        for (ssize_t i = (ssize_t)yq_len - 1; i >= 0; --i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(yq[i]));
+        for (ssize_t i = (ssize_t)zq_len - 1; i >= 0; --i) {
+            unsigned char c = (unsigned char)qual_norm(zq[i]);
+            if (i < (ssize_t)zb_len && (zb[i] == 'N' || zb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (ssize_t i = (ssize_t)qual_len - 1; i >= 0; --i) {
+            unsigned char c = (unsigned char)qual_norm(qual[i]);
+            if (i < (ssize_t)seq_len && (seq[i] == 'N' || seq[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (ssize_t i = (ssize_t)yq_len - 1; i >= 0; --i) {
+            unsigned char c = (unsigned char)qual_norm(yq[i]);
+            if (i < (ssize_t)yb_len && (yb[i] == 'N' || yb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
     }
     return h;
 }
@@ -170,11 +197,17 @@ static PyObject *py_bam_stats(PyObject *self, PyObject *args, PyObject *kwargs) 
         long long total_bases = 0;
         if (do_restore) {
             hs = hash_seq_with_orientation(yb ? yb : "", yb_len, seq, (size_t)lseq, zb ? zb : "", zb_len, reversed);
-            hq = hash_qual_with_orientation(yq ? yq : "", yq_len, qual, (size_t)lseq, zq ? zq : "", zq_len, reversed);
+            hq = hash_qual_with_orientation(yq ? yq : "", yq_len, qual, (size_t)lseq,
+                                           yb ? yb : "", yb_len, seq, (size_t)lseq, zb ? zb : "", zb_len,
+                                           zq ? zq : "", zq_len, reversed);
             total_bases = (long long)(yb_len + (size_t)lseq + zb_len);
         } else {
             hs = fnv1a64_update(hs, seq, (size_t)lseq);
-            for (int i = 0; i < lseq; ++i) hq = fnv1a64_update_1(hq, (unsigned char)qual_norm(qual[i]));
+            for (int i = 0; i < lseq; ++i) {
+                unsigned char c = (unsigned char)qual_norm(qual[i]);
+                if (seq[i] == 'N' || seq[i] == 'n') c = (unsigned char)'!';
+                hq = fnv1a64_update_1(hq, c);
+            }
             total_bases = (long long)lseq;
         }
 

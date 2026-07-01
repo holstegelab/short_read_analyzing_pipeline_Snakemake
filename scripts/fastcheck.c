@@ -18,8 +18,12 @@ static inline uint64_t fnv1a64_update_1(uint64_t h, unsigned char c);
 static inline char qual_norm(char c);
 
 typedef struct {
+    char *s1;
+    char *s2;
     char *q1;
     char *q2;
+    ssize_t ls1;
+    ssize_t ls2;
     ssize_t l1;
     ssize_t l2;
 } QualPair;
@@ -39,11 +43,12 @@ static inline int determine_qual_shift(int minq, int maxq) {
     return 0;
 }
 
-static inline uint64_t hash_qual_line_with_shift(const char *q, ssize_t len, int shift) {
+static inline uint64_t hash_qual_line_with_shift_seqaware(const char *q, const char *seq, ssize_t len, int shift) {
     uint64_t h = fnv1a64_init();
     for (ssize_t i = 0; i < len; ++i) {
         unsigned char c = (unsigned char)qual_norm(q[i]);
         c = (unsigned char)((int)c + shift);
+        if (seq && (seq[i] == 'N' || seq[i] == 'n')) c = (unsigned char)'!';
         h = fnv1a64_update_1(h, c);
     }
     return h;
@@ -180,7 +185,7 @@ static PyObject *py_fastq_stats_interleaved(PyObject *self, PyObject *args) {
                         if (need_pclose) pclose(f);
                         free(h1); free(s1); free(p1); free(q1);
                         free(h2); free(s2); free(p2); free(q2);
-                        for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].q1); free(qbuf[j].q2); }
+                        for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].s1); free(qbuf[j].s2); free(qbuf[j].q1); free(qbuf[j].q2); }
                         free(qbuf);
                         PyErr_NoMemory();
                         return NULL;
@@ -190,21 +195,29 @@ static PyObject *py_fastq_stats_interleaved(PyObject *self, PyObject *args) {
                 }
                 ssize_t lq1 = (ssize_t)strlen(q1);
                 ssize_t lq2 = (ssize_t)strlen(q2);
+                qbuf[qbuf_n].s1 = (char *)malloc((size_t)rs1 + 1);
+                qbuf[qbuf_n].s2 = (char *)malloc((size_t)rs2 + 1);
                 qbuf[qbuf_n].q1 = (char *)malloc((size_t)lq1 + 1);
                 qbuf[qbuf_n].q2 = (char *)malloc((size_t)lq2 + 1);
-                if (!qbuf[qbuf_n].q1 || !qbuf[qbuf_n].q2) {
+                if (!qbuf[qbuf_n].s1 || !qbuf[qbuf_n].s2 || !qbuf[qbuf_n].q1 || !qbuf[qbuf_n].q2) {
                     if (need_pclose) pclose(f);
                     free(h1); free(s1); free(p1); free(q1);
                     free(h2); free(s2); free(p2); free(q2);
+                    if (qbuf[qbuf_n].s1) free(qbuf[qbuf_n].s1);
+                    if (qbuf[qbuf_n].s2) free(qbuf[qbuf_n].s2);
                     if (qbuf[qbuf_n].q1) free(qbuf[qbuf_n].q1);
                     if (qbuf[qbuf_n].q2) free(qbuf[qbuf_n].q2);
-                    for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].q1); free(qbuf[j].q2); }
+                    for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].s1); free(qbuf[j].s2); free(qbuf[j].q1); free(qbuf[j].q2); }
                     free(qbuf);
                     PyErr_NoMemory();
                     return NULL;
                 }
+                memcpy(qbuf[qbuf_n].s1, s1, (size_t)rs1 + 1);
+                memcpy(qbuf[qbuf_n].s2, s2, (size_t)rs2 + 1);
                 memcpy(qbuf[qbuf_n].q1, q1, (size_t)lq1 + 1);
                 memcpy(qbuf[qbuf_n].q2, q2, (size_t)lq2 + 1);
+                qbuf[qbuf_n].ls1 = rs1;
+                qbuf[qbuf_n].ls2 = rs2;
                 qbuf[qbuf_n].l1 = lq1;
                 qbuf[qbuf_n].l2 = lq2;
                 qbuf_n += 1;
@@ -213,16 +226,18 @@ static PyObject *py_fastq_stats_interleaved(PyObject *self, PyObject *args) {
                     qual_shift = determine_qual_shift(minq, maxq);
                     qual_shift_determined = 1;
                     for (size_t j = 0; j < qbuf_n; ++j) {
-                        c1_qual ^= hash_qual_line_with_shift(qbuf[j].q1, qbuf[j].l1, qual_shift);
-                        c2_qual ^= hash_qual_line_with_shift(qbuf[j].q2, qbuf[j].l2, qual_shift);
+                        c1_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q1, qbuf[j].s1, qbuf[j].l1, qual_shift);
+                        c2_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q2, qbuf[j].s2, qbuf[j].l2, qual_shift);
+                        free(qbuf[j].s1);
+                        free(qbuf[j].s2);
                         free(qbuf[j].q1);
                         free(qbuf[j].q2);
                     }
                     qbuf_n = 0;
                 }
             } else {
-                c1_qual ^= hash_qual_line_with_shift(q1, (ssize_t)strlen(q1), qual_shift);
-                c2_qual ^= hash_qual_line_with_shift(q2, (ssize_t)strlen(q2), qual_shift);
+                c1_qual ^= hash_qual_line_with_shift_seqaware(q1, s1, (ssize_t)strlen(q1), qual_shift);
+                c2_qual ^= hash_qual_line_with_shift_seqaware(q2, s2, (ssize_t)strlen(q2), qual_shift);
             }
         }
         nbases1 += (long long)rs1;
@@ -234,8 +249,10 @@ static PyObject *py_fastq_stats_interleaved(PyObject *self, PyObject *args) {
     if (layout == 4 && !qual_shift_determined && qbuf_n > 0) {
         qual_shift = determine_qual_shift(minq, maxq);
         for (size_t j = 0; j < qbuf_n; ++j) {
-            c1_qual ^= hash_qual_line_with_shift(qbuf[j].q1, qbuf[j].l1, qual_shift);
-            c2_qual ^= hash_qual_line_with_shift(qbuf[j].q2, qbuf[j].l2, qual_shift);
+            c1_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q1, qbuf[j].s1, qbuf[j].l1, qual_shift);
+            c2_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q2, qbuf[j].s2, qbuf[j].l2, qual_shift);
+            free(qbuf[j].s1);
+            free(qbuf[j].s2);
             free(qbuf[j].q1);
             free(qbuf[j].q2);
         }
@@ -360,7 +377,7 @@ static PyObject *py_fastq_stats(PyObject *self, PyObject *args) {
                 if (!nx) {
                     pclose(f1); pclose(f2);
                     free(h1); free(h2); free(s1); free(s2); free(p1); free(p2); free(q1); free(q2);
-                    for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].q1); free(qbuf[j].q2); }
+                    for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].s1); free(qbuf[j].s2); free(qbuf[j].q1); free(qbuf[j].q2); }
                     free(qbuf);
                     PyErr_NoMemory();
                     return NULL;
@@ -368,20 +385,28 @@ static PyObject *py_fastq_stats(PyObject *self, PyObject *args) {
                 qbuf = nx;
                 qbuf_cap = ncap;
             }
+            qbuf[qbuf_n].s1 = (char *)malloc((size_t)rs1 + 1);
+            qbuf[qbuf_n].s2 = (char *)malloc((size_t)rs2 + 1);
             qbuf[qbuf_n].q1 = (char *)malloc((size_t)rq1 + 1);
             qbuf[qbuf_n].q2 = (char *)malloc((size_t)rq2 + 1);
-            if (!qbuf[qbuf_n].q1 || !qbuf[qbuf_n].q2) {
+            if (!qbuf[qbuf_n].s1 || !qbuf[qbuf_n].s2 || !qbuf[qbuf_n].q1 || !qbuf[qbuf_n].q2) {
                 pclose(f1); pclose(f2);
                 free(h1); free(h2); free(s1); free(s2); free(p1); free(p2); free(q1); free(q2);
+                if (qbuf[qbuf_n].s1) free(qbuf[qbuf_n].s1);
+                if (qbuf[qbuf_n].s2) free(qbuf[qbuf_n].s2);
                 if (qbuf[qbuf_n].q1) free(qbuf[qbuf_n].q1);
                 if (qbuf[qbuf_n].q2) free(qbuf[qbuf_n].q2);
-                for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].q1); free(qbuf[j].q2); }
+                for (size_t j = 0; j < qbuf_n; ++j) { free(qbuf[j].s1); free(qbuf[j].s2); free(qbuf[j].q1); free(qbuf[j].q2); }
                 free(qbuf);
                 PyErr_NoMemory();
                 return NULL;
             }
+            memcpy(qbuf[qbuf_n].s1, s1, (size_t)rs1 + 1);
+            memcpy(qbuf[qbuf_n].s2, s2, (size_t)rs2 + 1);
             memcpy(qbuf[qbuf_n].q1, q1, (size_t)rq1 + 1);
             memcpy(qbuf[qbuf_n].q2, q2, (size_t)rq2 + 1);
+            qbuf[qbuf_n].ls1 = rs1;
+            qbuf[qbuf_n].ls2 = rs2;
             qbuf[qbuf_n].l1 = rq1;
             qbuf[qbuf_n].l2 = rq2;
             qbuf_n += 1;
@@ -390,15 +415,17 @@ static PyObject *py_fastq_stats(PyObject *self, PyObject *args) {
                 qual_shift = determine_qual_shift(minq, maxq);
                 qual_shift_determined = 1;
                 for (size_t j = 0; j < qbuf_n; ++j) {
-                    c1_qual ^= hash_qual_line_with_shift(qbuf[j].q1, qbuf[j].l1, qual_shift);
-                    c2_qual ^= hash_qual_line_with_shift(qbuf[j].q2, qbuf[j].l2, qual_shift);
+                    c1_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q1, qbuf[j].s1, qbuf[j].l1, qual_shift);
+                    c2_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q2, qbuf[j].s2, qbuf[j].l2, qual_shift);
+                    free(qbuf[j].s1);
+                    free(qbuf[j].s2);
                     free(qbuf[j].q1);
                     free(qbuf[j].q2);
                 }
                 qbuf_n = 0;
             }
         } else {
-            c1_qual ^= hash_qual_line_with_shift(q1, rq1, qual_shift);
+            c1_qual ^= hash_qual_line_with_shift_seqaware(q1, s1, rq1, qual_shift);
         }
 
         uint64_t hseq2 = fnv1a64_init();
@@ -406,7 +433,7 @@ static PyObject *py_fastq_stats(PyObject *self, PyObject *args) {
         c2_seq ^= hseq2;
 
         if (qual_shift_determined) {
-            c2_qual ^= hash_qual_line_with_shift(q2, rq2, qual_shift);
+            c2_qual ^= hash_qual_line_with_shift_seqaware(q2, s2, rq2, qual_shift);
         }
 
         nbases1 += (long long)rs1;
@@ -420,8 +447,10 @@ static PyObject *py_fastq_stats(PyObject *self, PyObject *args) {
     if (!qual_shift_determined && qbuf_n > 0) {
         qual_shift = determine_qual_shift(minq, maxq);
         for (size_t j = 0; j < qbuf_n; ++j) {
-            c1_qual ^= hash_qual_line_with_shift(qbuf[j].q1, qbuf[j].l1, qual_shift);
-            c2_qual ^= hash_qual_line_with_shift(qbuf[j].q2, qbuf[j].l2, qual_shift);
+            c1_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q1, qbuf[j].s1, qbuf[j].l1, qual_shift);
+            c2_qual ^= hash_qual_line_with_shift_seqaware(qbuf[j].q2, qbuf[j].s2, qbuf[j].l2, qual_shift);
+            free(qbuf[j].s1);
+            free(qbuf[j].s2);
             free(qbuf[j].q1);
             free(qbuf[j].q2);
         }
@@ -503,17 +532,44 @@ static uint64_t hash_seq_with_orientation(const char *yb, size_t yb_len,
 
 static uint64_t hash_qual_with_orientation(const char *yq, size_t yq_len,
                                            const char *qual, size_t qual_len,
+                                           const char *yb, size_t yb_len,
+                                           const char *seq, size_t seq_len,
+                                           const char *zb, size_t zb_len,
                                            const char *zq, size_t zq_len,
                                            int reversed) {
     uint64_t h = fnv1a64_init();
     if (!reversed) {
-        for (size_t i = 0; i < yq_len; ++i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(yq[i]));
-        for (size_t i = 0; i < qual_len; ++i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(qual[i]));
-        for (size_t i = 0; i < zq_len; ++i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(zq[i]));
+        for (size_t i = 0; i < yq_len; ++i) {
+            unsigned char c = (unsigned char)qual_norm(yq[i]);
+            if (i < yb_len && (yb[i] == 'N' || yb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (size_t i = 0; i < qual_len; ++i) {
+            unsigned char c = (unsigned char)qual_norm(qual[i]);
+            if (i < seq_len && (seq[i] == 'N' || seq[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (size_t i = 0; i < zq_len; ++i) {
+            unsigned char c = (unsigned char)qual_norm(zq[i]);
+            if (i < zb_len && (zb[i] == 'N' || zb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
     } else {
-        for (ssize_t i = (ssize_t)zq_len - 1; i >= 0; --i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(zq[i]));
-        for (ssize_t i = (ssize_t)qual_len - 1; i >= 0; --i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(qual[i]));
-        for (ssize_t i = (ssize_t)yq_len - 1; i >= 0; --i) h = fnv1a64_update_1(h, (unsigned char)qual_norm(yq[i]));
+        for (ssize_t i = (ssize_t)zq_len - 1; i >= 0; --i) {
+            unsigned char c = (unsigned char)qual_norm(zq[i]);
+            if (i < (ssize_t)zb_len && (zb[i] == 'N' || zb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (ssize_t i = (ssize_t)qual_len - 1; i >= 0; --i) {
+            unsigned char c = (unsigned char)qual_norm(qual[i]);
+            if (i < (ssize_t)seq_len && (seq[i] == 'N' || seq[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
+        for (ssize_t i = (ssize_t)yq_len - 1; i >= 0; --i) {
+            unsigned char c = (unsigned char)qual_norm(yq[i]);
+            if (i < (ssize_t)yb_len && (yb[i] == 'N' || yb[i] == 'n')) c = (unsigned char)'!';
+            h = fnv1a64_update_1(h, c);
+        }
     }
     return h;
 }
@@ -596,11 +652,15 @@ static PyObject *py_sam_stats(PyObject *self, PyObject *args) {
         long long total_bases = 0;
         if (do_restore) {
             hs = hash_seq_with_orientation(yb, yb_len, seq, seq_len, zb, zb_len, reversed);
-            hq = hash_qual_with_orientation(yq, yq_len, qual, qual_len, zq, zq_len, reversed);
+            hq = hash_qual_with_orientation(yq, yq_len, qual, qual_len, yb, yb_len, seq, seq_len, zb, zb_len, zq, zq_len, reversed);
             total_bases = (long long)(yb_len + seq_len + zb_len);
         } else {
             hs = fnv1a64_update(hs, seq, seq_len);
-            for (size_t i = 0; i < qual_len; ++i) hq = fnv1a64_update_1(hq, (unsigned char)qual_norm(qual[i]));
+            for (size_t i = 0; i < qual_len; ++i) {
+                unsigned char c = (unsigned char)qual_norm(qual[i]);
+                if (seq[i] == 'N' || seq[i] == 'n') c = (unsigned char)'!';
+                hq = fnv1a64_update_1(hq, c);
+            }
             total_bases = (long long)seq_len;
         }
 

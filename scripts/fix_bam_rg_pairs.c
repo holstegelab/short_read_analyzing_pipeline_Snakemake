@@ -101,12 +101,41 @@ static char* build_new_rg_block(const RgVec *maps){ // emit one RG per unique ne
 
 static const char* map_rg_id(const RgVec *maps, const char *old){ if(!old) return NULL; for(size_t i=0;i<maps->n;i++){ if(maps->v[i].old_id && strcmp(maps->v[i].old_id,old)==0) return maps->v[i].new_id; } return NULL; }
 
-static int infer_readnr_from_qname(const char *q){ if(!q) return 0; const char *slash = strrchr(q,'/'); if(slash && slash[1]){ if(slash[1]=='1') return 1; if(slash[1]=='2' || slash[1]=='3') return 2; }
- // also handle '#x/1' within
- const char *hash=strrchr(q,'#'); if(hash){ const char *sl=strchr(hash,'/'); if(sl && sl[1]){ if(sl[1]=='1') return 1; if(sl[1]=='2' || sl[1]=='3') return 2; } }
- return 0; }
+static int legacy_read_suffix_info(const char *q, size_t *slash_idx, size_t *suffix_len){
+    if(!q) return 0;
+    const char *slash = strrchr(q, '/');
+    if(!slash || !slash[1]) return 0;
 
-static void qname_fix_inplace(char *q){ if(!q) return; size_t n=strlen(q); for(size_t i=0;i+1<n;i++){ if(q[i]=='/' && q[i+1]=='3'){ q[i+1]='2'; } } }
+    int readnr = 0;
+    if(slash[1] == '1') readnr = 1;
+    else if(slash[1] == '2' || slash[1] == '3') readnr = 2;
+    else return 0;
+
+    if(!(slash[2] == '\0' || slash[2] == ':')) return 0;
+
+    if(slash_idx) *slash_idx = (size_t)(slash - q);
+    if(suffix_len) *suffix_len = 2;
+    return readnr;
+}
+
+static int infer_readnr_from_qname(const char *q){
+    return legacy_read_suffix_info(q, NULL, NULL);
+}
+
+static void qname_fix_inplace(bam1_t *b){
+    if(!b) return;
+
+    char *q = bam_get_qname(b);
+    size_t slash_idx = 0, suffix_len = 0;
+    if(!legacy_read_suffix_info(q, &slash_idx, &suffix_len)) return;
+    if(suffix_len == 0 || slash_idx + suffix_len > (size_t)b->l_data) return;
+
+    memmove(b->data + slash_idx,
+            b->data + slash_idx + suffix_len,
+            (size_t)b->l_data - (slash_idx + suffix_len));
+    b->l_data -= (int)suffix_len;
+    b->core.l_qname -= (uint8_t)suffix_len;
+}
 
 static int main_impl(const char *inpath, const char *outpath, const char *ref, int threads, int no_rename){ htsFile *in=hts_open(inpath, "r"); if(!in){ fprintf(stderr,"Cannot open %s\n", inpath); return 1; } if(ref && *ref) hts_set_fai_filename(in, ref); if(threads>1) hts_set_threads(in, threads);
  bam_hdr_t *hdr = sam_hdr_read(in); if(!hdr){ fprintf(stderr,"Failed to read header\n"); hts_close(in); return 1; }
@@ -143,7 +172,7 @@ static int main_impl(const char *inpath, const char *outpath, const char *ref, i
      return 2;
  }
  uint16_t f = b->core.flag;
- if(!no_rename){ qname_fix_inplace(qname); }
+ if(!no_rename){ qname_fix_inplace(b); }
  f |= 0x1;
  f &= ~(0x40|0x80);
  if(rn==1){ f |= 0x40; }

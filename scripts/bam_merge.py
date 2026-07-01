@@ -58,8 +58,11 @@ def check_qual(read_name, q1, q2):
     #in that case, results are not entirely lossless, but in practice it has probably no consequences. 
     if q1.replace('#', '!') == q2.replace('#','!'):
         return
-    
-    raise RuntimeError(f"Quality score mismatch BAM-FASTQ in fragment {read_name}: \n{q1} != \n{q2}")
+    raise RuntimeError(
+        f"Quality score mismatch BAM-FASTQ in fragment {read_name}:\n"
+        f"  FASTQ qual compared: {q1}\n"
+        f"  BAM qual:            {q2}"
+    )
 
 
 def derive_missing_sequence_tags(read, seq, qual, stats):

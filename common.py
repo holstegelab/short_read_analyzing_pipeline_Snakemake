@@ -392,8 +392,6 @@ def node_ssd_base(tmpdir_fallback=None):
         return slurm_tmp
     if os.path.isdir(TMPDIR_ALT) and os.access(TMPDIR_ALT, os.W_OK):
         return os.path.join(TMPDIR_ALT, user)
-    if os.path.isdir('/tmp') and os.access('/tmp', os.W_OK):
-        return os.path.join('/tmp', user)
     return tmpdir
 
 def node_tmp_path(*segments):

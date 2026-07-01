@@ -101,16 +101,25 @@ rule extract_chrM_reads:
         fq2 = ensure(temp(pj(chrM, '{sample}_chrM.R2.fastq.gz')), non_empty = True)
     conda: CONDA_VCF
     resources:
-        mem_mb=1000
+        mem_mb=1000,
+        tmpdir=tmpdir
     params:
         threads=2
     shell:
         """
-        tmp_dir=$(mktemp -d)
-        trap 'rm -rf "$tmp_dir"' EXIT
+        TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+        JOB_ID="${{SLURM_JOB_ID}}"
+        if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
+        if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+        JOB_TMP="$TMPDIR_USE/chrM_extract/$JOB_ID/{wildcards.sample}"
+        mkdir -p "$JOB_TMP"
+        tmp_dir=$(mktemp -d -p "$JOB_TMP")
+        trap 'rm -rf "$tmp_dir" 2>/dev/null || true' EXIT INT TERM
         samtools view -@ {params.threads} -b -o "$tmp_dir/{wildcards.sample}.chrM.raw.bam" {input} chrM
         mkdir -p $(dirname {output.fq1})
-        samtools sort -n -@ {params.threads} -o "$tmp_dir/{wildcards.sample}.chrM.sorted.bam" "$tmp_dir/{wildcards.sample}.chrM.raw.bam"
+        samtools sort -n -@ {params.threads} -T "$tmp_dir/{wildcards.sample}.chrM.sorttmp" -o "$tmp_dir/{wildcards.sample}.chrM.sorted.bam" "$tmp_dir/{wildcards.sample}.chrM.raw.bam"
         samtools collate -@ {params.threads} -o "$tmp_dir/{wildcards.sample}.chrM.collated.bam" "$tmp_dir/{wildcards.sample}.chrM.sorted.bam"
         samtools fastq -O -N -@ {params.threads} -0 /dev/null -s /dev/null -1 {output.fq1} -2 {output.fq2} "$tmp_dir/{wildcards.sample}.chrM.collated.bam"
         """
@@ -125,17 +134,26 @@ rule extract_NUMTs_reads:
         NUMTs_bed = NUMTs,
         threads = 2
     resources:
-        mem_mb=1000
+        mem_mb=1000,
+        tmpdir=tmpdir
     shell:
         """
-        tmp_dir=$(mktemp -d)
-        trap 'rm -rf "$tmp_dir"' EXIT
+        TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+        JOB_ID="${{SLURM_JOB_ID}}"
+        if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
+        if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+        JOB_TMP="$TMPDIR_USE/numts_extract/$JOB_ID/{wildcards.sample}"
+        mkdir -p "$JOB_TMP"
+        tmp_dir=$(mktemp -d -p "$JOB_TMP")
+        trap 'rm -rf "$tmp_dir" 2>/dev/null || true' EXIT INT TERM
         tmpbed="$tmp_dir/NUMTs_plus_chrM.bed"
         cat {params.NUMTs_bed} > "$tmpbed"
         echo -e "chrM\t1\t999999999" >> "$tmpbed"
         samtools view -@ {params.threads} -b -L "$tmpbed" -o "$tmp_dir/{wildcards.sample}.NUMTs.raw.bam" {input}
         mkdir -p $(dirname {output.fq1})
-        samtools sort -n -@ {params.threads} -o "$tmp_dir/{wildcards.sample}.NUMTs.sorted.bam" "$tmp_dir/{wildcards.sample}.NUMTs.raw.bam"
+        samtools sort -n -@ {params.threads} -T "$tmp_dir/{wildcards.sample}.NUMTs.sorttmp" -o "$tmp_dir/{wildcards.sample}.NUMTs.sorted.bam" "$tmp_dir/{wildcards.sample}.NUMTs.raw.bam"
         samtools collate -@ {params.threads} -o "$tmp_dir/{wildcards.sample}.NUMTs.collated.bam" "$tmp_dir/{wildcards.sample}.NUMTs.sorted.bam"
         samtools fastq -O -N -@ {params.threads} -0 /dev/null -s /dev/null -1 {output.fq1} -2 {output.fq2} "$tmp_dir/{wildcards.sample}.NUMTs.collated.bam"
         """
@@ -166,19 +184,32 @@ rule align_chrM_and_NUMTs:
         numt_log=pj(LOG,'chrM','{sample}.origchrM_NUMT_align.log')
     resources:
         n="3",
-        mem_mb=750
+        mem_mb=750,
+        tmpdir=tmpdir
     shell:
         """
         mkdir -p $(dirname {log.chrM_log})
         mkdir -p $(dirname {log.numt_log})
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref} {input.chrM_fq1} {input.chrM_fq2} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam_chrM}
+
+        TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+        JOB_ID="${{SLURM_JOB_ID}}"
+        if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
+        if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+        JOB_TMP="$TMPDIR_USE/chrM_align/$JOB_ID/{wildcards.sample}"
+        mkdir -p "$JOB_TMP"
+        tmp_dir=$(mktemp -d -p "$JOB_TMP")
+        trap 'rm -rf "$tmp_dir" 2>/dev/null || true' EXIT INT TERM
+
+        bwa mem -t 4 -R "{params.rg}" {params.mt_ref} {input.chrM_fq1} {input.chrM_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.chrM_orig.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_chrM}
         samtools index -@ {params.threads_per_task} -o {output.bai_chrM} {output.bam_chrM}
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref_shift} {input.chrM_fq1} {input.chrM_fq2} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam_shifted_chrM}
+        bwa mem -t 4 -R "{params.rg}" {params.mt_ref_shift} {input.chrM_fq1} {input.chrM_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.chrM_shifted.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_shifted_chrM}
         samtools index -@ {params.threads_per_task} -o {output.bai_shifted_chrM} {output.bam_shifted_chrM}
 
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref} {input.numt_fq1} {input.numt_fq2} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam_NUMTs}
+        bwa mem -t 4 -R "{params.rg}" {params.mt_ref} {input.numt_fq1} {input.numt_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.NUMTs_orig.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_NUMTs}
         samtools index -@ {params.threads_per_task} -o {output.bai_NUMTs} {output.bam_NUMTs}
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref_shift} {input.numt_fq1} {input.numt_fq2} | samtools sort -O bam -@ {params.threads_per_task} -o {output.bam_shifted_NUMTs}
+        bwa mem -t 4 -R "{params.rg}" {params.mt_ref_shift} {input.numt_fq1} {input.numt_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.NUMTs_shifted.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_shifted_NUMTs}
         samtools index -@ {params.threads_per_task} -o {output.bai_shifted_NUMTs} {output.bam_shifted_NUMTs}
         """
 

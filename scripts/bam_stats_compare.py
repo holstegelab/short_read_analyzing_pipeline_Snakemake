@@ -59,6 +59,17 @@ def compute_bam_stats_py(in_path: str):
     fastq2_nrow = 0
     fastq2_nbases = 0
 
+    def qual_seqaware(seq: str, qual: str) -> str:
+        # Canonicalize quality at N-bases so BAM and FASTQ checksums remain
+        # stable when aligners normalize N quality to '#'.
+        out = []
+        for b, q in zip(seq, qual):
+            if b in ('N', 'n'):
+                out.append('!')
+            else:
+                out.append('!' if q == '#' else q)
+        return ''.join(out)
+
     with pipe_in as f:
         reader = csv.reader(f, delimiter='\t', quoting=csv.QUOTE_NONE)
         for row in reader:
@@ -71,7 +82,7 @@ def compute_bam_stats_py(in_path: str):
                 continue
             rec = rec.unmap(True, orig_orientation=True)
             cseq = fnv1a64(rec.seq)
-            cqual = fnv1a64(rec.qual.replace('#', '!'))
+            cqual = fnv1a64(qual_seqaware(rec.seq, rec.qual))
             if rec.flag & 0x40:
                 fastq1_checksum_seq ^= cseq
                 fastq1_checksum_qual ^= cqual

@@ -330,6 +330,19 @@ static char* cigar_extend_hardclip(const char *c, int add_len, int at_front){
 // --- Qual check allowing # vs ! ---
 static int qual_equal_norm(const char *a, const char *b, int len){ for(int i=0;i<len;i++){ char ca= a[i]=='#'?'!':a[i]; char cb= b[i]=='#'?'!':b[i]; if(ca!=cb) return 0; } return 1; }
 
+/* Same as qual_equal_norm but skips positions where seq[i]=='N'/'n'.
+   Aligners may normalize quality at N bases; skip those positions to avoid
+   false BAM/FASTQ quality mismatches on otherwise correct reads. */
+static int qual_equal_norm_seqaware(const char *a, const char *b, int len, const char *seq){
+    for(int i=0;i<len;i++){
+        if(seq && (seq[i]=='N'||seq[i]=='n')) continue;
+        char ca= a[i]=='#'?'!':a[i];
+        char cb= b[i]=='#'?'!':b[i];
+        if(ca!=cb) return 0;
+    }
+    return 1;
+}
+
 static int qual_equal_norm_shift(const char *a, const char *b, int len, int shift){
     for(int i=0;i<len;i++){
         char ca = a[i]=='#'?'!':a[i];
@@ -417,7 +430,7 @@ static int derive_missing_sequence_tags_primary(const BamRow *br, const char *fq
         // forward: check prefix equals BAM seq/qual
         if(Lbam>0){
             if(strncmp(fqseq, br->seq, Lbam)!=0){ fprintf(stderr,"Sequence mismatch BAM-FASTQ in fragment %s (unmapped)\n", qname); exit(1); }
-            if(!qual_equal_norm(fqqual, br->qual, Lbam)){ fprintf(stderr,"Quality mismatch BAM-FASTQ in fragment %s (unmapped)\n", qname); exit(1); }
+            if(!qual_equal_norm_seqaware(fqqual, br->qual, Lbam, br->seq)){ fprintf(stderr,"Quality mismatch BAM-FASTQ in fragment %s (unmapped)\n", qname); exit(1); }
         }
         if(clip>0){
             // tag is suffix
@@ -436,7 +449,7 @@ static int derive_missing_sequence_tags_primary(const BamRow *br, const char *fq
         char *rqual = sdup(fqqual); rev_inplace(rqual, (size_t)Lfq);
         // check suffix equals BAM seq/qual
         if(strncmp(rseq + (Lfq-Lbam), br->seq, Lbam)!=0){ fprintf(stderr,"Sequence mismatch BAM-FASTQ in fragment %s (rev)\n", qname); exit(1); }
-        if(!qual_equal_norm(rqual + (Lfq-Lbam), br->qual, Lbam)){ fprintf(stderr,"Quality mismatch BAM-FASTQ in fragment %s (rev)\n", qname); exit(1); }
+        if(!qual_equal_norm_seqaware(rqual + (Lfq-Lbam), br->qual, Lbam, br->seq)){ fprintf(stderr,"Quality mismatch BAM-FASTQ in fragment %s (rev)\n", qname); exit(1); }
         // tag is reversed prefix
         rseq[Lfq-Lbam]='\0'; rqual[Lfq-Lbam]='\0';
         // build tags YB/YQ
@@ -452,7 +465,7 @@ static int derive_missing_sequence_tags_primary(const BamRow *br, const char *fq
     } else {
         // forward: check prefix equals BAM seq/qual
         if(strncmp(fqseq, br->seq, Lbam)!=0){ fprintf(stderr,"Sequence mismatch BAM-FASTQ in fragment %s (fwd)\n", qname); exit(1); }
-        if(!qual_equal_norm(fqqual, br->qual, Lbam)){ fprintf(stderr,"Quality mismatch BAM-FASTQ in fragment %s (fwd)\n", qname); exit(1); }
+        if(!qual_equal_norm_seqaware(fqqual, br->qual, Lbam, br->seq)){ fprintf(stderr,"Quality mismatch BAM-FASTQ in fragment %s (fwd)\n", qname); exit(1); }
         // tag is suffix
         const char *tseq = fqseq + Lbam; const char *tqual = fqqual + Lbam;
         char *zbtag; char *zqtag; size_t tbl=strlen(tseq), tql=strlen(tqual);

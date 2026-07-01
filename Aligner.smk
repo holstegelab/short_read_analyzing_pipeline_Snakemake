@@ -257,9 +257,15 @@ rule archive_get:
     run:
         dname = os.path.dirname(str(output))        
         batch = SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]
+        excluded_map = SAMPLEFILE_TO_EXCLUDED_SAMPLES.get(wildcards['samplefile'], {})
         files = []
         for sample in batch['samples']:
-            sinfo = SAMPLEINFO[sample]
+            sinfo = SAMPLEINFO.get(sample)
+            if sinfo is None:
+                if excluded_map.get(sample, {}).get('info') is not None:
+                    print(f"[archive_get] Skipping excluded sample {sample}", flush=True)
+                    continue
+                raise KeyError(sample)
             if not sinfo['need_retrieval']:
                 continue
 
@@ -294,7 +300,12 @@ rule archive_get:
 
             # Poll until all are online (DUL or REG)
             done = set()
+            last_status = {}
+            poll_count = 0
+            pending_report_every = int(os.environ.get("ARCHIVE_GET_PENDING_REPORT_EVERY", "10"))
+            pending_report_max = int(os.environ.get("ARCHIVE_GET_PENDING_REPORT_MAX", "25"))
             while True:
+                poll_count += 1
                 pending = [p for p in check_paths if p not in done]
                 if not pending:
                     print("[archive_get] All files online. Proceeding.", flush=True)
@@ -313,9 +324,17 @@ rule archive_get:
                             continue
                         status = m.group(1)
                         filepath = m.group(2).strip()
+                        last_status[filepath] = status
                         if status in ("DUL", "REG"):
                             done.add(filepath)
                 print(f"[archive_get] Poll: {len(done)}/{len(check_paths)} online (DUL/REG)", flush=True)
+                if pending_report_every > 0 and (poll_count == 1 or poll_count % pending_report_every == 0):
+                    pending = [p for p in check_paths if p not in done]
+                    print(f"[archive_get] Pending: {len(pending)} file(s) not online yet", flush=True)
+                    for p in pending[:pending_report_max]:
+                        print(f"[archive_get]   ({last_status.get(p, 'UNK')}) {p}", flush=True)
+                    if len(pending) > pending_report_max:
+                        print(f"[archive_get]   ... and {len(pending) - pending_report_max} more", flush=True)
                 time.sleep(30)
 
         # Mark batch as retrieved only when staged
@@ -444,7 +463,7 @@ rule archive_to_active:
                   cc="gzip -c"
                 fi
                 if command -v pbzip2 >/dev/null 2>&1; then
-                  dc="pbzip2 -dc -p {threads}"
+                  dc="pbzip2 -dc -p{threads}"
                 elif command -v lbzip2 >/dev/null 2>&1; then
                   dc="lbzip2 -dc -n {threads}"
                 else
@@ -681,7 +700,7 @@ rule external_alignments_to_fastq:
         """
             TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
             if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; elif [ -d "/tmp" ] && [ -w "/tmp" ]; then TMPDIR_USE="/tmp/${{USER}}"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
             JOB_ID="${{SLURM_JOB_ID}}"
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
@@ -1083,12 +1102,13 @@ rule merge_bam_alignment_dechimer:
         dechimer = shlex.quote(str(params.dechimer))
         bam_stats = shlex.quote(str(params.bam_stats_compare_hts))
         fastq_stats = shlex.quote(str(input.fastq_stats))
+        ignore_qual_flag = "--ignore-qual-checksum-diff" if bool(SAMPLEINFO[wildcards['sample']].get('erf_correct', False)) else ""
 
         cmd_stage1 = (
             "set -o pipefail; "
             f"samtools view -h --threads 2 {bami_q} "
             f"| {bam_merge} -a {fq1} -b {fq2} -ua {ua} -ub {ub} -s {merge_stats} "
-            f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} -s {check_stats} -c {checked} > /dev/null) "
+            f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} {ignore_qual_flag} -s {check_stats} -c {checked} > /dev/null) "
             f"| samtools fixmate -@ 2 -u -O BAM -m - {shlex.quote(merged_tmp)}"
         )
         shell(cmd_stage1)
@@ -1113,7 +1133,7 @@ rule merge_bam_alignment_dechimer:
                 "set -o pipefail; "
                 f"samtools view -h --threads 2 {shlex.quote(merged_tmp)} "
                 f"| {dechimer} --min_align_length 40 --loose_ends -i - -s {out_stats} "
-                f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} -s {check_stats} -c {checked} > /dev/null) "
+                f"| tee >(python3 {bam_stats} -i - --threads 2 --fastq-stats {fastq_stats} {ignore_qual_flag} -s {check_stats} -c {checked} > /dev/null) "
                 f"| samtools fixmate -@ {fix_threads} -u -O BAM -m - {shlex.quote(dechimer_tmp)}"
             )
             shell(cmd_stage2)
@@ -1149,7 +1169,7 @@ rule sort_bam_alignment:
         """
             TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
             if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; elif [ -d "/tmp" ] && [ -w "/tmp" ]; then TMPDIR_USE="/tmp/${{USER}}"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
             JOB_ID="${{SLURM_JOB_ID}}"
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi

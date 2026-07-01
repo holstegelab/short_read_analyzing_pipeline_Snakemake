@@ -90,9 +90,19 @@ rule extract_and_tar_deepvariant_level2_wgs:
         region = wildcards.region
         samplefile = wildcards.samplefile
         samples = params.samples
-        tmpdir = Path(tempfile.mkdtemp(prefix=f"dv_l2_{samplefile}_{region}_"))
+        output_parent = Path(output.tar).parent
+        output_parent.mkdir(parents=True, exist_ok=True)
+        tmp_base = node_ssd_base()
+        if Path(tmp_base).resolve() == Path(tmpdir).resolve():
+            tmp_base = str(output_parent)
+        tmp_base_path = Path(tmp_base)
         try:
-            Path(output.tar).parent.mkdir(parents=True, exist_ok=True)
+            tmp_base_path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            tmp_base_path = output_parent
+        tmp_base = str(tmp_base_path)
+        ltmpdir = Path(tempfile.mkdtemp(prefix=f"dv_l2_{samplefile}_{region}_", dir=tmp_base))
+        try:
             staged_paths = []
             parent_level1 = level2_parent_level1(region)
             interval = level2_interval(region, wgs=True)
@@ -100,8 +110,8 @@ rule extract_and_tar_deepvariant_level2_wgs:
                 source_path = Path(pj(DEEPVARIANT, "gVCF", parent_level1, f"{sample}.{parent_level1}.wg.vcf.gz"))
                 if not source_path.exists():
                     raise FileNotFoundError(f"Source gVCF missing: {source_path}")
-                staged_gvcf = tmpdir / f"{sample}.{region}.dv.wgs.g.vcf.gz"
-                staged_tbi = tmpdir / f"{sample}.{region}.dv.wgs.g.vcf.gz.tbi"
+                staged_gvcf = ltmpdir / f"{sample}.{region}.dv.wgs.g.vcf.gz"
+                staged_tbi = ltmpdir / f"{sample}.{region}.dv.wgs.g.vcf.gz.tbi"
                 shell(
                     "bcftools view -R {interval:q} {source_path:q} -O z -o {staged_gvcf:q}"
                 )
@@ -124,7 +134,7 @@ rule extract_and_tar_deepvariant_level2_wgs:
             if missing:
                 raise ValueError(f"Tarball missing entries: {missing}")
         finally:
-            shutil.rmtree(tmpdir)
+            shutil.rmtree(ltmpdir)
 
 
 rule extract_and_tar_deepvariant_level2_wes:
@@ -143,9 +153,19 @@ rule extract_and_tar_deepvariant_level2_wes:
         region = wildcards.region
         samplefile = wildcards.samplefile
         samples = params.samples
-        tmpdir = Path(tempfile.mkdtemp(prefix=f"dv_l2_wes_{samplefile}_{region}_"))
+        output_parent = Path(output.tar).parent
+        output_parent.mkdir(parents=True, exist_ok=True)
+        tmp_base = node_ssd_base()
+        if Path(tmp_base).resolve() == Path(tmpdir).resolve():
+            tmp_base = str(output_parent)
+        tmp_base_path = Path(tmp_base)
         try:
-            Path(output.tar).parent.mkdir(parents=True, exist_ok=True)
+            tmp_base_path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            tmp_base_path = output_parent
+        tmp_base = str(tmp_base_path)
+        ltmpdir = Path(tempfile.mkdtemp(prefix=f"dv_l2_wes_{samplefile}_{region}_", dir=tmp_base))
+        try:
             staged_paths = []
             parent_level1 = level2_parent_level1(region)
             interval = level2_interval(region, wgs=False)
@@ -158,8 +178,8 @@ rule extract_and_tar_deepvariant_level2_wes:
                     source_path = Path(pj(DEEPVARIANT, "gVCF", source_region, f"{sample}.{source_region}.wg.vcf.gz"))
                 if not source_path.exists():
                     raise FileNotFoundError(f"Exome gVCF missing: {source_path}")
-                staged_gvcf = tmpdir / f"{sample}.{region}.dv.wes.g.vcf.gz"
-                staged_tbi = tmpdir / f"{sample}.{region}.dv.wes.g.vcf.gz.tbi"
+                staged_gvcf = ltmpdir / f"{sample}.{region}.dv.wes.g.vcf.gz"
+                staged_tbi = ltmpdir / f"{sample}.{region}.dv.wes.g.vcf.gz.tbi"
                 shell(
                     "bcftools view -R {interval:q} {source_path:q} -O z -o {staged_gvcf:q}"
                 )
@@ -182,7 +202,7 @@ rule extract_and_tar_deepvariant_level2_wes:
             if missing:
                 raise ValueError(f"WES tarball missing entries: {missing}")
         finally:
-            shutil.rmtree(tmpdir)
+            shutil.rmtree(ltmpdir)
 
 
 rule DeepVariant_all:
@@ -336,7 +356,7 @@ rule deepvariant:
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
             if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant/$JOB_ID"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant/$JOB_ID"; elif [ -d "/tmp" ] && [ -w "/tmp" ]; then RUNDIR_BASE="/tmp/${{USER}}/deepvariant/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant/$JOB_ID"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
             RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
             echo "SSD base: $TMP_SSD" >&2
             echo "RUNDIR_BASE: $RUNDIR_BASE" >&2

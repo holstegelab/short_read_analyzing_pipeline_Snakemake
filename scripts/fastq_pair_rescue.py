@@ -76,7 +76,7 @@ def _describe_input_source(path: str, decompress: str, threads: int) -> str:
         return f"pigz -cd {'-p '+str(threads) if threads and threads>0 else ''}"
     if use_ext and path.endswith('.bz2'):
         if shutil.which('pbzip2'):
-            return f"pbzip2 -cd {'-p '+str(threads) if threads and threads>0 else ''}"
+            return f"pbzip2 -cd {'-p'+str(threads) if threads and threads>0 else ''}"
         return "bzip2 -cd"
     # internal
     if path.endswith('.gz'):
@@ -104,7 +104,7 @@ def _open_text_file(path: str, mode: str, *, decompress: str = 'auto', threads: 
             return _ProcTextReader(proc), True
         if use_ext and path.endswith('.bz2'):
             if shutil.which('pbzip2'):
-                tflag = ['-p', str(threads)] if threads and threads > 0 else []
+                tflag = [f'-p{threads}'] if threads and threads > 0 else []
                 proc = subprocess.Popen(['pbzip2', '-cd', *tflag, '--', path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
             else:
                 proc = subprocess.Popen(['bzip2', '-cd', '--', path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
