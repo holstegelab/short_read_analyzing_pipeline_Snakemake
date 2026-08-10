@@ -1,0 +1,14 @@
+name: qc_fused
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.9.12
+  - numpy=1.23.3
+  - pypy=7.3.9
+  - pypy3.9=7.3.9
+  - samtools=1.17
+  - gatk4=4.4.0.0
+  - verifybamid2=2.0.1
+  - mosdepth=0.3.3

@@ -63,6 +63,39 @@ Important defaults in the main `Snakefile`:
  * chrM analysis
  * Somatic calls for tumor analysis (in test)
 
+## DeepVariant without Apptainer
+
+The production `deepvariant` rule runs DeepVariant 1.9.0 from an extracted
+official image, using the dynamic loader and libraries from that image. It
+writes the existing `deepvariant/` outputs consumed by downstream phasing and
+does not create a container or user namespace at run time.
+
+The shared Snellius runtime is installed at
+`/gpfs/work3/0/qtholstg/hg38_res_v2/software/deepvariant-1.9.0-native`. To
+prepare it again at a different location (about 6 GB):
+
+```bash
+python scripts/prepare_deepvariant_native.py \
+  --prefix /path/to/deepvariant-1.9.0-native
+```
+
+The default preparation route uses `skopeo`, not Apptainer. An existing Docker
+archive can be supplied with `--docker-archive`; on Spider, an existing SIF can
+be supplied with `--sif`. Do not move the prepared prefix because its launchers
+record that absolute path. Override the configured runtime with
+`deepvariant_native_prefix` or `DEEPVARIANT_NATIVE_PREFIX`.
+
+The former Apptainer implementation remains available as an opt-in comparison
+target:
+
+```bash
+snakemake --snakefile Snakefile DeepVariant_apptainer_all --use-singularity
+```
+
+Fallback outputs are isolated under `deepvariant_apptainer/` and are not
+connected to the downstream production DAG. Change that comparison directory
+with `deepvariant_apptainer_output`.
+
 # HOW TO USE
 1. clone this repo on server
 2. *If you want use Zslurm*
@@ -73,7 +106,76 @@ Important defaults in the main `Snakefile`:
       > snakemake --profile ~/.config/snakemake/zslurm/ --snakefile ~/short_read_analyzing_pipeline_Snakemake/Snakefile --use-conda --use-singularity --rerun-incomplete --retries 0 --config END_POINT=Genotype caller=Deepvariant Combine_gVCF_method=GLnexus
 
     > **NOTE ABOUT PROFILE**
-   > copy zslurm.yaml to ~/.config/snakemake/zslurm/config.yaml and change conda prefix to your conda prefix
+    > copy zslurm.yaml to ~/.config/snakemake/zslurm/config.yaml and change conda prefix to your conda prefix
+
+   The per-read-group alignment/merge/dechimer/sort fusion is opt-in:
+
+   ```text
+   --config fuse_alignment_phases=true alignment_lease_mode=required
+   ```
+
+   Keep `fuse_alignment_phases=false` (the default) until the active ZSlurm
+   manager and chiefs expose dynamic lease support. `required` performs a
+   lease preflight before DRAGMAP; `optional` retains the maximum reservation
+   when leases are unavailable; `disabled` is intended only for local tests.
+
+   The sample-level KMC/sex fusion is independently opt-in:
+
+   ```text
+   --config fuse_kmer_sex=true kmer_sex_lease_mode=required
+   ```
+
+   It keeps the temporary KMC database on assigned node SSD and shrinks from
+   2 cores/36 GB to 0.5 core/3 GB before the sex-statistics phase.
+
+   Regional DeepVariant plus Whatshap/merge is independently opt-in:
+
+   ```text
+   --config fuse_deepvariant_phasing=true deepvariant_lease_mode=required
+   ```
+
+   Raw regional VCF/gVCF files remain on assigned node SSD; the job shrinks
+   from 8 cores/10 GB to 1 core/9 GB before phasing and publication.
+
+   BAM/CRAM read-group extraction plus adapter removal is independently
+   opt-in; native FASTQ samples remain on the legacy adapter rule:
+
+   ```text
+   --config fuse_external_adapter=true external_adapter_lease_mode=required
+   ```
+
+   The fused job publishes the legacy temporary raw FASTQ outputs because the
+   BAM-tag merge still consumes them, but extraction and adapter processing
+   happen only once and adapter processing reads the SSD-local copy.
+
+   chrM/NUMT extraction plus the four realignments is independently opt-in:
+
+   ```text
+   --config fuse_chrm_extract_align=true
+   ```
+
+   The four intermediate paired FASTQs and alignment scratch files stay on
+   the assigned node SSD. The eight legacy BAM/index paths remain unchanged.
+
+   The downstream chrM/NUMT Mutect, merge/filter, and BP-resolution tail is a
+   separate opt-in fusion:
+
+   ```text
+   --config fuse_chrm_mutect_tail=true
+   ```
+
+   It stages the four realigned BAMs once and publishes only both final
+   annotated gVCFs and their indexes; all VCF intermediates stay on node SSD.
+
+   The BAM-reading QC fan-out is independently opt-in:
+
+   ```text
+   --config fuse_bam_qc=true
+   ```
+
+   VerifyBamID, HS metrics, artifact/OxoG metrics, samtools stats, sampled BAM
+   stats, and mosdepth then share one staged markdup BAM and run in parallel on
+   node SSD while retaining every legacy QC output path.
 
 4. If you want to run just several steps (for example only Alignment step) -
 choose suitable **smk** file as **--snakefile** or use `END_POINT`

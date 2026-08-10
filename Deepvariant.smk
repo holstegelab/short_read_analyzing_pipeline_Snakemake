@@ -16,6 +16,52 @@ module Tools:
     config: config
 use rule * from Tools
 mode = config.get("computing_mode", "WES")
+DEEPVARIANT_APPTAINER = config.get("deepvariant_apptainer_output", f"{DEEPVARIANT}_apptainer")
+DEEPVARIANT_NATIVE_PREFIX = config.get(
+    "deepvariant_native_prefix",
+    os.environ.get("DEEPVARIANT_NATIVE_PREFIX", DEEPVARIANT_NATIVE_RUNTIME),
+)
+
+
+def _deepvariant_config_bool(value, name):
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off', ''}:
+        return False
+    raise ValueError(f"{name} must be true or false, got {value!r}")
+
+
+FUSE_DEEPVARIANT_PHASING = _deepvariant_config_bool(
+    config.get('fuse_deepvariant_phasing', False),
+    'fuse_deepvariant_phasing',
+)
+DEEPVARIANT_LEASE_MODE = str(
+    config.get('deepvariant_lease_mode', 'required')
+).strip().lower()
+if DEEPVARIANT_LEASE_MODE not in {'required', 'optional', 'disabled'}:
+    raise ValueError(
+        "deepvariant_lease_mode must be required, optional, or disabled"
+    )
+
+
+def get_deepvariant_native_runner(wildcards):
+    if not DEEPVARIANT_NATIVE_PREFIX:
+        raise ValueError(
+            "DeepVariant requires --config deepvariant_native_prefix=/path/to/runtime "
+            "or the DEEPVARIANT_NATIVE_PREFIX environment variable"
+        )
+    prefix = Path(DEEPVARIANT_NATIVE_PREFIX).expanduser()
+    runner = prefix / "bin/run_deepvariant"
+    ready = prefix / ".deepvariant-native.ready"
+    if not ready.is_file() or not runner.is_file() or not os.access(runner, os.X_OK):
+        raise FileNotFoundError(
+            f"DeepVariant native runtime is incomplete at {prefix}. "
+            "Run scripts/prepare_deepvariant_native.py --prefix PATH first."
+        )
+    return str(runner)
 
 
 def level2_parent_level1(region):
@@ -323,7 +369,8 @@ def region_to_bed_file_wgs(wildcards):#{{{
     region = wildcards['region']
     return region_to_file(region, wgs=True, extension='bed')#}}}
 
-rule deepvariant:
+rule deepvariant_apptainer:
+    """Opt-in DeepVariant 1.9.0 fallback using Apptainer."""
     input:
         bed = region_to_bed_file,
         bed_wgs = region_to_bed_file_wgs,
@@ -331,22 +378,30 @@ rule deepvariant:
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        vcf = (temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz"))),
-        vcf_tbi = (temp(pj(DEEPVARIANT,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi"))),
-        gvcf = (temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz"))),
-        gvcf_tbi = (temp(pj(DEEPVARIANT,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")))
+        vcf = pj(DEEPVARIANT_APPTAINER,'VCF', "{region}","{sample}.{region}.vcf.gz"),
+        vcf_tbi = pj(DEEPVARIANT_APPTAINER,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi"),
+        gvcf = pj(DEEPVARIANT_APPTAINER,'gVCF', "{region}","{sample}.{region}.g.vcf.gz"),
+        gvcf_tbi = pj(DEEPVARIANT_APPTAINER,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")
     params:
             mode=get_sequencing_mode,
             haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
             skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
-            inter_dir = pj(DEEPVARIANT,'DV_intermediate'),
+            inter_dir = pj(DEEPVARIANT_APPTAINER,'DV_intermediate'),
             # check = CHECKEMPTY
     container: 'docker://google/deepvariant:1.9.0'
     resources:
         n="7",
         nshards=8,
+        # Limit concurrent Apptainer launches in Snakemake with
+        # --resources deepvariant_container_slots=N. Without this, a retry
+        # wave can exhaust the pilot node's user-namespace quota.
+        deepvariant_container_slots=1,
         mem_mb=get_mem_mb_deepvariant,
-        time = 6600
+        time = get_time('deepvariant'),
+        ssd_use="required",
+        # Live WGS region jobs use 0.9--1.4 GiB. Keep room for a larger
+        # interval, TFRecords and transient post-processing files.
+        ssd_gb=4
     shell:
         """
         if [ {params.skipsex} -eq 0 ]
@@ -355,8 +410,8 @@ rule deepvariant:
             JOB_ID="${{SLURM_JOB_ID}}"
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant/$JOB_ID"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant_apptainer/$JOB_ID"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant_apptainer/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
             RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
             echo "SSD base: $TMP_SSD" >&2
             echo "RUNDIR_BASE: $RUNDIR_BASE" >&2
@@ -385,6 +440,87 @@ rule deepvariant:
             tabix -f -p vcf {output.gvcf}            
         fi
         """
+
+def get_deepvariant_apptainer_gvcfs(wildcards):
+    files = []
+    for sample in sample_names:
+        regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
+        for region in regions:
+            gvcf = pj(DEEPVARIANT_APPTAINER, 'gVCF', region, f'{sample}.{region}.g.vcf.gz')
+            files.extend([gvcf, gvcf + '.tbi'])
+    return files
+
+
+rule DeepVariant_apptainer_all:
+    input:
+        get_deepvariant_apptainer_gvcfs
+
+
+rule deepvariant:
+    """Production DeepVariant 1.9.0 without a container runtime or user namespace."""
+    input:
+        bed = region_to_bed_file,
+        bed_wgs = region_to_bed_file_wgs,
+        bam=pj(BAM, "{sample}.markdup.bam"),
+        bai=pj(BAM, "{sample}.markdup.bam.bai"),
+        validated_sex=pj(KMER,"{sample}.result.yaml"),
+    output:
+        vcf = temp(pj(DEEPVARIANT, 'VCF', "{region}", "{sample}.{region}.vcf.gz")),
+        vcf_tbi = temp(pj(DEEPVARIANT, 'VCF', "{region}", "{sample}.{region}.vcf.gz.tbi")),
+        gvcf = temp(pj(DEEPVARIANT, 'gVCF', "{region}", "{sample}.{region}.g.vcf.gz")),
+        gvcf_tbi = temp(pj(DEEPVARIANT, 'gVCF', "{region}", "{sample}.{region}.g.vcf.gz.tbi"))
+    params:
+        mode=get_sequencing_mode,
+        haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
+        skipsex=lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
+        inter_dir=pj(DEEPVARIANT, 'DV_intermediate'),
+        runner=get_deepvariant_native_runner
+    resources:
+        n="8",
+        nshards=8,
+        mem_mb=get_mem_mb_deepvariant,
+        time=get_time('deepvariant'),
+        ssd_use="required",
+        ssd_gb=4
+    shell:
+        """
+        if [ {params.skipsex} -eq 0 ]
+        then
+            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+            JOB_ID="${{SLURM_JOB_ID}}"
+            if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
+            if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant/$JOB_ID"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
+            RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
+            echo "SSD base: $TMP_SSD" >&2
+            echo "RUNDIR_BASE: $RUNDIR_BASE" >&2
+            echo "JOB_ID: $JOB_ID" >&2
+            echo "RUNDIR: $RUNDIR" >&2
+            /bin/rm -rf "$RUNDIR" 2>/dev/null || true
+            mkdir -p "$RUNDIR"
+            trap '/bin/rm -rf "$RUNDIR" 2>/dev/null || true' EXIT INT TERM
+
+            OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+            TF_NUM_INTRAOP_THREADS={resources.nshards} TF_NUM_INTEROP_THREADS={resources.nshards} \
+            {params.runner:q} \
+              --make_examples_extra_args "normalize_reads=true,regions={input.bed},small_model_call_multiallelics=false" \
+              --call_variants_extra_args "config_string=inter_op_parallelism_threads: {resources.nshards} intra_op_parallelism_threads: {resources.nshards} device_count: {{ key: 'CPU' value: {resources.nshards} }}" \
+              --num_shards={resources.nshards} \
+              --model_type={params.mode} \
+              --ref={REF_MALE} --reads={input.bam} \
+              --output_vcf={output.vcf} --output_gvcf={output.gvcf} \
+              --haploid_contigs {params.haploid_contigs} \
+              --intermediate_results_dir "$RUNDIR" \
+              --postprocess_cpus {resources.nshards}
+        else
+            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.vcf}
+            tabix -f -p vcf {output.vcf}
+            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.gvcf}
+            tabix -f -p vcf {output.gvcf}
+        fi
+        """
+
 
 # python {params.check} {output.vcf}
 # python {params.check} {output.gvcf}
@@ -509,3 +645,92 @@ rule DVWhatshapPhasingMerge:
             tabix -f -p vcf {output.gvcf_exome}
         fi
         """
+
+
+if FUSE_DEEPVARIANT_PHASING:
+    rule deepvariant_phasing_fused:
+        """Call, phase, merge, and extract one regional DeepVariant gVCF."""
+        input:
+            bed=region_to_bed_file,
+            bam=pj(BAM, "{sample}.markdup.bam"),
+            bai=pj(BAM, "{sample}.markdup.bam.bai"),
+            validated_sex=pj(KMER,"{sample}.result.yaml")
+        output:
+            vcf=temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz")),
+            vcf_tbi=temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz.tbi")),
+            wstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
+            mwstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
+            bcftools_stats=temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
+            bcftools_summary=ensure(temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv")), non_empty=True),
+            tmp_gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
+            gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz")),
+            gvcf_tbi=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi")),
+            gvcf_exome=ensure(temp(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz")), non_empty=True),
+            gvcf_exome_tbi=ensure(temp(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi")), non_empty=True)
+        log:
+            runner=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.log"),
+            io_profile=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.io.json")
+        params:
+            runner=srcdir('scripts/run_fused_deepvariant_phasing.py'),
+            deepvariant_runner=get_deepvariant_native_runner,
+            mode=get_sequencing_mode,
+            haploid_contigs=lambda wc: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wc.region.endswith('H') else 'chrNONE',
+            ploidy=lambda wc: 1 if wc.region.endswith('H') else 2,
+            skipsex=lambda wc, input: int(get_validated_sex_file(input) == 'female' and wc.region.startswith('Y')),
+            interval_bed=lambda wc: region_to_file(region=wc.region, extension='bed', padding=True),
+            merge_script=srcdir(MERGEPHASEDIRECT),
+            stats_parser=srcdir('scripts/deepvariant_bcftools_stats_parser.py'),
+            lease_mode=DEEPVARIANT_LEASE_MODE
+        conda: CONDA_VCF
+        resources:
+            n="8",
+            nshards=8,
+            mem_mb=get_mem_mb_deepvariant,
+            time=get_time('deepvariant_phasing_fused'),
+            ssd_use="required",
+            ssd_gb=16
+        shell:
+            """
+            python {params.runner:q} \
+                --sample {wildcards.sample:q} \
+                --region {wildcards.region:q} \
+                --bed {input.bed:q} \
+                --bam {input.bam:q} \
+                --bai {input.bai:q} \
+                --validated-sex {input.validated_sex:q} \
+                --reference {REF:q} \
+                --deepvariant-reference {REF_MALE:q} \
+                --deepvariant-runner {params.deepvariant_runner:q} \
+                --model-type {params.mode:q} \
+                --haploid-contigs {params.haploid_contigs:q} \
+                --ploidy {params.ploidy} \
+                --skip-sex {params.skipsex} \
+                --interval-bed {params.interval_bed:q} \
+                --capture-auto-bed {INTERSECT_CAPTURE_KIT_AUTO_BED:q} \
+                --capture-x-bed {INTERSECT_CAPTURE_KIT_X_BED:q} \
+                --capture-y-bed {INTERSECT_CAPTURE_KIT_Y_BED:q} \
+                --merge-script {params.merge_script:q} \
+                --stats-parser {params.stats_parser:q} \
+                --output-vcf {output.vcf:q} \
+                --output-vcf-tbi {output.vcf_tbi:q} \
+                --output-wstats {output.wstats:q} \
+                --output-merge-stats {output.mwstats:q} \
+                --output-bcftools-stats {output.bcftools_stats:q} \
+                --output-bcftools-summary {output.bcftools_summary:q} \
+                --output-tmp-gvcf {output.tmp_gvcf:q} \
+                --output-gvcf {output.gvcf:q} \
+                --output-gvcf-tbi {output.gvcf_tbi:q} \
+                --output-exome-gvcf {output.gvcf_exome:q} \
+                --output-exome-gvcf-tbi {output.gvcf_exome_tbi:q} \
+                --metrics {log.io_profile:q} \
+                --num-shards {resources.nshards} \
+                --initial-cores {resources.n} \
+                --initial-memory-mb {resources.mem_mb} \
+                --low-cores 1 \
+                --low-memory-mb 9000 \
+                --lease-mode {params.lease_mode:q} \
+                --ssd-gb {resources.ssd_gb} \
+                2> {log.runner:q}
+            """
+
+    ruleorder: deepvariant_phasing_fused > DVWhatshapPhasingMerge

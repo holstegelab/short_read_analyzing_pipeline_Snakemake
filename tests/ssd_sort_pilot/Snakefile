@@ -1,0 +1,61 @@
+from pathlib import Path
+
+
+REPO = Path(workflow.basedir).resolve().parents[1]
+PREPROCESS_ENV = str(REPO / "envs" / "preprocess.yaml")
+SORT_RUNNER = str(REPO / "scripts" / "run_samtools_sort_ssd.py")
+TINY_SAM = str(Path(workflow.basedir) / "tiny.sam")
+
+
+rule all:
+    input:
+        "pilot/tiny.sorted.bam",
+        "pilot/tiny.sorted.bam.bai",
+        "pilot/tiny.sort.io.json"
+
+
+rule make_unsorted_bam:
+    input:
+        TINY_SAM
+    output:
+        "pilot/tiny.unsorted.bam"
+    resources:
+        time=300,
+        n="0.5",
+        mem_mb=256
+    conda:
+        PREPROCESS_ENV
+    shell:
+        "samtools view -b -o {output:q} {input:q}"
+
+
+rule sort_on_node_ssd:
+    input:
+        "pilot/tiny.unsorted.bam"
+    output:
+        bam="pilot/tiny.sorted.bam",
+        bai="pilot/tiny.sorted.bam.bai",
+        metrics="pilot/tiny.sort.io.json"
+    log:
+        "pilot/tiny.sort.log"
+    resources:
+        time=300,
+        n="1",
+        mem_mb=1024,
+        ssd_use="required",
+        ssd_gb=1
+    conda:
+        PREPROCESS_ENV
+    shell:
+        """
+        python {SORT_RUNNER:q} \
+            --input {input:q} \
+            --output-bam {output.bam:q} \
+            --output-bai {output.bai:q} \
+            --metrics {output.metrics:q} \
+            --threads 1 \
+            --memory-mb 256 \
+            --ssd-gb {resources.ssd_gb} \
+            --poll-interval 0.05 \
+            2> {log:q}
+        """

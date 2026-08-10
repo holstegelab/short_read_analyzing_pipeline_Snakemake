@@ -24,6 +24,25 @@ mode = config.get("computing_mode", "WES")
 cur_dir = os.getcwd()
 
 
+def _chrm_config_bool(value, name):
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off', ''}:
+        return False
+    raise ValueError(f"{name} must be a boolean, got {value!r}")
+
+
+FUSE_CHRM_EXTRACT_ALIGN = _chrm_config_bool(
+    config.get('fuse_chrm_extract_align', False), 'fuse_chrm_extract_align'
+)
+FUSE_CHRM_MUTECT_TAIL = _chrm_config_bool(
+    config.get('fuse_chrm_mutect_tail', False), 'fuse_chrm_mutect_tail'
+)
+
+
 rule chrM_analysis_all:
     input:
         rules.Aligner_all.input,
@@ -213,16 +232,74 @@ rule align_chrM_and_NUMTs:
         samtools index -@ {params.threads_per_task} -o {output.bai_shifted_NUMTs} {output.bam_shifted_NUMTs}
         """
 
+
+if FUSE_CHRM_EXTRACT_ALIGN:
+    rule chrm_extract_align_fused:
+        """Extract chrM/NUMT reads and make four alignments on assigned SSD."""
+        input:
+            bam=pj(BAM, '{sample}.markdup.bam'),
+            bai=pj(BAM, '{sample}.markdup.bam.bai')
+        output:
+            bam_chrM=temp(pj(chrM, '{sample}_chrM_orig.reads.bam')),
+            bai_chrM=temp(pj(chrM, '{sample}_chrM_orig.reads.bai')),
+            bam_shifted_chrM=temp(pj(chrM, '{sample}_chrM_shifted.reads.bam')),
+            bai_shifted_chrM=temp(pj(chrM, '{sample}_chrM_shifted.reads.bai')),
+            bam_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam')),
+            bai_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai')),
+            bam_shifted_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam')),
+            bai_shifted_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai'))
+        params:
+            runner=srcdir('scripts/run_fused_chrm_extract_align.py'),
+            numts=NUMTs,
+            mt_ref=ORIG_MT_fa,
+            mt_ref_shift=SHIFTED_MT_fa,
+            threads_per_tool=2
+        log:
+            runner=pj(LOG, 'chrM', '{sample}.extract_align_fused.log'),
+            io_profile=pj(LOG, 'chrM', '{sample}.extract_align_fused.io.json')
+        conda: CONDA_MAIN
+        priority: 21
+        resources:
+            time=get_time('chrm_extract_align_fused'),
+            n=4,
+            mem_mb=4000,
+            ssd_use="required",
+            ssd_gb=20
+        shell:
+            """
+            python {params.runner:q} \
+                --input-bam {input.bam:q} \
+                --numts-bed {params.numts:q} \
+                --original-reference {params.mt_ref:q} \
+                --shifted-reference {params.mt_ref_shift:q} \
+                --sample {wildcards.sample:q} \
+                --output-bam-chrm {output.bam_chrM:q} \
+                --output-bai-chrm {output.bai_chrM:q} \
+                --output-bam-shifted-chrm {output.bam_shifted_chrM:q} \
+                --output-bai-shifted-chrm {output.bai_shifted_chrM:q} \
+                --output-bam-numts {output.bam_NUMTs:q} \
+                --output-bai-numts {output.bai_NUMTs:q} \
+                --output-bam-shifted-numts {output.bam_shifted_NUMTs:q} \
+                --output-bai-shifted-numts {output.bai_shifted_NUMTs:q} \
+                --metrics {log.io_profile:q} \
+                --threads {params.threads_per_tool} \
+                --memory-mb {resources.mem_mb} \
+                --ssd-gb {resources.ssd_gb} \
+                2> {log.runner:q}
+            """
+
+    ruleorder: chrm_extract_align_fused > align_chrM_and_NUMTs
+
 rule mutect_calls_both:
     input:
-        bam_chrM=rules.align_chrM_and_NUMTs.output.bam_chrM,
-        bai_chrM=rules.align_chrM_and_NUMTs.output.bai_chrM,
-        bam_shifted_chrM=rules.align_chrM_and_NUMTs.output.bam_shifted_chrM,
-        bai_shifted_chrM=rules.align_chrM_and_NUMTs.output.bai_shifted_chrM,
-        bam_NUMTs=rules.align_chrM_and_NUMTs.output.bam_NUMTs,
-        bai_NUMTs=rules.align_chrM_and_NUMTs.output.bai_NUMTs,
-        bam_shifted_NUMTs=rules.align_chrM_and_NUMTs.output.bam_shifted_NUMTs,
-        bai_shifted_NUMTs=rules.align_chrM_and_NUMTs.output.bai_shifted_NUMTs
+        bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
+        bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
+        bam_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bam'),
+        bai_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bai'),
+        bam_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam'),
+        bai_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai'),
+        bam_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
+        bai_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai')
     output:
         vcf_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty=True),
         tbi_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty=True),
@@ -317,16 +394,16 @@ rule merge_and_filter_both:
 
 rule mutect_bp_resolution_both:
     input:
-        bam_chrM=rules.align_chrM_and_NUMTs.output.bam_chrM,
-        bai_chrM=rules.align_chrM_and_NUMTs.output.bai_chrM,
-        bam_shifted_chrM=rules.align_chrM_and_NUMTs.output.bam_shifted_chrM,
-        bai_shifted_chrM=rules.align_chrM_and_NUMTs.output.bai_shifted_chrM,
+        bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
+        bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
+        bam_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bam'),
+        bai_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bai'),
         anno_chrM=rules.merge_and_filter_both.output.filtred_vcf_chrM,
         anno_tbi_chrM=rules.merge_and_filter_both.output.filtred_tbi_chrM,
-        bam_NUMT=rules.align_chrM_and_NUMTs.output.bam_NUMTs,
-        bai_NUMT=rules.align_chrM_and_NUMTs.output.bai_NUMTs,
-        bam_shifted_NUMT=rules.align_chrM_and_NUMTs.output.bam_shifted_NUMTs,
-        bai_shifted_NUMT=rules.align_chrM_and_NUMTs.output.bai_shifted_NUMTs,
+        bam_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam'),
+        bai_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai'),
+        bam_shifted_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
+        bai_shifted_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai'),
         anno_NUMT=rules.merge_and_filter_both.output.filtred_vcf_NUMT,
         anno_tbi_NUMT=rules.merge_and_filter_both.output.filtred_tbi_NUMT
     output:
@@ -388,6 +465,65 @@ rule mutect_bp_resolution_both:
         bcftools annotate -a {input.anno_NUMT} -c FILTER -O z -o {output.merged_vcf_with_anno_NUMT} {output.merged_vcf_norm_NUMT}
         tabix {output.merged_vcf_with_anno_NUMT}
         """
+
+if FUSE_CHRM_MUTECT_TAIL:
+    rule chrm_mutect_tail_fused:
+        """Run Mutect, merge/filter, and BP resolution with SSD intermediates."""
+        input:
+            bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
+            bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
+            bam_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bam'),
+            bai_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bai'),
+            bam_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam'),
+            bai_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai'),
+            bam_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
+            bai_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai')
+        output:
+            chrM=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz')), non_empty=True),
+            chrM_tbi=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi')), non_empty=True),
+            numt=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz')), non_empty=True),
+            numt_tbi=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi')), non_empty=True)
+        params:
+            runner=srcdir('scripts/run_fused_chrm_tail.py'),
+            mt_ref=ORIG_MT_fa,
+            mt_ref_shift=SHIFTED_MT_fa,
+            chain=MT_CHAIN
+        log:
+            runner=pj(LOG, 'chrM', '{sample}.mutect_tail_fused.log'),
+            io_profile=pj(LOG, 'chrM', '{sample}.mutect_tail_fused.io.json')
+        conda: CONDA_VCF
+        priority: 22
+        resources:
+            time=get_time('chrm_mutect_tail_fused'),
+            n=4,
+            mem_mb=5000,
+            ssd_use="required",
+            ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+                [input.bam_chrM, input.bam_shifted_chrM, input.bam_NUMTs, input.bam_shifted_NUMTs],
+                factor=2.0,
+                overhead_gb=8,
+                minimum_gb=20,
+            )
+        shell:
+            """
+            python {params.runner:q} \
+                --bam-chrm {input.bam_chrM:q} --bai-chrm {input.bai_chrM:q} \
+                --bam-shifted-chrm {input.bam_shifted_chrM:q} --bai-shifted-chrm {input.bai_shifted_chrM:q} \
+                --bam-numts {input.bam_NUMTs:q} --bai-numts {input.bai_NUMTs:q} \
+                --bam-shifted-numts {input.bam_shifted_NUMTs:q} --bai-shifted-numts {input.bai_shifted_NUMTs:q} \
+                --original-reference {params.mt_ref:q} \
+                --shifted-reference {params.mt_ref_shift:q} \
+                --chain {params.chain:q} \
+                --sample {wildcards.sample:q} \
+                --output-chrm-gvcf {output.chrM:q} --output-chrm-tbi {output.chrM_tbi:q} \
+                --output-numt-gvcf {output.numt:q} --output-numt-tbi {output.numt_tbi:q} \
+                --metrics {log.io_profile:q} \
+                --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
+                2> {log.runner:q}
+            """
+
+    ruleorder: chrm_mutect_tail_fused > mutect_bp_resolution_both
+
 
 rule estimate_mtdna_copy_number_wes:
     input:

@@ -2,6 +2,7 @@ import utils
 import yaml
 import csv
 import os
+import math
 import zlib
 import time
 from shlex import quote
@@ -368,6 +369,42 @@ def get_strref_by_validated_sex(wildcards, input):
     sex = get_validated_sex_file(input)
     return REF_FEMALE_STR if sex == 'female' else REF_MALE_STR
 
+def input_size_mb(paths):
+    """Return the aggregate size of one or more Snakemake inputs in MiB."""
+    size_mb = getattr(paths, 'size_mb', None)
+    if size_mb is not None:
+        if callable(size_mb):
+            size_mb = size_mb()
+        return float(size_mb)
+
+    if isinstance(paths, (str, os.PathLike)):
+        path = os.fspath(paths)
+        if os.path.isdir(path):
+            total = 0
+            for root, _, filenames in os.walk(path):
+                total += sum(os.path.getsize(os.path.join(root, name))
+                             for name in filenames)
+            return total / (1024.0 * 1024.0)
+        return os.path.getsize(path) / (1024.0 * 1024.0)
+
+    return sum(input_size_mb(path) for path in paths)
+
+
+def ssd_gb_for_inputs(paths, factor=1.0, overhead_gb=1.0, minimum_gb=1):
+    """Estimate node-local scratch, rounded up to whole GiB.
+
+    ``factor`` describes the temporary-data/input-size ratio. ``overhead_gb``
+    covers metadata, indexes and tools which briefly keep an extra small file.
+    The ratios are calibrated against live /scratch-node use; keeping this in
+    one helper makes future recalibration explicit.
+    """
+    estimated = (
+        input_size_mb(paths) / 1024.0 * float(factor)
+        + float(overhead_gb)
+    )
+    return max(int(minimum_gb), int(math.ceil(estimated)))
+
+
 def node_ssd_base(tmpdir_fallback=None):
     user = os.environ.get('USER','')
     slurm_tmp = os.environ.get('SLURM_TMPDIR')
@@ -418,6 +455,33 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
+
+
+def external_data_dir(sample, sinfo=None):
+    """Return the protocol-specific active-storage directory for a sample."""
+    info = SAMPLEINFO[sample] if sinfo is None else sinfo
+    suffix = ".dcache_data" if info.get("from_external") == "dcache" else ".data"
+    return pj(SOURCEDIR, str(sample) + suffix)
+
+
+def get_time(rulename):
+    """`resources: time = get_time('align_reads')` -- expected wall-clock seconds.
+
+    Reads the measured estimate from constants.RUNTIME and picks the exome or the
+    WGS column from this sample's sample_type. Rules without a `sample` wildcard
+    (per-samplefile gathers) get the WGS column, which is the longer of the two.
+    A retry gets 50% more time per attempt, mirroring the get_mem_mb_* helpers,
+    since a job that hit the wall is exactly the one that needs more.
+    """
+    def _time(wildcards, attempt=1):
+        wgs_seconds, exome_seconds = RUNTIME[rulename]
+        seconds = wgs_seconds
+        sample = getattr(wildcards, 'sample', None)
+        if sample is not None and sample in SAMPLEINFO:
+            if 'wgs' not in SAMPLEINFO[sample]['sample_type'].lower():
+                seconds = exome_seconds
+        return int(seconds * (1.0 + 0.5 * (int(attempt) - 1)))
+    return _time
 
 def remote_base_for_sample(sample):
     sinfo = SAMPLEINFO[sample]
