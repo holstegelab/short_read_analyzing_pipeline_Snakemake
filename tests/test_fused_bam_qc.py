@@ -7,6 +7,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_bam_qc.py"
+sys.path.insert(0, str(REPO / "scripts"))
+
+from run_fused_bam_qc import write_parallel_qc_script
 
 
 def _script(path, body):
@@ -77,6 +80,39 @@ for suffix in ('mosdepth.global.dist.txt', 'mosdepth.summary.txt', 'mosdepth.reg
     Path(str(prefix) + '.' + suffix).write_text(suffix + '\\n')
 """,
     )
+    lease_log = tmp_path / "lease.jsonl"
+    lease = _script(
+        tools / "zslurm_lease",
+        f"""import json
+import sys
+args = sys.argv[1:]
+if 'status' in args:
+    print(json.dumps({{
+        'ok': True, 'status': 'current', 'held_cores': 12,
+        'max_cores': 12, 'held_mem_mb': 12000, 'max_mem_mb': 12000,
+        'epoch': 0,
+    }}))
+elif 'release' in args:
+    record = {{
+        'release_id': args[args.index('--release-id') + 1],
+        'cores': float(args[args.index('--cores') + 1]),
+        'mem_mb': float(args[args.index('--mem-mb') + 1]),
+    }}
+    with open({str(lease_log)!r}, 'a', encoding='utf-8') as handle:
+        handle.write(json.dumps(record, sort_keys=True) + '\\n')
+    print(json.dumps({{
+        'ok': True, 'status': 'released', 'held_cores': 0.1,
+        'max_cores': 12, 'held_mem_mb': 1504, 'max_mem_mb': 12000,
+        'epoch': 1, 'release_id': record['release_id'],
+        'requested_release_cores': record['cores'],
+        'requested_release_mem_mb': record['mem_mb'],
+        'released_cores': record['cores'],
+        'released_mem_mb': record['mem_mb'], 'duplicate': False,
+    }}))
+else:
+    raise SystemExit('unexpected lease args: ' + repr(args))
+""",
+    )
 
     inputs = tmp_path / "inputs"
     inputs.mkdir()
@@ -130,19 +166,79 @@ for suffix in ('mosdepth.global.dist.txt', 'mosdepth.summary.txt', 'mosdepth.reg
             "--gatk", str(gatk), "--verifybamid", str(verify),
             "--mosdepth", str(mosdepth), "--pypy", str(pypy),
             "--cores", "12", "--memory-mb", "12000", "--ssd-gb", "32",
+            "--lease-mode", "required", "--lease-command", str(lease),
             "--scratch-base", str(scratch), "--poll-interval", "0.05",
         )
     )
-    subprocess.run(command, check=True, env=os.environ.copy())
+    test_env = os.environ.copy()
+    test_env.update(
+        {
+            "ZSLURM_LEASE_SOCKET": str(tmp_path / "fake.sock"),
+            "ZSLURM_LEASE_TOKEN": "fake-token",
+            "ZSLURM_JOB_ID": "fake-job",
+        }
+    )
+    subprocess.run(command, check=True, env=test_env)
 
     for name in output_flags.values():
         assert (outputs / name).is_file()
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is True
     assert metrics["parallel_consumers"] == 6
+    assert metrics["lease"]["available"] is True
+    assert len(metrics["task_releases"]) == 6
+    assert all(item["performed"] for item in metrics["task_releases"])
     assert [phase["label"] for phase in metrics["phases"]] == [
         "bam_qc_fused.stage",
         "bam_qc_fused.qc",
     ]
     assert metrics["scratch_removed"] is True
     assert list((scratch / "bam_qc_fused").iterdir()) == []
+    releases = [json.loads(line) for line in lease_log.read_text().splitlines()]
+    assert len(releases) == 6
+    assert len({release["release_id"] for release in releases}) == 6
+    assert sum(release["cores"] for release in releases) == 12
+    assert sum(release["mem_mb"] for release in releases) == 10496
+
+
+def test_parallel_qc_releases_resources_when_a_task_fails(tmp_path):
+    release_log = tmp_path / "release_ids.txt"
+    lease = _script(
+        tmp_path / "zslurm_lease",
+        f"""import json
+import sys
+args = sys.argv[1:]
+release_id = args[args.index('--release-id') + 1]
+with open({str(release_log)!r}, 'a', encoding='utf-8') as handle:
+    handle.write(release_id + '\\n')
+print(json.dumps({{
+    'ok': True, 'status': 'released', 'held_cores': 1,
+    'max_cores': 2, 'held_mem_mb': 100, 'max_mem_mb': 200,
+    'epoch': 1, 'release_id': release_id,
+    'requested_release_cores': 1, 'requested_release_mem_mb': 100,
+    'released_cores': 1, 'released_mem_mb': 100, 'duplicate': False,
+}}))
+""",
+    )
+    tasks = [
+        {"name": "success", "command": "sleep 0.05", "cores": 1, "memory_mb": 100},
+        {"name": "failure", "command": "exit 7", "cores": 1, "memory_mb": 100},
+    ]
+    qc_script = tmp_path / "qc.sh"
+    release_paths = write_parallel_qc_script(
+        qc_script,
+        tasks,
+        {"available": True, "command": str(lease)},
+        "required",
+        tmp_path,
+        "S1",
+    )
+
+    result = subprocess.run(["/usr/bin/bash", str(qc_script)], check=False)
+
+    assert result.returncode != 0
+    assert sorted(release_log.read_text().splitlines()) == [
+        "bam-qc:S1:failure",
+        "bam-qc:S1:success",
+    ]
+    assert all(path.is_file() for path in release_paths.values())

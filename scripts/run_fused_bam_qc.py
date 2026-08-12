@@ -12,7 +12,23 @@ import time
 from pathlib import Path
 
 from io_profile import run_profiled
-from run_fused_alignment import _atomic_copy, _atomic_json, assigned_scratch, executable
+from run_fused_alignment import (
+    _atomic_copy,
+    _atomic_json,
+    assigned_scratch,
+    executable,
+    lease_preflight,
+)
+
+
+QC_RELEASE_RESOURCES = {
+    "verifybamid": (2.0, 512.0),
+    "hs_metrics": (2.0, 3840.0),
+    "artifact_oxog": (2.0, 3840.0),
+    "samtools_stats": (2.0, 512.0),
+    "bamstats": (2.0, 768.0),
+    "mosdepth": (2.0, 1024.0),
+}
 
 
 def q(value: object) -> str:
@@ -59,6 +75,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pypy", default="pypy")
     parser.add_argument("--cores", type=int, default=12)
     parser.add_argument("--memory-mb", type=int, default=12000)
+    parser.add_argument(
+        "--lease-mode",
+        choices=("required", "optional", "disabled"),
+        default="required",
+    )
+    parser.add_argument("--lease-command", default="zslurm_lease")
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
     parser.add_argument("--poll-interval", type=float, default=5.0)
@@ -73,6 +95,116 @@ def load_metrics(paths: list[Path]) -> list[dict]:
         except FileNotFoundError:
             pass
     return result
+
+
+def write_parallel_qc_script(
+    path: Path,
+    tasks: list[dict],
+    lease: dict,
+    lease_mode: str,
+    job_tmp: Path,
+    sample: str,
+) -> dict[str, Path]:
+    """Write parallel task wrappers that release their lease share on exit."""
+
+    lines = ["set -uo pipefail", "pids=()"]
+    release_paths: dict[str, Path] = {}
+    for task in tasks:
+        name = task["name"]
+        task_script = job_tmp / f"qc.{name}.sh"
+        task_script.write_text(
+            "set -euo pipefail\n" + task["command"] + "\n",
+            encoding="utf-8",
+        )
+        release_path = job_tmp / f"lease_release.{name}.json"
+        release_paths[name] = release_path
+        lines.extend(
+            [
+                "(",
+                "  set +e",
+                f"  /usr/bin/bash {q(task_script)}",
+                "  task_rc=$?",
+                "  release_rc=0",
+            ]
+        )
+        if lease.get("available"):
+            release_tmp = Path(str(release_path) + ".tmp")
+            release_id = f"bam-qc:{sample}:{name}"
+            release_command = " ".join(
+                [
+                    q(lease["command"]),
+                    "--json",
+                    "release",
+                    "--cores",
+                    q(task["cores"]),
+                    "--mem-mb",
+                    q(task["memory_mb"]),
+                    "--release-id",
+                    q(release_id),
+                ]
+            )
+            lines.extend(
+                [
+                    f"  {release_command} > {q(release_tmp)}",
+                    "  release_rc=$?",
+                    "  if [ \"$release_rc\" -eq 0 ]; then",
+                    f"    mv -f -- {q(release_tmp)} {q(release_path)}",
+                    "  else",
+                    f"    rm -f -- {q(release_tmp)}",
+                    f"    echo 'lease release failed for {name}' >&2",
+                    "  fi",
+                ]
+            )
+        lines.extend(
+            [
+                "  if [ \"$task_rc\" -ne 0 ]; then exit \"$task_rc\"; fi",
+            ]
+        )
+        if lease.get("available") and lease_mode == "required":
+            lines.append(
+                "  if [ \"$release_rc\" -ne 0 ]; then exit \"$release_rc\"; fi"
+            )
+        lines.extend(["  exit 0", ") &", 'pids+=("$!")'])
+
+    lines.extend(
+        [
+            "status=0",
+            'for pid in "${pids[@]}"; do',
+            '  if ! wait "$pid"; then status=1; fi',
+            "done",
+            'exit "$status"',
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return release_paths
+
+
+def load_task_releases(
+    tasks: list[dict], release_paths: dict[str, Path], lease: dict
+) -> list[dict]:
+    results = []
+    for task in tasks:
+        result = {
+            "name": task["name"],
+            "requested_release_cores": task["cores"],
+            "requested_release_mem_mb": task["memory_mb"],
+            "performed": False,
+        }
+        path = release_paths.get(task["name"])
+        if path is not None and path.is_file():
+            try:
+                response = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                result["reason"] = f"invalid release response: {exc}"
+            else:
+                result["performed"] = bool(response.get("ok"))
+                result["response"] = response
+        elif not lease.get("available"):
+            result["reason"] = "lease unavailable"
+        else:
+            result["reason"] = "release command did not produce a response"
+        results.append(result)
+    return results
 
 
 def main() -> int:
@@ -108,6 +240,9 @@ def main() -> int:
     parent.mkdir(parents=True, exist_ok=True)
     job_tmp = Path(tempfile.mkdtemp(prefix=f"{args.sample}.", dir=parent))
     phase_paths: list[Path] = []
+    task_release_paths: dict[str, Path] = {}
+    lease: dict = {}
+    tasks: list[dict] = []
     success = False
     started = time.time()
     local_bam = job_tmp / "markdup.bam"
@@ -135,6 +270,13 @@ def main() -> int:
     }
 
     try:
+        lease = lease_preflight(
+            args.lease_mode,
+            args.lease_command,
+            initial_cores=args.cores,
+            initial_memory_mb=args.memory_mb,
+        )
+
         stage_script = job_tmp / "stage.sh"
         stage_script.write_text(
             "set -euo pipefail\n"
@@ -164,19 +306,19 @@ def main() -> int:
         java = "-Xmx3500M -XX:ActiveProcessorCount=2 -XX:ParallelGCThreads=2 -XX:ConcGCThreads=2"
         artifact_prefix = job_tmp / "artifact"
         coverage_prefix = job_tmp / "coverage"
-        tasks = [
-            (
+        task_commands = {
+            "verifybamid": (
                 f"{q(verifybamid)} --BamFile {q(local_bam)} --SVDPrefix {q(args.svd_prefix)} "
                 f"--Reference {q(args.reference)} --DisableSanityCheck --NumThread 2 "
                 f"--Output {q(job_tmp / 'verifybamid.pca2')}"
             ),
-            (
+            "hs_metrics": (
                 f"mkdir -p {q(job_tmp / 'hs_tmp')}\n"
                 f"{q(gatk)} --java-options {q(java)} CollectHsMetrics --TMP_DIR {q(job_tmp / 'hs_tmp')} "
                 f"-I {q(local_bam)} -R {q(args.reference)} -BI {q(args.hs_interval)} "
                 f"-TI {q(args.targets_interval)} -Q 10 -MQ 10 -O {q(local['hs'])}"
             ),
-            (
+            "artifact_oxog": (
                 f"mkdir -p {q(job_tmp / 'artifact_tmp')}\n"
                 f"{q(gatk)} --java-options {q(java)} CollectSequencingArtifactMetrics "
                 f"--TMP_DIR {q(job_tmp / 'artifact_tmp')} -I {q(local_bam)} -O {q(artifact_prefix)} "
@@ -184,37 +326,52 @@ def main() -> int:
                 f"{q(gatk)} --java-options {q(java)} CollectOxoGMetrics -I {q(local_bam)} "
                 f"-O {q(local['oxog'])} -R {q(args.reference)} --INTERVALS {q(args.artifact_interval)}"
             ),
-            (
+            "samtools_stats": (
                 f"{q(samtools)} stat -@ 2 -r {q(args.reference)} -d -p {q(local_bam)} > {q(local['samtools_genome'])}\n"
                 f"{q(samtools)} stat -@ 2 -t {q(args.capture_bed)} -d -p -r {q(args.reference)} "
                 f"{q(local_bam)} > {q(local['samtools_exome'])}"
             ),
-            (
+            "bamstats": (
                 f"{q(samtools)} view -s 0.05 -h {q(local_bam)} --threads 1 "
                 f"| {q(pypy)} {q(args.bamstats_script)} stats > {q(local['bamstats_all'])}\n"
                 f"{q(samtools)} view -s 0.05 -h {q(local_bam)} --threads 1 -L {q(args.capture_bed)} "
                 f"| {q(pypy)} {q(args.bamstats_script)} stats > {q(local['bamstats_exome'])}"
             ),
-            (
+            "mosdepth": (
                 f"{q(mosdepth)} --threads 2 -b {q(args.windows_bed)} --no-per-base "
                 f"{q(coverage_prefix)} {q(local_bam)}"
             ),
+        }
+        tasks = [
+            {
+                "name": name,
+                "command": command,
+                "cores": QC_RELEASE_RESOURCES[name][0],
+                "memory_mb": QC_RELEASE_RESOURCES[name][1],
+            }
+            for name, command in task_commands.items()
         ]
-        qc_lines = ["set -uo pipefail", "pids=()"]
-        for task in tasks:
-            qc_lines.append("( set -euo pipefail; " + task + " ) &")
-            qc_lines.append("pids+=(\"$!\")")
-        qc_lines.extend(
-            [
-                "status=0",
-                "for pid in \"${pids[@]}\"; do",
-                "  if ! wait \"$pid\"; then status=1; fi",
-                "done",
-                "exit \"$status\"",
-            ]
-        )
+        release_cores = sum(task["cores"] for task in tasks)
+        release_memory_mb = sum(task["memory_mb"] for task in tasks)
+        if release_cores > args.cores + 1e-9:
+            raise ValueError(
+                f"QC task releases require {release_cores} cores, but only "
+                f"{args.cores} were reserved"
+            )
+        if release_memory_mb > args.memory_mb + 1e-9:
+            raise ValueError(
+                f"QC task releases require {release_memory_mb} MB, but only "
+                f"{args.memory_mb} MB were reserved"
+            )
         qc_script = job_tmp / "qc.sh"
-        qc_script.write_text("\n".join(qc_lines) + "\n", encoding="utf-8")
+        task_release_paths = write_parallel_qc_script(
+            qc_script,
+            tasks,
+            lease,
+            args.lease_mode,
+            job_tmp,
+            args.sample,
+        )
         qc_metrics = job_tmp / "qc.io.json"
         phase_paths.append(qc_metrics)
         run_profiled(
@@ -270,6 +427,7 @@ def main() -> int:
         return 0
     finally:
         phases = load_metrics(phase_paths)
+        task_releases = load_task_releases(tasks, task_release_paths, lease)
         shutil.rmtree(job_tmp, ignore_errors=True)
         _atomic_json(
             Path(args.metrics),
@@ -286,6 +444,8 @@ def main() -> int:
                     "ssd_gb": args.ssd_gb,
                 },
                 "parallel_consumers": len(tasks) if "tasks" in locals() else 0,
+                "lease": lease,
+                "task_releases": task_releases,
                 "phases": phases,
                 "scratch_job_directory": str(job_tmp),
                 "scratch_removed": not job_tmp.exists(),

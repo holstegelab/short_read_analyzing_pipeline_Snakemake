@@ -170,12 +170,15 @@ with `deepvariant_apptainer_output`.
    The BAM-reading QC fan-out is independently opt-in:
 
    ```text
-   --config fuse_bam_qc=true
+   --config fuse_bam_qc=true bam_qc_lease_mode=required
    ```
 
    VerifyBamID, HS metrics, artifact/OxoG metrics, samtools stats, sampled BAM
    stats, and mosdepth then share one staged markdup BAM and run in parallel on
-   node SSD while retaining every legacy QC output path.
+   node SSD while retaining every legacy QC output path. Each of the six task
+   groups atomically releases its relative CPU/memory share when it finishes,
+   including on task failure. Use `disabled` only for local tests; `optional`
+   retains unreleased capacity when the active chief lacks lease support.
 
 4. If you want to run just several steps (for example only Alignment step) -
 choose suitable **smk** file as **--snakefile** or use `END_POINT`

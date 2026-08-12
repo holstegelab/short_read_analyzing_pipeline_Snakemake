@@ -630,12 +630,24 @@ Implemented behind disabled-by-default feature flags:
   HsMetrics, sequencing-artifact/OxoG metrics, both samtools-stat scans, both
   sampled bamstats scans, and mosdepth as six independent parallel task
   groups. It atomically publishes all 18 existing QC output contracts.
-- Both jobs use fixed resource envelopes and need no dynamic lease, so they
-  remain compatible with the currently running schema-1 manager.
+- The chrM tail keeps a fixed resource envelope. BAM-QC uses a 12-core/12-GB
+  initial lease; each of its six parallel task groups atomically releases its
+  relative share at completion, including on task failure. Stable per-task
+  release ids make a repeated response harmless. `bam_qc_lease_mode=required`
+  therefore needs the upgraded manager/chief; use `disabled` only for local
+  tests.
 
 Validation performed:
 
-- All 37 repository tests pass.
+- All 38 repository tests pass. The BAM-QC tests observe exactly six unique
+  relative release calls totalling 12 cores and 10,496 MB, and verify that a
+  failing task releases its share before returning failure.
+- All 40 tracked ZSlurm tests pass, including atomic concurrent relative
+  releases, release-id idempotence, the observed-memory floor, and a real
+  `zslurm_lease release` CLI/Unix-socket round trip.
+- An isolated one-sample Snakemake dry-run selects exactly one
+  `bam_qc_fused` job, no legacy QC producer, and resolves the runner with
+  12 cores/12 GB, required SSD, and `--lease-mode required`.
 - A combined one-sample dry-run selects all seven fused producers and no
   overlapping legacy producers. It exposed and fixed one remaining
   'align_reads' versus 'align_reads_fused' provenance-output ambiguity before

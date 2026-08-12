@@ -23,6 +23,9 @@ def _stat_config_bool(value, name):
 
 
 FUSE_BAM_QC = _stat_config_bool(config.get('fuse_bam_qc', False), 'fuse_bam_qc')
+BAM_QC_LEASE_MODE = str(config.get('bam_qc_lease_mode', 'required')).strip().lower()
+if BAM_QC_LEASE_MODE not in {'required', 'optional', 'disabled'}:
+    raise ValueError("bam_qc_lease_mode must be required, optional, or disabled")
 
 onsuccess: shell("rm -fr logs/Stats/*")
 
@@ -746,7 +749,8 @@ if FUSE_BAM_QC:
             runner=srcdir('scripts/run_fused_bam_qc.py'),
             ref=get_ref_by_validated_sex,
             svd=get_svd,
-            bamstats=srcdir(BAMSTATS)
+            bamstats=srcdir(BAMSTATS),
+            lease_mode=BAM_QC_LEASE_MODE
         log:
             runner=pj(LOG, 'Stats', '{sample}.bam_qc_fused.log'),
             io_profile=pj(LOG, 'Stats', '{sample}.bam_qc_fused.io.json')
@@ -789,6 +793,7 @@ if FUSE_BAM_QC:
                 --output-coverage-region-dist {output.coverage_region:q} \
                 --metrics {log.io_profile:q} --cores {resources.n} \
                 --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
+                --lease-mode {params.lease_mode:q} \
                 2> {log.runner:q}
             """
 
