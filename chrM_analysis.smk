@@ -88,6 +88,7 @@ rule copy_chrM_gvcfs_to_dcache:
     resources:
         mem_mb=2000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
@@ -120,15 +121,18 @@ rule extract_chrM_reads:
         fq2 = ensure(temp(pj(chrM, '{sample}_chrM.R2.fastq.gz')), non_empty = True)
     conda: CONDA_VCF
     resources:
+        time = get_time('extract_chrM_reads'),
         mem_mb=1000,
-        tmpdir=tmpdir
+        tmpdir=tmpdir,
+        ssd_use="required",
+        ssd_gb=6
     params:
         threads=2
     shell:
         """
         TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
         JOB_ID="${{SLURM_JOB_ID}}"
         if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
         if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
@@ -153,13 +157,16 @@ rule extract_NUMTs_reads:
         NUMTs_bed = NUMTs,
         threads = 2
     resources:
+        time = get_time('extract_NUMTs_reads'),
         mem_mb=1000,
-        tmpdir=tmpdir
+        tmpdir=tmpdir,
+        ssd_use="required",
+        ssd_gb=8
     shell:
         """
         TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
         JOB_ID="${{SLURM_JOB_ID}}"
         if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
         if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
@@ -202,17 +209,20 @@ rule align_chrM_and_NUMTs:
         chrM_log=pj(LOG,'chrM','{sample}.orig_mt_align.log'),
         numt_log=pj(LOG,'chrM','{sample}.origchrM_NUMT_align.log')
     resources:
+        time = get_time('align_chrM_and_NUMTs'),
         n="3",
         mem_mb=750,
-        tmpdir=tmpdir
+        tmpdir=tmpdir,
+        ssd_use="required",
+        ssd_gb=4
     shell:
         """
         mkdir -p $(dirname {log.chrM_log})
         mkdir -p $(dirname {log.numt_log})
 
         TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
         JOB_ID="${{SLURM_JOB_ID}}"
         if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
         if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
@@ -325,6 +335,7 @@ rule mutect_calls_both:
         variants_dir_chrM=pj(chrM, 'variants'),
         variants_dir_NUMT=pj(chrM, 'variants', 'NUMTs')
     resources:
+        time = get_time('mutect_calls_both'),
         n=2,
         mem_mb=1500
     shell:
@@ -375,6 +386,7 @@ rule merge_and_filter_both:
     params:
         mt_ref=pj(ORIG_MT_fa)
     resources:
+        time = get_time('merge_and_filter_both'),
         n=4,
         mem_mb=500
     shell:
@@ -441,6 +453,7 @@ rule mutect_bp_resolution_both:
         variants_dir_chrM=pj(chrM, 'variants'),
         variants_dir_NUMT=pj(chrM, 'variants', 'NUMTs')
     resources:
+        time = get_time('mutect_bp_resolution_both'),
         n=1,
         mem_mb=5000
     shell:

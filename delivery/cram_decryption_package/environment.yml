@@ -1,0 +1,9 @@
+name: projectmine-cram-decryption
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - python-crypt4gh=1.6
+  - samtools=1.17
+  - rclone

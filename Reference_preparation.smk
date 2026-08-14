@@ -132,7 +132,9 @@ rule create_hash:
     conda: "envs/preprocess.yaml"
     output: hash = REF_MALE_HASH
     params:
-        dragmap = dragmap
+        # preprocess.yaml does not provide DRAGMAP.  Use the centrally built,
+        # validated binary instead of depending on an ambient PATH entry.
+        dragmap = pj(SOFTWARE, dragmap)
     resources:
         mem_mb=50000,
         n=64
@@ -163,7 +165,8 @@ rule create_hash_1:
     conda: "envs/preprocess.yaml"
     output: hash = REF_FEMALE_HASH
     params:
-        dragmap = dragmap
+        # Keep reference construction independent of the active conda env.
+        dragmap = pj(SOFTWARE, dragmap)
     resources:
         mem_mb=50000,
         n=64
@@ -184,5 +187,4 @@ rule ComposeSTRTableFile_1:
     shell:"""
         gatk ComposeSTRTableFile --java-options "-Xmx{resources.mem_mb}M" -R {input.fasta} -O {output.str_file}
         """
-
 

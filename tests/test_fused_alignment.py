@@ -7,12 +7,57 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_alignment.py"
+sys.path.insert(0, str(REPO / "scripts"))
+
+import run_fused_alignment as fused_alignment
 
 
 def _script(path, body):
     path.write_text("#!/usr/bin/env python3\n" + body)
     path.chmod(0o755)
     return path
+
+
+def test_shrink_lease_retries_a_temporary_memory_safety_floor(monkeypatch):
+    responses = iter(
+        [
+            {"ok": True, "held_cores": 5, "held_mem_mb": 14250},
+            {"ok": True, "held_cores": 5, "held_mem_mb": 1024},
+        ]
+    )
+    calls = []
+
+    def fake_request(command, arguments):
+        calls.append((command, arguments))
+        return next(responses)
+
+    monkeypatch.setattr(fused_alignment, "_lease_request", fake_request)
+    monkeypatch.setattr(fused_alignment.time, "sleep", lambda _seconds: None)
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    result = fused_alignment.shrink_lease(lease, cores=5, memory_mb=1024)
+
+    assert len(calls) == 2
+    assert result["shrink"]["performed"] is True
+    assert result["shrink"]["target_reached"] is True
+    assert result["shrink"]["attempts"] == 2
+    assert result["shrink"]["response"]["held_mem_mb"] == 1024
+
+
+def test_shrink_lease_records_a_persistent_safety_floor(monkeypatch):
+    response = {"ok": True, "held_cores": 5, "held_mem_mb": 4096}
+    monkeypatch.setattr(
+        fused_alignment, "_lease_request", lambda _command, _arguments: response
+    )
+    monkeypatch.setattr(fused_alignment.time, "sleep", lambda _seconds: None)
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    result = fused_alignment.shrink_lease(lease, cores=5, memory_mb=1024)
+
+    assert result["shrink"]["performed"] is True
+    assert result["shrink"]["target_reached"] is False
+    assert result["shrink"]["attempts"] == 11
+    assert "safety floor" in result["shrink"]["reason"]
 
 
 def test_fused_runner_shrinks_lease_and_keeps_intermediate_local(tmp_path):

@@ -685,15 +685,38 @@ int main(int argc,char**argv){
     flush_group(out, g1, g2, group, &ng, &cur_q, &primary_aligned_bp, &primary_soft_bp, &supplementary_aligned_bp, &wrote_badmap, &fq, &st, &last_rg);
 
     // Drain leftover FASTQs: re-add as unmapped SAM (do not count in fragments/alignments/total_bp)
-    FastqPair *left=NULL; while(fq_retrieve_any(&fq, &left)){
-        stats_add_size(&st.size_r1, &st.size_r1_cap, (int)strlen(left->seq1));
-        stats_add_size(&st.size_r2, &st.size_r2_cap, (int)strlen(left->seq2));
-        st.restored_bp_r1 += (long long)strlen(left->seq1);
-        st.restored_bp_r2 += (long long)strlen(left->seq2);
-        st.readded_fragments += 1;
-        print_unmapped_sam_pair(out, left, last_rg);
-        fastqpair_free(left); left=NULL;
+    // FIX: the previous loop called fq_retrieve_any -> hash_pop_any_complete once per
+    // leftover pair; hash_pop_any_complete rescans the whole bucket array from 0 every
+    // call => O(leftover * nbuckets). With many unaligned reads and a table sized for the
+    // whole FASTQ this is quadratic (observed: 17h+ pinned in hash_pop_any_complete).
+    // Ensure any not-yet-read FASTQ is buffered, then drain in a single O(n) pass.
+    {
+        char *n1=NULL,*s1=NULL,*q1=NULL,*n2=NULL,*s2=NULL,*q2=NULL;
+        while(read_fastq(fq.fa,&n1,&s1,&q1)){
+            fq_store_pair(&fq, n1, s1, NULL, q1, NULL); free(n1); n1=NULL;
+            if(!read_fastq(fq.fb,&n2,&s2,&q2)){ free(n2); n2=NULL; break; }
+            fq_store_pair(&fq, n2, NULL, s2, NULL, q2); free(n2); n2=NULL;
+        }
     }
+    for(size_t bi=0; bi<fq.buf.nb; bi++){
+        Entry *e = fq.buf.b[bi];
+        while(e){
+            Entry *nx = e->next;
+            FastqPair *v = e->val;
+            if(fqpair_is_complete(v)){
+                stats_add_size(&st.size_r1, &st.size_r1_cap, (int)strlen(v->seq1));
+                stats_add_size(&st.size_r2, &st.size_r2_cap, (int)strlen(v->seq2));
+                st.restored_bp_r1 += (long long)strlen(v->seq1);
+                st.restored_bp_r2 += (long long)strlen(v->seq2);
+                st.readded_fragments += 1;
+                print_unmapped_sam_pair(out, v, last_rg);
+            }
+            free(e->key); fastqpair_free(v); free(e);
+            e = nx;
+        }
+        fq.buf.b[bi] = NULL;
+    }
+    fq.buf.n = 0;
 
     if(out!=stdout) fclose(out);
     gzclose(g1); gzclose(g2);

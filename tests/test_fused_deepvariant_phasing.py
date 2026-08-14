@@ -20,8 +20,13 @@ def test_fused_deepvariant_phasing_keeps_raw_calls_local(tmp_path):
     tools.mkdir()
     deepvariant = _script(
         tools / "run_deepvariant",
-        """import sys
+        """import os
+import sys
 from pathlib import Path
+Path(os.environ['FAKE_DV_ENV_LOG']).write_text(
+    os.environ.get('ZSLURM_LEASE_TOKEN', '') + '|' +
+    os.environ.get('ZSLURM_LEASE_SOCKET', '')
+)
 values = {a.split('=', 1)[0]: a.split('=', 1)[1] for a in sys.argv[1:] if '=' in a}
 for key in ('--output_vcf', '--output_gvcf'):
     out = Path(values[key])
@@ -109,6 +114,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     lease_log = tmp_path / "lease.log"
+    dv_env_log = tmp_path / "deepvariant.env"
     output_args = {
         "--output-vcf": outputs / "phased.vcf.gz",
         "--output-vcf-tbi": outputs / "phased.vcf.gz.tbi",
@@ -155,12 +161,14 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
             "ZSLURM_LEASE_TOKEN": "fake-token",
             "ZSLURM_JOB_ID": "123",
             "FAKE_LEASE_LOG": str(lease_log),
+            "FAKE_DV_ENV_LOG": str(dv_env_log),
         }
     )
     subprocess.run(command, check=True, env=environment)
 
     assert all(path.exists() for path in output_args.values())
     assert lease_log.read_text().splitlines() == ["status", "set"]
+    assert dv_env_log.read_text() == "|"
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is True
     assert [phase["label"] for phase in metrics["phases"]] == [

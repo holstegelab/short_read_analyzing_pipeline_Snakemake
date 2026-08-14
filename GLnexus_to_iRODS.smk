@@ -547,6 +547,7 @@ rule copy_analysis_stats_to_irods:
     resources:
         mem_mb=2000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get("dcache_use_add", 0),
         dcache_use_remove=config.get("dcache_use_remove", 0)
     run:
@@ -674,6 +675,7 @@ rule copy_joint_vcf_bundle_to_irods:
     resources:
         mem_mb=2500,
         n="0.2",
+        dcache_upload_slots=1,
         dcache_use_add=config.get("dcache_use_add", 0),
         dcache_use_remove=config.get("dcache_use_remove", 0)
     run:
@@ -722,6 +724,7 @@ rule create_remote_ingest_marker:
     resources:
         mem_mb=1000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get("dcache_use_add", 0),
         dcache_use_remove=config.get("dcache_use_remove", 0)
     run:

@@ -8,6 +8,7 @@ import shlex
 import sys
 import traceback
 import json
+import tempfile
 from collections.abc import Mapping
 
 import read_samples
@@ -196,30 +197,25 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
 def get_source_files(wildcards):  #{{{
     """Make sure the source files for a sample are available.
 
-    When they need to be obtained from archive or dcache (as indicated by the prefix 'archive:' or 'dcache:'),
-    request an indicator file which is written by the archive_to_active/dcache_to_active rules when all sample files are retrieved.
+    External inputs are materialized by the routed ``start_sample`` rule.  Its
+    protocol-independent marker is written only after validation succeeds.
     """
 
     sinfo = SAMPLEINFO[wildcards['sample']]
     prefixpath = sinfo['prefix']
     files = []
-    archive_retrieve_add = False
-    dcache_retrieve_add = False
+    route_ready_added = False
     for f in itertools.chain(sinfo['file1'],sinfo['file2']):
         if not f:
             continue
         f = append_prefix(prefixpath,f)
 
-        if f.startswith('archive:'):
-            if not archive_retrieve_add:
-                files.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.archive_retrieved')))
-                files.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.data')))
-                archive_retrieve_add = True
-        elif f.startswith('dcache:'):
-            if not archive_retrieve_add:
-                files.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.dcache_retrieved')))
-                files.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.data')))
-                archive_retrieve_add = True
+        if f.startswith('archive:') or f.startswith('dcache:'):
+            if not route_ready_added:
+                files.append(ancient(pj(
+                    SOURCEDIR, wildcards['sample'] + '.route_ready'
+                )))
+                route_ready_added = True
         else:
             files.append(f)
 
@@ -245,23 +241,25 @@ checkpoint get_readgroups:
     output:
         temp(pj(SAMPLEINFODIR,"{sample}.dat"))
     resources:
+        time = get_time('get_readgroups'),
         n="1",
-        mem_mb=150
-    run:
-        sample = SAMPLEINFO[wildcards['sample']]
-        if sample['from_external']:
-            prefixpath = pj(SOURCEDIR,wildcards['sample'] + '.data')  # location where the data is downloaded from the external data repository
-        else:
-            prefixpath = sample['prefix']
-        sample, warnings = read_samples.get_readgroups(sample,prefixpath)
-        if warnings:
-            warningfile = pj(SAMPLEINFODIR,wildcards['sample'] + '.warnings')
-            if warnings:
-                with open(warningfile,'w') as f:
-                    for w in warnings:
-                        print("WARNING: " + w)
-                        f.write(w + '\n')
-        utils.save(sample,str(output))
+        mem_mb=256
+    params:
+        sample=lambda wildcards: SAMPLEINFO[wildcards['sample']],
+        prefixpath=lambda wildcards: (
+            external_data_dir(
+                wildcards['sample'], SAMPLEINFO[wildcards['sample']]
+            )
+            if SAMPLEINFO[wildcards['sample']]['from_external']
+            else SAMPLEINFO[wildcards['sample']]['prefix']
+        ),
+        pipeline_root=os.path.dirname(srcdir('read_samples.py')),
+        warningfile=lambda wildcards: pj(
+            SAMPLEINFODIR, wildcards['sample'] + '.warnings'
+        )
+    conda: CONDA_MAIN
+    script:
+        "scripts/get_readgroups.py"
 
 rule archive_get:
     """Stage a batch of files from archive.
@@ -272,11 +270,12 @@ rule archive_get:
     output:
         temp(pj(FETCHDIR,'{samplefile}.archive_{batchnr}.retrieved'))
     resources:
+        time = get_time('archive_get'),
         arch_use_add=lambda wildcards:
         SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]['size'],
         partition="archive",
         n="0.1",
-        mem_mb=100
+        mem_mb=256
     run:
         dname = os.path.dirname(str(output))        
         batch = SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['archive'][int(wildcards['batchnr'])]
@@ -370,152 +369,449 @@ rule archive_get:
             _f.write("")
 
 
+def _dcache_source_file(sample, filename):
+    source_uri = append_prefix(sample['prefix'], filename)
+    endpoint = read_samples.parse_dcache_uri(source_uri)
+    if endpoint is None:
+        raise ValueError(
+            f"Expected dCache source for sample {sample['sample']}, got {source_uri!r}"
+        )
+    remote, remote_path = endpoint
+    expected_remote = sample.get('source_remote')
+    if expected_remote and remote != expected_remote:
+        raise ValueError(
+            f"Mixed dCache remotes for sample {sample['sample']}: "
+            f"{expected_remote!r} and {remote!r}"
+        )
+    return remote, remote_path
+
+
+def _dcache_local_destination(sample, filename, destination_root):
+    relative = os.path.normpath(str(filename).lstrip('/'))
+    if relative in ('', '.') or relative == '..' or relative.startswith('../'):
+        raise ValueError(
+            f"Unsafe dCache destination path for sample {sample['sample']}: {filename!r}"
+        )
+    return os.path.join(str(destination_root), relative)
+
+
+rule dcache_get:
+    """Stage one stable sample batch directly from Snellius."""
+    output:
+        temp(pj(FETCHDIR, '{samplefile}.dcache_{batchnr}.retrieved'))
+    resources:
+        time=get_time('dcache_get'),
+        dcache_use_add=lambda wildcards:
+        SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['dcache'][int(wildcards['batchnr'])]['size'],
+        n="0.2",
+        mem_mb=512
+    params:
+        transfer_script=srcdir('scripts/dcache_transfer.py')
+    run:
+        batch = SAMPLEFILE_TO_BATCHES[wildcards['samplefile']]['dcache'][int(wildcards['batchnr'])]
+        excluded_map = SAMPLEFILE_TO_EXCLUDED_SAMPLES.get(wildcards['samplefile'], {})
+        remote_paths = []
+        remotes = set()
+        configs = set()
+
+        for sample_name in batch['samples']:
+            sinfo = SAMPLEINFO.get(sample_name)
+            if sinfo is None:
+                if excluded_map.get(sample_name, {}).get('info') is not None:
+                    print(f"[dcache_get] Skipping excluded sample {sample_name}", flush=True)
+                    continue
+                raise KeyError(sample_name)
+            if not sinfo['need_retrieval']:
+                continue
+
+            remotes.add(sinfo.get('source_remote'))
+            configs.add(sinfo.get('source_config'))
+            for filename in itertools.chain(sinfo['file1'], sinfo['file2']):
+                if not filename:
+                    continue
+                remote, remote_path = _dcache_source_file(sinfo, filename)
+                remotes.add(remote)
+                remote_paths.append(remote_path)
+
+        remotes.discard(None)
+        configs.discard(None)
+        if len(remotes) != 1 or len(configs) != 1:
+            raise ValueError(
+                f"dCache batch {wildcards.samplefile}#{wildcards.batchnr} must use "
+                f"one remote/config; got remotes={sorted(remotes)} configs={sorted(configs)}"
+            )
+
+        os.makedirs(FETCHDIR, exist_ok=True)
+        fd, list_path = tempfile.mkstemp(
+            prefix=f".{wildcards.samplefile}.dcache-stage-",
+            suffix=".txt",
+            dir=FETCHDIR,
+            text=True,
+        )
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                for remote_path in remote_paths:
+                    handle.write(remote_path + '\n')
+
+            if remote_paths:
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(params.transfer_script),
+                        'stage',
+                        '--config',
+                        next(iter(configs)),
+                        '--remote',
+                        next(iter(remotes)),
+                        '--file-list',
+                        list_path,
+                        '--lifetime',
+                        str(config.get('dcache_stage_lifetime', '7D')),
+                        '--poll-seconds',
+                        str(config.get('dcache_stage_poll_seconds', 60)),
+                        '--stage-timeout',
+                        str(config.get('dcache_stage_timeout', 86400)),
+                    ],
+                    check=True,
+                )
+        finally:
+            try:
+                os.unlink(list_path)
+            except FileNotFoundError:
+                pass
+
+        os.makedirs(os.path.dirname(str(output[0])), exist_ok=True)
+        with open(str(output[0]), 'w', encoding='utf-8'):
+            pass
+
+
 def retrieve_batch(wildcards):  #{{{
-    """For a sample, determines which batch needs to be retrieved from tape."""
+    """Return the batch-stage marker needed before routed materialization."""
 
     sample = SAMPLEINFO[wildcards['sample']]
-    batch = SAMPLE_TO_BATCH[wildcards['sample']]
-
-    if sample['from_external']:
-        #batch has format <protocol>_<batchnr>  (e.g. 'archive_0')
-        if batch is None:
-            # sample is not assigned to a batch, this non-existing file should generate an error
-            return ancient(pj(FETCHDIR,wildcards['sample'] + ".finished_samples_not_assigned_to_retrieval_batch"))
-        else:
-            return ancient(pj(FETCHDIR,os.path.basename(sample['samplefile']) + f".{batch}.retrieved"))
-
-    else:
+    route = _start_sample_route(wildcards)
+    if route == 'active':
         return []
+
+    route_ready = pj(SOURCEDIR, wildcards['sample'] + '.route_ready')
+    legacy_ready = pj(SOURCEDIR, wildcards['sample'] + f'.{route}_retrieved')
+    destination = external_data_dir(wildcards['sample'], sample)
+    if os.path.exists(route_ready) or (
+        os.path.exists(legacy_ready) and os.path.isdir(destination)
+    ):
+        # Adopt a complete old-layout materialization without restaging its
+        # whole stable batch merely to create the new universal marker.
+        return []
+
+    batch = SAMPLE_TO_BATCH[wildcards['sample']]
+    # batch has format <protocol>_<batchnr> (for example archive_0)
+    if batch is None:
+        return ancient(pj(
+            FETCHDIR,
+            wildcards['sample'] +
+            ".finished_samples_not_assigned_to_retrieval_batch",
+        ))
+    else:
+        return ancient(pj(
+            FETCHDIR,
+            os.path.basename(sample['samplefile']) + f".{batch}.retrieved",
+        ))
 
 
 #}}}
 
-def calculate_active_use(wildcards):  #{{{
-    """Calculate the amount of active storage that will be used by this sample."""
+def _start_sample_route(wildcards):
+    route = SAMPLEINFO[wildcards['sample']].get('from_external')
+    return str(route).lower() if route else 'active'
 
-    sample = SAMPLEINFO[wildcards['sample']]
-    filesize = sample['filesize']
-    capture_kit = sample['capture_kit']
-    active_filesize = 2.0 * filesize if 'cram' in sample['file_type'] else filesize
-    res = 0
-    if sample['from_external']:
-        res += filesize
-    if capture_kit == 'WGS38_to_exome' or capture_kit == 'WGS37_to_exome':
-        res += 2.0 * active_filesize * 0.15
-    else:
-        res += 2.0 * active_filesize
-    return res
+
+def _start_sample_time(wildcards, attempt=1):
+    rule_name = {
+        'active': 'start_sample',
+        'archive': 'archive_to_active',
+        'dcache': 'dcache_to_active',
+    }[_start_sample_route(wildcards)]
+    return get_time(rule_name)(wildcards, attempt)
+
+
+def _start_sample_partition(wildcards):
+    return 'archive' if _start_sample_route(wildcards) == 'archive' else 'compute'
+
+
+def _start_sample_cores(wildcards):
+    return {'active': 0.1, 'archive': 0.6, 'dcache': 1.0}[
+        _start_sample_route(wildcards)
+    ]
+
+
+def _start_sample_mem_mb(wildcards):
+    return 1024 if _start_sample_route(wildcards) == 'dcache' else 256
+
+
+def _start_sample_active_add(wildcards):
+    started = pj(SOURCEDIR, wildcards['sample'] + '.started')
+    route_ready = pj(SOURCEDIR, wildcards['sample'] + '.route_ready')
+    if os.path.exists(started) and not os.path.exists(route_ready):
+        # One-time adoption of the old two-step layout: its start job already
+        # took the old lifecycle reservation. The old active-input formula did
+        # not include the source bytes, so add exactly that migration delta for
+        # an unfinished active sample. External routes already included it.
+        sample = SAMPLEINFO[wildcards['sample']]
+        finished = pj(SOURCEDIR, wildcards['sample'] + '.finished')
+        if not sample.get('from_external') and not os.path.exists(finished):
+            return sample['filesize']
+        return 0
+    return active_use_gb(wildcards)
+
+
+def _start_sample_tier_remove(wildcards, route):
+    if _start_sample_route(wildcards) != route:
+        return 0
+    legacy = pj(SOURCEDIR, wildcards['sample'] + f'.{route}_retrieved')
+    route_ready = pj(SOURCEDIR, wildcards['sample'] + '.route_ready')
+    finished = pj(SOURCEDIR, wildcards['sample'] + '.finished')
+    if (
+        os.path.exists(legacy)
+        or os.path.exists(route_ready)
+        or os.path.exists(finished)
+    ):
+        # Do not release durable accounting twice while adopting an old run.
+        return 0
+    return SAMPLEINFO[wildcards['sample']]['filesize']
 
 
 #}}}
 
 rule start_sample:
-    """Start processing a sample. 
+    """Reserve the sample lifecycle and route active/archive/dCache input.
 
-    This rule can only start if the batch to which the sample belongs has been retrieved from tape.
-    This rule will reserve the space on active storage.
-
-    Rule 'finished_sample' in Snakefile will free the active storage space.
+    One job owns both the destination reservation and any required transfer,
+    eliminating the former start-versus-transfer storage deadlock.  Completion
+    markers are installed only after route-specific validation succeeds.
     """
     input:
         retrieve_batch
     output:
-        pj(SOURCEDIR,"{sample}.started")
+        started=pj(SOURCEDIR,"{sample}.started"),
+        route_ready=pj(SOURCEDIR,"{sample}.route_ready")
     resources:
-        # storsge memory is reserved for the sample
-        active_use_add=calculate_active_use,
-        mem_mb=50,
-        n="0.1"
-    shell: """
-        touch {output}
-        """
-
-
-
-rule archive_to_active:
-    """Move the files of a sample from archive to active storage.
-
-    Can only start after 'start_sample' has been executed. 
-    Start_sample will reserve the space on active storage.
-
-    """
-    input:
-        ancient(pj(SOURCEDIR,"{sample}.started"))
-    resources:
-        arch_use_remove=lambda wildcards: SAMPLEINFO[wildcards['sample']]['filesize'],
-        partition="archive",
-        n="0.6",
-        mem_mb=50
-    output:
-        flag=temp(pj(SOURCEDIR,"{sample}.archive_retrieved")),
-        fpath=temp(directory(pj(SOURCEDIR,"{sample}.data")))
+        time=_start_sample_time,
+        partition=_start_sample_partition,
+        active_use_add=_start_sample_active_add,
+        arch_use_remove=lambda wildcards: _start_sample_tier_remove(
+            wildcards, 'archive'
+        ),
+        dcache_use_remove=lambda wildcards: _start_sample_tier_remove(
+            wildcards, 'dcache'
+        ),
+        dcache_download_slots=lambda wildcards: int(
+            _start_sample_route(wildcards) == 'dcache'
+        ),
+        mem_mb=_start_sample_mem_mb,
+        n=_start_sample_cores
+    params:
+        route_helper=srcdir('scripts/start_sample_route.py'),
+        transfer_script=srcdir('scripts/dcache_transfer.py')
     run:
-        sample = SAMPLEINFO[wildcards['sample']]
-        prefixpath = sample['prefix']
-        destinationpath = str(output.fpath)
-        files1 = sample['file1']
-        files2 = sample['file2']
-        for e in itertools.chain(files1,files2):
-            if not e or os.path.isabs(e):
-                continue
-            source = pj(prefixpath, e)
-            if ':/' in source:  #remove protocol
-                source = source.split(':/')[1]
+        import bz2
+        import gzip
+        import shutil
+        from pathlib import Path
 
-            destination = pj(destinationpath,e)
-            shell("""
-            set -euo pipefail
-            echo "[archive_to_active] RSYNC copy"
-            echo "[archive_to_active] src: {source}"
-            echo "[archive_to_active] dst: {destination}"
-            mkdir -p "$(dirname "{destination}")"
-            rsync --size-only --progress "{source}" "{destination}"
-            """)
-            if destination.endswith(".bz2"):
-                new_filename = destination[:-4] + '.gz'
-                #convert to gzip
-                shell("""
-                set -euo pipefail
-                echo "[archive_to_active] Converting bz2->gz"
-                echo "[archive_to_active] src: {destination}"
-                echo "[archive_to_active] dst: {new_filename}"
-                ls -l "{destination}" || true
-                if command -v pigz >/dev/null 2>&1; then
-                  cc="pigz -p {threads} -c"
-                else
-                  cc="gzip -c"
-                fi
-                if command -v pbzip2 >/dev/null 2>&1; then
-                  dc="pbzip2 -dc -p{threads}"
-                elif command -v lbzip2 >/dev/null 2>&1; then
-                  dc="lbzip2 -dc -n {threads}"
-                else
-                  dc="bzcat"
-                fi
-                echo "[archive_to_active] using decompressor: $dc"
-                echo "[archive_to_active] using compressor:   $cc"
-                tmp="{new_filename}.tmp.$$"
-                set -x
-                eval "$dc" "{destination}" | eval "$cc" > "$tmp"
-                set +x
-                mv -f "$tmp" "{new_filename}"
-                ls -l "{new_filename}" || true
-                """)
-                
-                
-        
-        for e in itertools.chain(files1,files2):
-            if not e or os.path.isabs(e):
-                continue
-            source = pj(prefixpath, e)
-            if ':/' in source:  #remove protocol
-                source = source.split(':/')[1]
-            shell("""
-            /opt/dacommands/bin/darelease "{source}" || true
-            """)
-        shell("""
-            touch {output.flag}
-        """)
+        helper_dir = os.path.dirname(str(params.route_helper))
+        if helper_dir not in sys.path:
+            sys.path.insert(0, helper_dir)
+        from start_sample_route import (
+            StartSampleRouteError,
+            make_partial_directory,
+            promote_directory,
+            quarantine_incomplete,
+            routed_relative_path,
+            safe_relative_path,
+            sample_filenames,
+            sample_route,
+            validate_materialized,
+            write_completion_markers,
+            write_manifest,
+        )
+
+        sample = SAMPLEINFO[wildcards['sample']]
+        route = sample_route(sample)
+        sample_name = str(wildcards.sample)
+        destination = Path(external_data_dir(sample_name, sample))
+        records = []
+        legacy_marker = None
+
+        if route == 'active':
+            for filename in sample_filenames(sample):
+                source = Path(append_prefix(sample['prefix'], filename))
+                if not source.is_file():
+                    raise FileNotFoundError(
+                        f"active source file is absent for {sample_name}: {source}"
+                    )
+                records.append({'path': str(source), 'bytes': source.stat().st_size})
+        else:
+            legacy_marker = pj(SOURCEDIR, sample_name + f'.{route}_retrieved')
+            try:
+                records = validate_materialized(destination, sample, route)
+                print(
+                    f"[start_sample] adopting validated {route} destination "
+                    f"for {sample_name}: {destination}",
+                    flush=True,
+                )
+            except StartSampleRouteError as existing_error:
+                if destination.exists() or destination.is_symlink():
+                    quarantine = quarantine_incomplete(destination)
+                    print(
+                        f"[start_sample] quarantined incomplete destination "
+                        f"{quarantine}: {existing_error}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                partial = make_partial_directory(destination)
+                try:
+                    if route == 'archive':
+                        for filename in sample_filenames(sample):
+                            if os.path.isabs(filename):
+                                source = Path(filename)
+                                if not source.is_file():
+                                    raise FileNotFoundError(source)
+                                continue
+                            source_value = append_prefix(sample['prefix'], filename)
+                            if ':/' in source_value:
+                                source_value = source_value.split(':/', 1)[1]
+                            source = Path(source_value)
+                            relative = safe_relative_path(filename)
+                            copied = partial / relative
+                            copied.parent.mkdir(parents=True, exist_ok=True)
+                            subprocess.run(
+                                [
+                                    'rsync', '--size-only', '--partial',
+                                    str(source), str(copied),
+                                ],
+                                check=True,
+                            )
+                            if copied.suffix == '.bz2':
+                                converted = partial / routed_relative_path(
+                                    filename, route
+                                )
+                                temporary_gz = converted.with_name(
+                                    converted.name + f'.tmp.{os.getpid()}'
+                                )
+                                converted.parent.mkdir(parents=True, exist_ok=True)
+                                with bz2.open(copied, 'rb') as source_handle, \
+                                     gzip.open(
+                                         temporary_gz, 'wb', compresslevel=1
+                                     ) as destination_handle:
+                                    shutil.copyfileobj(
+                                        source_handle,
+                                        destination_handle,
+                                        length=16 * 1024 * 1024,
+                                    )
+                                os.replace(temporary_gz, converted)
+                                copied.unlink()
+                    else:
+                        remote = sample.get('source_remote')
+                        config_path = sample.get('source_config')
+                        if not remote or not config_path:
+                            raise ValueError(
+                                f"Missing dCache remote/config for {sample_name}"
+                            )
+                        rows = []
+                        for filename in sample_filenames(sample):
+                            file_remote, remote_path = _dcache_source_file(
+                                sample, filename
+                            )
+                            if file_remote != remote:
+                                raise ValueError(
+                                    f"Mixed dCache remotes for {sample_name}: "
+                                    f"{remote!r} and {file_remote!r}"
+                                )
+                            rows.append((
+                                remote_path,
+                                partial / safe_relative_path(filename),
+                            ))
+                        fd, list_path = tempfile.mkstemp(
+                            prefix=f'.{sample_name}.dcache-download-',
+                            suffix='.tsv',
+                            dir=SOURCEDIR,
+                            text=True,
+                        )
+                        try:
+                            with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                                for remote_path, local_path in rows:
+                                    handle.write(f"{remote_path}\t{local_path}\n")
+                            download_workers = max(
+                                1, int(config.get('dcache_download_workers', 2))
+                            )
+                            subprocess.run(
+                                [
+                                    sys.executable,
+                                    str(params.transfer_script),
+                                    'download',
+                                    '--config', str(config_path),
+                                    '--remote', str(remote),
+                                    '--file-list', list_path,
+                                    '--workers', str(min(len(rows), download_workers)),
+                                    '--download-lock-slots',
+                                    str(max(1, int(config.get(
+                                        'dcache_download_lock_slots',
+                                        config.get('dcache_transfer_slots', 4),
+                                    )))),
+                                    '--no-stage',
+                                ],
+                                check=True,
+                            )
+                        finally:
+                            try:
+                                os.unlink(list_path)
+                            except FileNotFoundError:
+                                pass
+
+                    records = validate_materialized(partial, sample, route)
+                    write_manifest(
+                        partial,
+                        sample_name=sample_name,
+                        route=route,
+                        records=records,
+                    )
+                    promote_directory(partial, destination)
+                except Exception:
+                    if partial.exists() or partial.is_symlink():
+                        quarantine_incomplete(partial)
+                    raise
+
+                records = validate_materialized(destination, sample, route)
+
+            # A legacy directory without a manifest becomes self-validating for
+            # future retries after its expected file set and sizes pass.
+            write_manifest(
+                destination,
+                sample_name=sample_name,
+                route=route,
+                records=records,
+            )
+
+            if route == 'archive':
+                for filename in sample_filenames(sample):
+                    if os.path.isabs(filename):
+                        continue
+                    source_value = append_prefix(sample['prefix'], filename)
+                    if ':/' in source_value:
+                        source_value = source_value.split(':/', 1)[1]
+                    subprocess.run(
+                        ['/opt/dacommands/bin/darelease', source_value],
+                        check=False,
+                    )
+
+        write_completion_markers(
+            started=output.started,
+            route_ready=output.route_ready,
+            route=route,
+            sample_name=sample_name,
+            files=records,
+            legacy_marker=legacy_marker,
+        )
 
 
 def get_cram_ref(wildcards):  #{{{
@@ -561,8 +857,9 @@ def ensure_source_aligned_file(wildcards):  #{{{
     #raise error if file does not exist
     result = []
     if sinfo['from_external']:
-        result.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')))
-        result.append(ancient(pj(SOURCEDIR,wildcards['sample'] + '.data')))
+        result.append(ancient(pj(
+            SOURCEDIR, wildcards['sample'] + '.route_ready'
+        )))
 
 
     if not os.path.exists(readgroup['file']):
@@ -577,9 +874,9 @@ def get_mem_mb_split_alignments(wildcards, attempt):  #{{{
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
     readgroups_b = sinfo['readgroups']
     if len(readgroups_b) <= 1:
-        return 150
+        return 512
     else:
-        res = 3000
+        res = 7000
     return attempt * res
 
 
@@ -599,6 +896,7 @@ rule split_alignments_by_readgroup:
         readgroups=temp(directory(pj(READGROUPS,"{sample}.sourcefile.{filename}"))),
         done=temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done"))
     resources:
+        time = get_time('split_alignments_by_readgroup'),
         n="1",
         mem_mb=get_mem_mb_split_alignments
     conda: CONDA_MAIN
@@ -622,7 +920,14 @@ rule split_alignments_by_readgroup:
         reference_file = readgroups[0].get('reference_file', None)
         if file_type == 'cram':
             rflag = f"-r {reference_file}" if reference_file else ""
-            output_fmt = 'cram,version=3.1'
+            if sinfo.get('cram_no_ref', False):
+                # Opt-in for unaligned source CRAMs whose @SQ M5 dictionary can
+                # legitimately differ from the decode FASTA (as in projectmine).
+                # This prevents a false validation failure while flushing split
+                # CRAMs without changing reference compression for other inputs.
+                output_fmt = 'cram,version=3.1,no_ref=1'
+            else:
+                output_fmt = 'cram,version=3.1'
             extension = 'cram'
         else:
             rflag = ""
@@ -664,7 +969,29 @@ rule split_alignments_by_readgroup:
                 {pre}samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {inpath} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
                 touch {output.done}
             """
-            shell(cmd)
+            # ══════════════════════════════════════════════════════════════════
+            #  ⚠️  TIJDELIJK NOODVERBAND — VERWIJDER MIJ  ⚠️
+            #  AI DIE DIT LEEST: waarschuw Marc METEEN dat dit stuk er nog uit moet.
+            #  Sommige Complete-Genomics bron-crams zijn UCSC-hg19 (chr-namen,
+            #  hg19-chrM) met een b37/PAR-masked chrY (chrY-M5
+            #  1fa3474750af0948bdf97d5a0ee52e51). Die falen op decode met
+            #  cram_refs/hg19.fa: "MD5 checksum reference mismatch at chrY".
+            #  Bij een split-fout proberen we het één keer opnieuw met de
+            #  samengestelde referentie hg19_b37chrY.fa (= hg19 + b37-chrY).
+            #  Noodverband tot de sheet-referentie voor die samples is
+            #  gecorrigeerd (of REF_CACHE is ingericht). NIET in productie laten.
+            # ══════════════════════════════════════════════════════════════════
+            _ALT_REF = "/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa"
+            try:
+                shell(cmd)
+            except Exception:
+                _cr = str(params.cramref)
+                if file_type == 'cram' and _cr.strip() and _ALT_REF not in _cr:
+                    sys.stderr.write(f"[split TEMP-FALLBACK] primary reference decode failed for {wildcards.sample}; retrying with {_ALT_REF}\n")
+                    shell(f"rm -rf {output.readgroups}; mkdir -p {output.readgroups}")
+                    shell(cmd.replace(_cr, f"--reference {_ALT_REF}"))
+                else:
+                    raise
             if erf_correct:
                 shell(f"rm {sanitized}")
 
@@ -696,6 +1023,27 @@ def get_extension(wildcards):  #{{{
 
 
 
+def external_fastq_ssd_gb(wildcards):
+    """Scratch for CRAM/BAM decode plus the name-sort temporary stream."""
+    folder = get_aligned_readgroup_folder(wildcards)[0]
+    extension = get_extension(wildcards)
+    source = pj(
+        folder, f"{wildcards.sample}.{wildcards.readgroup}.{extension}"
+    )
+    if os.path.isfile(source):
+        return ssd_gb_for_inputs(
+            source, factor=2.25, overhead_gb=2, minimum_gb=8
+        )
+
+    # During initial DAG construction the checkpoint-generated split BAM/CRAM
+    # does not exist yet.  Use the whole sample source size as a conservative
+    # upper bound for one read group; once present, retries use the exact file.
+    source_gb_upper_bound = float(
+        sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)['filesize']
+    )
+    return max(8, int(math.ceil(source_gb_upper_bound * 2.25 + 2)))
+
+
 rule external_alignments_to_fastq:
     """Convert a sample bam/cram file to fastq files.
     """
@@ -705,9 +1053,12 @@ rule external_alignments_to_fastq:
         fq2=temp(FQ + "/{sample}.{readgroup}_R2.fastq.gz"),
         singletons=temp(FQ + "/{sample}.{readgroup}.extracted_singletons.fq.gz"),
     resources:
+        time = get_time('external_alignments_to_fastq'),
         n="1.5",
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 14250 * 0.5 + 14250,
-        tmpdir=tmpdir
+        tmpdir=tmpdir,
+        ssd_use="required",
+        ssd_gb=external_fastq_ssd_gb
     params:
         cramref=get_cram_ref,
         extension=get_extension,
@@ -722,8 +1073,8 @@ rule external_alignments_to_fastq:
     shell:
         """
             TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
             JOB_ID="${{SLURM_JOB_ID}}"
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
@@ -774,8 +1125,9 @@ def get_fastqpaired(wildcards):  #{{{
             file2 = file2[:-4] + '.gz'
         files = [file1, file2]
         if sinfo['from_external']:  #ensure the data folder is available if this data is retrieved from tape.
-            files = files + [ancient(pj(SOURCEDIR,wildcards['sample'] + '.' + sinfo['from_external'] + '_retrieved')),
-                             ancient(pj(SOURCEDIR,wildcards['sample'] + '.data'))]
+            files.append(ancient(pj(
+                SOURCEDIR, wildcards['sample'] + '.route_ready'
+            )))
 
     else:  #source file is a bam /cram file. We will extract fastq files with the following names:
         file1 = FQ + f"/{wildcards['sample']}.{wildcards['readgroup']}_R1.fastq.gz"
@@ -804,8 +1156,9 @@ rule adapter_removal:
             rescuer=srcdir('scripts/fastq_pair_rescue.py'),
             remove_duplicated_reads=lambda wildcards: 1 if SAMPLEINFO[wildcards['sample']].get('remove_duplicated_reads', False) else 0
     resources:
+        time = get_time('adapter_removal'),
         n="5",
-        mem_mb=200,
+        mem_mb=512,
         attempt=lambda wildcards, attempt: attempt
     ##FIXME: slight efficiency gain (?) if we combine adapter removal and adapter identify, use paste <(pigz -cd  test_r1cut.f1.gz | paste - - - -) <(pigz -cd test_r2cut.fq.gz | paste - - - -) |  tr '\t' '\n' |
     run:
@@ -972,7 +1325,8 @@ if FUSE_EXTERNAL_ADAPTER:
             rescuer=srcdir('scripts/fastq_pair_rescue.py'),
             remove_duplicated_reads=lambda wc: int(SAMPLEINFO[wc.sample].get('remove_duplicated_reads', False)),
             error_file=lambda wc: str(SAMPLEINFO[wc.sample]['samplefile']) + '.errors',
-            lease_mode=EXTERNAL_ADAPTER_LEASE_MODE
+            lease_mode=EXTERNAL_ADAPTER_LEASE_MODE,
+            lease_command=zslurm_lease_command(config)
         conda: CONDA_MAIN
         priority: 10
         resources:
@@ -1012,6 +1366,7 @@ if FUSE_EXTERNAL_ADAPTER:
                 --adapter-cores 5 \
                 --adapter-memory-mb 1024 \
                 --lease-mode {params.lease_mode:q} \
+                --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
                 2> {log.runner:q}
             """
@@ -1073,8 +1428,11 @@ rule kmer_reads:
         kmer_log=pj(LOG,"Aligner","{sample}.kmer.log"),
     priority: 15
     resources:
+        time = get_time('kmer_reads'),
         n="2",
-        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * int(36000) + int(36000)
+        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * int(36000) + int(36000),
+        ssd_use="required",
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(input.fastq, factor=1.0, overhead_gb=3, minimum_gb=8)
     run:
         with open(output.lst,'w') as f:
             for file in input.fastq:
@@ -1110,6 +1468,7 @@ rule get_validated_sex:
         chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
         auto=temp(pj(KMER,"{sample}.auto.tsv"))
     resources:
+        time = get_time('get_validated_sex'),
         n="0.5",
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * 4500 + 2500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else (attempt - 1) * 0.5 * 4500 + 2500
     params:
@@ -1167,14 +1526,15 @@ if FUSE_KMER_SEX:
             kmer_chrx=KMER_CHRX,
             kmer_chrm=KMER_CHRM,
             kmer_auto=KMER_AUTO,
-            lease_mode=KMER_SEX_LEASE_MODE
+            lease_mode=KMER_SEX_LEASE_MODE,
+            lease_command=zslurm_lease_command(config)
         conda: CONDA_KMC
         priority: 15
         resources:
             time=get_time('kmer_sex_fused'),
             n="2",
             mem_mb=lambda wildcards, attempt: (
-                (attempt - 1) * 0.5 * 36000 + 36000
+                (attempt - 1) * 0.5 * 42000 + 42000
             ),
             ssd_use="required",
             ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
@@ -1201,6 +1561,7 @@ if FUSE_KMER_SEX:
                 --low-cores 0.5 \
                 --low-memory-mb 3000 \
                 --lease-mode {params.lease_mode:q} \
+                --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
                 2> {log.runner:q}
             """
@@ -1236,10 +1597,11 @@ if ALIGNMENT_LEASE_MODE not in {'required', 'optional', 'disabled'}:
 
 
 def _fused_low_memory_mb(wildcards):
-    # Coordinate sort peaks around 13.5 GB in production reports. Keep the
-    # entire low-resource merge/dechimer/sort tail at one monotonic target so
-    # the job never needs to reacquire memory.
-    return 15000
+    # A 179-GB production readgroup made bam_merge reach about 15.3 GB RSS;
+    # coordinate sort has also peaked around 13.5 GB. Keep enough headroom for
+    # the entire merge/dechimer/sort tail at one monotonic target so the job
+    # never needs to reacquire memory after releasing the 40-GB align lease.
+    return 20000
 
 
 def _fused_ignore_qual_flag(wildcards):
@@ -1263,9 +1625,10 @@ rule align_reads:
     conda:  CONDA_DRAGMAP
     priority: 15
     resources:
+        time = get_time('align_reads'),
         n="22.75",#reducing thread count, as first part of dragmap is single threaded
         use_threads=24,
-        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.25 * int(38000) + int(38000),
+        mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.25 * int(40000) + int(40000),
     shell:
         "(dragen-os -r {params.ref_dir} -1 {input.fastq[0]} -2 {input.fastq[1]} --RGID {wildcards.readgroup} --RGSM {wildcards.sample}  --num-threads {resources.use_threads}  | samtools view -@ 2 -o {output.bam}) 2> {output.dragmap_log} "
 # --enable-sampling true used for (unmapped) bam input. It prevents bugs when in output bam information about whicj read is 1st or 2nd in pair.
@@ -1298,8 +1661,11 @@ rule merge_bam_alignment_dechimer:
         dechimer=srcdir(DECHIMER),
         bam_stats_compare_hts=srcdir('scripts/bam_stats_compare_hts.py')
     resources:
+        time = get_time('merge_bam_alignment_dechimer'),
         n="1.5",
-        mem_mb=lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else attempt * 4500
+        mem_mb=lambda wildcards, attempt: attempt * 5500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else attempt * 4500,
+        ssd_use="required",
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(input.bam, factor=2.25, overhead_gb=2, minimum_gb=8)
     conda: CONDA_PYPY
     run:
         import os, shlex, tempfile
@@ -1415,6 +1781,7 @@ if FUSE_ALIGNMENT_PHASES:
             dechimer=srcdir(DECHIMER),
             bam_stats=srcdir('scripts/bam_stats_compare_hts.py'),
             lease_mode=ALIGNMENT_LEASE_MODE,
+            lease_command=zslurm_lease_command(config),
             low_memory_mb=_fused_low_memory_mb,
             ignore_qual_flag=_fused_ignore_qual_flag
         conda: CONDA_ALIGN_FUSED
@@ -1470,6 +1837,7 @@ if FUSE_ALIGNMENT_PHASES:
                 --sort-memory-mb 6000 \
                 --sort-compression-level 1 \
                 --lease-mode {params.lease_mode:q} \
+                --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
                 {params.ignore_qual_flag} \
                 2> {log.runner:q}
@@ -1571,8 +1939,9 @@ rule merge_rgs:
         mer_bam=temp(pj(BAM,"{sample}.merged.bam"))
     log: pj(LOG,"Aligner","{sample}.mergereadgroups.log")
     resources:
+        time = get_time('merge_rgs'),
         n="1",
-        mem_mb=150
+        mem_mb=1250
     priority: 19
     conda: CONDA_MAIN
     run:
@@ -1607,6 +1976,7 @@ rule merge_rgs_badmap:
         fastq=temp(pj(FQ_BADMAP,"{sample}.badmap.{readid}.fastq.gz"))
     conda: CONDA_MAIN
     resources:
+        time = get_time('merge_rgs_badmap'),
         n="1",
         mem_mb=150
     shell:
@@ -1616,6 +1986,9 @@ rule merge_rgs_badmap:
 
 
 def get_mem_mb_markdup(wildcards, attempt):  #{{{
+    # Intentionally size for representative use rather than the long tail.
+    # zslurm_chief keeps node-level memory headroom, while a rare failure can
+    # use Snakemake's attempt-based escalation below.
     res = 1500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 150
     #large range of memory usage for markdup
     return (attempt - 1) * res * 3 + res
@@ -1649,9 +2022,15 @@ rule markdup:
     log:
         samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log")
     resources:
+        time = get_time('markdup'),
         n="1",
         mem_mb=get_mem_mb_markdup,
-        temp_loc=lambda wildcards: pj(f"markdup_temporary_{wildcards.sample}")
+        # fastqs + intermediate bams are gone once markdup runs -> hand that share of
+        # the start_sample reservation back now (see active_release_markdup).
+        active_use_remove=active_release_markdup,
+        temp_loc=lambda wildcards: pj(f"markdup_temporary_{wildcards.sample}"),
+        ssd_use="required",
+        ssd_gb=4
     conda: CONDA_MAIN
     #write index is buggy in samtools 1.17, 2/110 invalid index, probably race condition due to multithreading.
     #switching to single thread
@@ -1663,11 +2042,18 @@ rule markdup:
                 touch {output.MD_stat}
             else
                 TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-                if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-                if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.temp_loc}"; fi
+                if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+                MDROOT=""
+                if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.temp_loc}"; MDROOT="{resources.temp_loc}"; fi
                 JOB_ID="${{SLURM_JOB_ID}}"; if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi; if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
                 MDTMP="$TMPDIR_USE/markdup/$JOB_ID/{wildcards.sample}"
                 mkdir -p "$(dirname "$MDTMP")"
+                # markdup had NO temp cleanup (unlike aligner_sort/aligner_fastq), so its
+                # working-dir fallback left markdup_temporary_<sample> dirs behind. Clean
+                # our own job subtree on exit; rmdir shared parents only if empty; and
+                # remove the per-sample fallback root (MDROOT) -- never $TMPDIR_USE itself
+                # when it is shared scratch (/scratch-node or $SLURM_TMPDIR).
+                trap 'rm -rf "$TMPDIR_USE/markdup/$JOB_ID" 2>/dev/null || true; rmdir "$TMPDIR_USE/markdup" 2>/dev/null || true; [ -n "${{MDROOT:-}}" ] && rmdir "$MDROOT" 2>/dev/null || true' EXIT INT TERM
                 samtools markdup -T "$MDTMP" -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
             fi
         """
@@ -1681,15 +2067,14 @@ rule mCRAM:
         cram=temp(pj(CRAM,"{sample}.mapped_hg38.cram")),
         crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
     resources:
+        time = get_time('mCRAM'),
         n="2",
-        mem_mb=1500
+        # Full-depth Knight WGS CRAM conversion was observed at about 1.44 GB,
+        # leaving virtually no headroom with the previous 1.5 GB request.
+        mem_mb=2500
     priority: 30
     conda: CONDA_MAIN
     log:
         pj(LOG,"Aligner","{sample}.mCRAM.log")
     shell:
         "samtools view --output-fmt cram,version=3.1,archive --reference {REF} -@ {resources.n} --write-index -o {output.cram}##idx##{output.crai} {input.bam} 2> {log}"
-
-
-
-

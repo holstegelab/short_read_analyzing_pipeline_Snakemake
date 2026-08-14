@@ -119,8 +119,9 @@ rule tar_stats_per_sample:
         numt=pj(STAT,'{sample}.numt_read_stats.tsv'),
         phase=pj(STAT,'{sample}.phase_stats.tsv'),
     output:
-        tar=temp(pj(STAT,"{sample}.stats.tar.gz"))
+        tar=pj(STAT,"{sample}.stats.tar.gz")
     resources:
+        time = get_time('tar_stats_per_sample'),
         n="1",
         mem_mb=100
     shell: """
@@ -143,6 +144,7 @@ rule coverage:
         bed=WINDOWS,
         prefix=pj(STAT,'cov','{sample}')
     resources:
+        time = get_time('coverage'),
         mem_mb=2200,
         n="1.5"
     conda: CONDA_MOSDEPTH
@@ -164,6 +166,7 @@ rule chrM_and_numt_read_stats:
     params:
         script=srcdir('scripts/region_read_stats.py')
     resources:
+        time = get_time('chrM_and_numt_read_stats'),
         n=1,
         mem_mb=200
     conda: CONDA_MAIN
@@ -194,6 +197,7 @@ rule whatsHap_phase_stats:
     params:
         script=srcdir('scripts/whatsHap_phase_stats.py')
     resources:
+        time = get_time('whatsHap_phase_stats'),
         n=1,
         mem_mb=200
     conda: CONDA_MAIN
@@ -214,8 +218,9 @@ rule copy_stats_tar_to_dcache:
         ada_script=srcdir(ADA)
     resources:
         mem_mb=2000,
-        n="0.1"
-        ,dcache_use_add=config.get('dcache_use_add', 0),
+        n="0.1",
+        dcache_upload_slots=1,
+        dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
         remote_dir = os.path.join(remote_base_for_samplefile(wildcards.samplefile), "stat")
@@ -235,8 +240,9 @@ rule copy_excluded_to_dcache:
         ada_script=srcdir(ADA)
     resources:
         mem_mb=2000,
-        n="0.1"
-        ,dcache_use_add=config.get('dcache_use_add', 0),
+        n="0.1",
+        dcache_upload_slots=1,
+        dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
         basename = wildcards.samplefile
@@ -296,7 +302,7 @@ rule copy_excluded_to_dcache:
             prefix = sinfo.get('prefix', '')
             ftype = sinfo.get('file_type')
             from_external = bool(sinfo.get('from_external'))
-            data_base = pj(SOURCEDIR, f"{sample}.data")
+            data_base = external_data_dir(sample, sinfo)
 
             def _localize(f):
                 if not f:
@@ -385,8 +391,9 @@ rule copy_samplefile_stats_to_dcache:
         ada_script=srcdir(ADA)
     resources:
         mem_mb=2000,
-        n="0.1"
-        ,dcache_use_add=config.get('dcache_use_add', 0),
+        n="0.1",
+        dcache_upload_slots=1,
+        dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
         target_dir = remote_base_for_samplefile(wildcards.samplefile)
@@ -428,6 +435,7 @@ rule tar_badmap_fastqs:
     output:
         tar=temp(pj(FQ_BADMAP, "{sample}.badmap.fastqs.tar.gz"))
     resources:
+        time = get_time('tar_badmap_fastqs'),
         mem_mb=500,
         n="0.5"
     run:
@@ -456,9 +464,11 @@ rule copy_badmap_to_dcache:
     params:
         ada_script=srcdir(ADA)
     resources:
+        time = get_time('copy_badmap_to_dcache'),
         mem_mb=2000,
-        n="0.1"
-        ,dcache_use_add=config.get('dcache_use_add', 0),
+        n="0.1",
+        dcache_upload_slots=1,
+        dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
         base_target = remote_base_for_sample(wildcards.sample)
@@ -569,6 +579,7 @@ rule verifybamid:
         VBID_prefix=pj(STAT,'contam/{sample}.verifybamid.pca2'),
         SVD=get_svd
     resources:
+        time = get_time('verifybamid'),
         mem_mb=300,
         n="1.4"
     conda: CONDA_VERIFYBAMID
@@ -605,14 +616,17 @@ rule hs_stats:
         #minimum Mapping Quality for a read to contribute cov(default=20)
         MQ=10
     resources: mem_mb=lambda wildcards, attempt: attempt * 2000,
+        time = get_time('hs_stats'),
         tmpdir=tmpdir,
-        n="1.0"
+        n="1.0",
+        ssd_use="required",
+        ssd_gb=2
     conda: CONDA_VCF
     shell:
         """
             TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
             gatk  --java-options "-Xmx{resources.mem_mb}M  {DEFAULT_JAVA_OPTIONS}" CollectHsMetrics  --TMP_DIR "$TMPDIR_USE" \
                 -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.targets} \
                 -Q {params.Q} -MQ {params.MQ} \
@@ -639,15 +653,18 @@ rule artifacts_and_oxog_metrics:
         ref=get_ref_by_validated_sex,
         out=pj(STAT,"{sample}")
     resources:
+        time = get_time('artifacts_and_oxog_metrics'),
         mem_mb=lambda wildcards, attempt: attempt * 2600,
         tmpdir=tmpdir,
-        n="1.0"
+        n="1.0",
+        ssd_use="required",
+        ssd_gb=2
     conda: CONDA_VCF
     shell:
         """
             TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1); if [ -n "$CAND" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "$SLURM_TMPDIR" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
             gatk --java-options "-Xmx{resources.mem_mb}M {DEFAULT_JAVA_OPTIONS}" CollectSequencingArtifactMetrics  --TMP_DIR "$TMPDIR_USE" -I {input.bam} -O {params.out} \
                     -R {params.ref} --DB_SNP {DBSNP} --INTERVALS {input.interval} 2> {log}
             gatk  --java-options "-Xmx{resources.mem_mb}M {DEFAULT_JAVA_OPTIONS}" CollectOxoGMetrics -I {input.bam} -O {output.OXOG} -R {params.ref} \
@@ -677,6 +694,7 @@ rule samtools_stats:
     priority: 99
     log: pj(LOG,"Stats","samtools_{sample}.log")
     resources:
+        time = get_time('samtools_stats'),
         mem_mb=130,
         n=1
     conda: CONDA_MAIN
@@ -700,6 +718,7 @@ rule bamstats_all_and_exome:
         all=temp(ensure(pj(STAT,'{sample}.bam_all.tsv'),non_empty=True)),
         exome=temp(ensure(pj(STAT,'{sample}.bam_exome.tsv'),non_empty=True))
     resources:
+        time = get_time('bamstats_all_and_exome'),
         mem_mb=250,
         n=1
     params:
@@ -750,7 +769,8 @@ if FUSE_BAM_QC:
             ref=get_ref_by_validated_sex,
             svd=get_svd,
             bamstats=srcdir(BAMSTATS),
-            lease_mode=BAM_QC_LEASE_MODE
+            lease_mode=BAM_QC_LEASE_MODE,
+            lease_command=zslurm_lease_command(config)
         log:
             runner=pj(LOG, 'Stats', '{sample}.bam_qc_fused.log'),
             io_profile=pj(LOG, 'Stats', '{sample}.bam_qc_fused.io.json')
@@ -794,6 +814,7 @@ if FUSE_BAM_QC:
                 --metrics {log.io_profile:q} --cores {resources.n} \
                 --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
                 --lease-mode {params.lease_mode:q} \
+                --lease-command {params.lease_command:q} \
                 2> {log.runner:q}
             """
 

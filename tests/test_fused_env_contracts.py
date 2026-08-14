@@ -1,0 +1,62 @@
+from pathlib import Path
+
+import yaml
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def conda_dependencies(filename: str) -> set[str]:
+    document = yaml.safe_load((REPO / "envs" / filename).read_text())
+    dependencies = set()
+    for dependency in document.get("dependencies", []):
+        if not isinstance(dependency, str):
+            continue
+        dependencies.add(dependency.split("=", 1)[0].lower())
+    return dependencies
+
+
+def test_external_adapter_fusion_uses_complete_preprocess_environment():
+    dependencies = conda_dependencies("preprocess.yaml")
+    assert {"python", "samtools", "htslib", "adapterremoval", "pigz"} <= dependencies
+
+
+def test_kmer_sex_fusion_has_runtime_and_analysis_modules():
+    dependencies = conda_dependencies("kmc.yaml")
+    # kmc and kmc_tools are installed by kmc.post-deploy.sh.
+    assert {"python", "numpy", "pandas", "scipy", "pyyaml"} <= dependencies
+    post_deploy = (REPO / "envs" / "kmc.post-deploy.sh").read_text()
+    assert "make -j32" in post_deploy
+    assert "cp ${CONDA_PREFIX}/software/kmc/bin/* ${CONDA_PREFIX}/bin" in post_deploy
+
+
+def test_alignment_fusion_combines_aligner_and_bam_tooling():
+    dependencies = conda_dependencies("align_fused.yaml")
+    assert {"python", "dragmap", "samtools", "htslib", "setuptools"} <= dependencies
+
+
+def test_deepvariant_phasing_and_chrm_tail_share_complete_vcf_environment():
+    dependencies = conda_dependencies("vcf_handling.yaml")
+    assert {
+        "python",
+        "numpy",
+        "cyvcf2",
+        "whatshap",
+        "bcftools",
+        "samtools",
+        "gatk4",
+    } <= dependencies
+
+
+def test_parallel_bam_qc_fusion_contains_every_qc_executable():
+    dependencies = conda_dependencies("qc_fused.yaml")
+    assert {
+        "python",
+        "numpy",
+        "pypy",
+        "pypy3.9",
+        "samtools",
+        "gatk4",
+        "verifybamid2",
+        "mosdepth",
+    } <= dependencies

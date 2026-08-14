@@ -90,6 +90,7 @@ rule copy_kraken_reports_to_dcache:
     resources:
         mem_mb=2000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
@@ -110,6 +111,7 @@ rule copy_kraken_read_classification_to_dcache:
     resources:
         mem_mb=2000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
@@ -172,8 +174,9 @@ rule kraken:
         read_cls=temp(pj(KRAKEN, "{sample}.read_classification.tsv.gz"))
     conda: CONDA_KRAKEN
     resources:
+        time = get_time('kraken'),
         n="1.5",
-        mem_mb=65000
+        mem_mb=75000
     shell: """
         kraken2 --db {KRAKEN_DB} --threads 8 --report-minimizer-data --report {output.report} --output >(gzip -c > {output.read_cls}) --paired {input.fastq1} {input.fastq2}
     """
@@ -187,6 +190,7 @@ rule bracken:
         report=temp(pj(KRAKEN, "{sample}.bracken_report.tsv")),
         species_report=temp(pj(KRAKEN, "{sample}.report_bracken_species.tsv"))
     resources:
+        time = get_time('bracken'),
         n="0.5",
         mem_mb="200"
     conda: CONDA_KRAKEN
@@ -206,6 +210,7 @@ rule kraken_summary:
         summary=temp(pj(KRAKEN, "{sample}.kraken_summary.tsv"))
     conda: CONDA_KRAKEN
     resources:
+        time = get_time('kraken_summary'),
         n="0.5",
         mem_mb=200
     params:

@@ -128,59 +128,17 @@ rule extract_and_tar_deepvariant_level2_wgs:
     params:
         samples=deepvariant_level2_wgs_samples,
         region=lambda wc: wc.region,
-        samplefile=lambda wc: wc.samplefile
+        samplefile=lambda wc: wc.samplefile,
+        interval=lambda wc: level2_interval(wc.region, wgs=True),
+        dataset="wgs"
+    conda:
+        CONDA_VCF
     resources:
+        time = get_time('extract_and_tar_deepvariant_level2_wgs'),
         mem_mb=4000,
         n="1.5"
-    run:
-        region = wildcards.region
-        samplefile = wildcards.samplefile
-        samples = params.samples
-        output_parent = Path(output.tar).parent
-        output_parent.mkdir(parents=True, exist_ok=True)
-        tmp_base = node_ssd_base()
-        if Path(tmp_base).resolve() == Path(tmpdir).resolve():
-            tmp_base = str(output_parent)
-        tmp_base_path = Path(tmp_base)
-        try:
-            tmp_base_path.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            tmp_base_path = output_parent
-        tmp_base = str(tmp_base_path)
-        ltmpdir = Path(tempfile.mkdtemp(prefix=f"dv_l2_{samplefile}_{region}_", dir=tmp_base))
-        try:
-            staged_paths = []
-            parent_level1 = level2_parent_level1(region)
-            interval = level2_interval(region, wgs=True)
-            for sample in samples:
-                source_path = Path(pj(DEEPVARIANT, "gVCF", parent_level1, f"{sample}.{parent_level1}.wg.vcf.gz"))
-                if not source_path.exists():
-                    raise FileNotFoundError(f"Source gVCF missing: {source_path}")
-                staged_gvcf = ltmpdir / f"{sample}.{region}.dv.wgs.g.vcf.gz"
-                staged_tbi = ltmpdir / f"{sample}.{region}.dv.wgs.g.vcf.gz.tbi"
-                shell(
-                    "bcftools view -R {interval:q} {source_path:q} -O z -o {staged_gvcf:q}"
-                )
-                shell(
-                    "bcftools index -f -t {staged_gvcf:q}"
-                )
-                if not staged_gvcf.exists() or not staged_tbi.exists():
-                    raise FileNotFoundError(f"Extraction failed for sample {sample} region {region}")
-                staged_paths.extend([staged_gvcf, staged_tbi])
-            if not staged_paths:
-                raise ValueError(f"No staged gVCFs for {samplefile} {region}")
-            with tarfile.open(output.tar, "w") as tar_handle:
-                for path in staged_paths:
-                    tar_handle.add(path, arcname=path.name)
-            with tarfile.open(output.tar, "r") as tar_handle:
-                members = tar_handle.getnames()
-            expected = [f"{sample}.{region}.dv.wgs.g.vcf.gz" for sample in samples]
-            expected += [f"{sample}.{region}.dv.wgs.g.vcf.gz.tbi" for sample in samples]
-            missing = sorted(set(expected) - set(members))
-            if missing:
-                raise ValueError(f"Tarball missing entries: {missing}")
-        finally:
-            shutil.rmtree(ltmpdir)
+    script:
+        "scripts/extract_and_tar_deepvariant_level2.py"
 
 
 rule extract_and_tar_deepvariant_level2_wes:
@@ -191,64 +149,17 @@ rule extract_and_tar_deepvariant_level2_wes:
     params:
         samples=deepvariant_level2_samples,
         region=lambda wc: wc.region,
-        samplefile=lambda wc: wc.samplefile
+        samplefile=lambda wc: wc.samplefile,
+        interval=lambda wc: level2_interval(wc.region, wgs=False),
+        dataset="wes"
+    conda:
+        CONDA_VCF
     resources:
+        time = get_time('extract_and_tar_deepvariant_level2_wes'),
         mem_mb=4000,
         n="1.5"
-    run:
-        region = wildcards.region
-        samplefile = wildcards.samplefile
-        samples = params.samples
-        output_parent = Path(output.tar).parent
-        output_parent.mkdir(parents=True, exist_ok=True)
-        tmp_base = node_ssd_base()
-        if Path(tmp_base).resolve() == Path(tmpdir).resolve():
-            tmp_base = str(output_parent)
-        tmp_base_path = Path(tmp_base)
-        try:
-            tmp_base_path.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            tmp_base_path = output_parent
-        tmp_base = str(tmp_base_path)
-        ltmpdir = Path(tempfile.mkdtemp(prefix=f"dv_l2_wes_{samplefile}_{region}_", dir=tmp_base))
-        try:
-            staged_paths = []
-            parent_level1 = level2_parent_level1(region)
-            interval = level2_interval(region, wgs=False)
-            for sample in samples:
-                sinfo = SAMPLEFILE_TO_SAMPLES[samplefile][sample]
-                if 'wgs' in sinfo['sample_type']:
-                    source_path = Path(pj(DEEPVARIANT, "gVCF", "exome_extract", parent_level1, f"{sample}.{parent_level1}.wg.vcf.gz"))
-                else:
-                    source_region = convert_to_level0(parent_level1)
-                    source_path = Path(pj(DEEPVARIANT, "gVCF", source_region, f"{sample}.{source_region}.wg.vcf.gz"))
-                if not source_path.exists():
-                    raise FileNotFoundError(f"Exome gVCF missing: {source_path}")
-                staged_gvcf = ltmpdir / f"{sample}.{region}.dv.wes.g.vcf.gz"
-                staged_tbi = ltmpdir / f"{sample}.{region}.dv.wes.g.vcf.gz.tbi"
-                shell(
-                    "bcftools view -R {interval:q} {source_path:q} -O z -o {staged_gvcf:q}"
-                )
-                shell(
-                    "bcftools index -f -t {staged_gvcf:q}"
-                )
-                if not staged_gvcf.exists() or not staged_tbi.exists():
-                    raise FileNotFoundError(f"Exome extraction failed for sample {sample} region {region}")
-                staged_paths.extend([staged_gvcf, staged_tbi])
-            if not staged_paths:
-                raise ValueError(f"No staged exome gVCFs for {samplefile} {region}")
-            with tarfile.open(output.tar, "w") as tar_handle:
-                for path in staged_paths:
-                    tar_handle.add(path, arcname=path.name)
-            with tarfile.open(output.tar, "r") as tar_handle:
-                members = tar_handle.getnames()
-            expected = [f"{sample}.{region}.dv.wes.g.vcf.gz" for sample in samples]
-            expected += [f"{sample}.{region}.dv.wes.g.vcf.gz.tbi" for sample in samples]
-            missing = sorted(set(expected) - set(members))
-            if missing:
-                raise ValueError(f"WES tarball missing entries: {missing}")
-        finally:
-            shutil.rmtree(ltmpdir)
+    script:
+        "scripts/extract_and_tar_deepvariant_level2.py"
 
 
 rule DeepVariant_all:
@@ -287,8 +198,10 @@ rule copy_deepvariant_wgs_region_to_dcache:
     params:
         ada_script=srcdir(ADA)
     resources:
+        time = get_time('copy_deepvariant_wgs_region_to_dcache'),
         mem_mb=2000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
@@ -307,8 +220,10 @@ rule copy_deepvariant_wes_region_to_dcache:
     params:
         ada_script=srcdir(ADA)
     resources:
+        time = get_time('copy_deepvariant_wes_region_to_dcache'),
         mem_mb=2000,
         n="0.1",
+        dcache_upload_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
@@ -323,14 +238,14 @@ rule deepvariant_tar_wgs_all:
     input:
         expand(pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar.copied"), samplefile=WGS_SAMPLEFILES, region=level2_regions)
     output:
-        done=temp(touch(pj(GVCF_TAR, "deepvariant_gvcf_wgs_uploads.done")))
+        done=touch(pj(GVCF_TAR, "deepvariant_gvcf_wgs_uploads.done"))
 
 
 rule deepvariant_tar_wes_all:
     input:
         expand(pj(GVCF_TAR, "deepvariant_level2_wes", "{samplefile}.{region}.dv.wes.gvcf.tar.copied"), samplefile=SAMPLE_FILES, region=level2_regions)
     output:
-        done=temp(touch(pj(GVCF_TAR, "deepvariant_gvcf_wes_uploads.done")))
+        done=touch(pj(GVCF_TAR, "deepvariant_gvcf_wes_uploads.done"))
 
 
 def get_deepvariant_files(wildcards):#{{{
@@ -560,8 +475,10 @@ rule DVWhatshapPhasingMerge:
         )
     log: pj(LOG, "Deepvariant", "{sample}.{region}.whatshap.log"),
     resources: 
+        time = get_time('DVWhatshapPhasingMerge'),
         n="1.0",
-        mem_mb = 1500
+        # Observed WGS phasing peaks at 5.8 GB; keep safe packing headroom.
+        mem_mb = 7000
     conda: CONDA_VCF
     shell: """
         mkdir -p `dirname {output.wstats}` `dirname {output.vcf}` `dirname {output.gvcf}`
@@ -680,7 +597,8 @@ if FUSE_DEEPVARIANT_PHASING:
             interval_bed=lambda wc: region_to_file(region=wc.region, extension='bed', padding=True),
             merge_script=srcdir(MERGEPHASEDIRECT),
             stats_parser=srcdir('scripts/deepvariant_bcftools_stats_parser.py'),
-            lease_mode=DEEPVARIANT_LEASE_MODE
+            lease_mode=DEEPVARIANT_LEASE_MODE,
+            lease_command=zslurm_lease_command(config)
         conda: CONDA_VCF
         resources:
             n="8",
@@ -729,6 +647,7 @@ if FUSE_DEEPVARIANT_PHASING:
                 --low-cores 1 \
                 --low-memory-mb 9000 \
                 --lease-mode {params.lease_mode:q} \
+                --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
                 2> {log.runner:q}
             """

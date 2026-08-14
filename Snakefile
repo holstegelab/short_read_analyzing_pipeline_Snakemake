@@ -133,9 +133,10 @@ if end_point == "gVCF":
                 lambda wc: finished_sample_inputs(wc, require_gvcf=True, require_deepvariant=True)
 
             output:
-                temp(pj(SOURCEDIR,"{sample}.finished"))
+                pj(SOURCEDIR,"{sample}.finished")
             resources:
-                active_use_remove=Aligner.calculate_active_use,
+                time = get_time('finished_sample'),
+                active_use_remove=active_release_finished,
                 mem_mb=50,
                 n="1"
             shell: """
@@ -161,9 +162,10 @@ if end_point == "gVCF":
             input:
                 lambda wc: finished_sample_inputs(wc, require_gvcf=True)
             output:
-                temp(os.path.join(SOURCEDIR, "{sample}.finished"))
+                os.path.join(SOURCEDIR, "{sample}.finished")
             resources:
-                active_use_remove=Aligner.calculate_active_use,
+                time = get_time('finished_sample'),
+                active_use_remove=active_release_finished,
                 mem_mb=50,
                 n="1"
             shell: """
@@ -189,9 +191,10 @@ if end_point == "gVCF":
             input:
                 lambda wc: finished_sample_inputs(wc, require_deepvariant=True)
             output:
-                temp(pj(SOURCEDIR,"{sample}.finished"))
+                pj(SOURCEDIR,"{sample}.finished")
             resources:
-                active_use_remove=Aligner.calculate_active_use,
+                time = get_time('finished_sample'),
+                active_use_remove=active_release_finished,
                 mem_mb=50,
                 n="1"
             shell: """
@@ -442,7 +445,12 @@ else:
 rule pipeline:
     input:
         END_RULE,
-        chrM_rule,
+        # For the gVCF endpoint END_RULE already contains the durable chrM
+        # upload marker (and each finished_sample contains chrM/{sample}.done).
+        # Pulling in chrM_analysis_all here as well reintroduced Aligner_all's
+        # temporary mapped CRAMs and loose chrM gVCFs after they had been
+        # uploaded and garbage-collected, causing a resume to rebuild samples.
+        [] if end_point == "gVCF" else chrM_rule,
         #SV_rule,
         #CNV_rule,
         # rules.Encrypt_all.input,
@@ -457,15 +465,76 @@ rule all:
 
 sample_names = SAMPLEINFO.keys()
 sample_pattern = "|".join(sample_names)
+
+onstart:
+    # Reclaim temp files that Snakemake's temp() GC leaves behind across a RESTART.
+    # A consuming job that already ran in a prior invocation is skipped on rerun, so
+    # its temp outputs are never collected and pile up on active storage. Two gates,
+    # each removing only files whose consumers are provably done, and NEVER touching
+    # the .started/.finished/.copied markers themselves. Wrapped so it can never abort.
+    import glob, os, shutil
+    def _rm(path):
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                os.remove(path)
+        except OSError:
+            pass
+    def _rm_all(paths):
+        c = 0
+        for p in paths:
+            if os.path.lexists(p):
+                _rm(p)
+                c += 1
+        return c
+    try:
+        n = 0
+        # (A) cram uploaded (.copied): the cram + its encrypted/index siblings are done
+        #     -- their only consumers (Encrypt_crams/copy_to_dcache) are past, and the
+        #     cram is NOT on the deepvariant/stats path (those read the bam). Safe even
+        #     while the sample is still in flight, so the big crams free early instead
+        #     of waiting for the whole sample to finish.
+        for cop in glob.glob(os.path.join(CRAM, "*.mapped_hg38.cram.copied")):
+            base = cop[:-len(".copied")]  # -> {sample}.mapped_hg38.cram
+            n += _rm_all((base, base + ".crai", base + ".c4gh"))
+        # (B) Per-sample .finished means the sample products exist, but cohort
+        #     aggregation may still consume loose statistics and gVCFs. Keep the
+        #     staged source/FASTQ/BAM recovery path intact until the durable
+        #     pipeline-wide marker proves that aggregation and uploads completed.
+        finished = glob.glob(os.path.join(SOURCEDIR, "*.finished"))
+        if os.path.exists("pipeline.done"):
+            for fin in finished:
+                s = os.path.basename(fin)[:-len(".finished")]
+                se = glob.escape(s)
+                paths = [os.path.join(SOURCEDIR, s + ".data"),
+                         os.path.join(SOURCEDIR, s + ".dcache_data")]
+                for pat in (os.path.join(FQ, se + ".*.fq.gz"),
+                            os.path.join(FQ_BADMAP, se + ".badmap.*.fastq.gz"),
+                            os.path.join(BAM, se + ".*.bam"),
+                            os.path.join(BAM, se + ".*.bam.bai")):
+                    paths.extend(glob.glob(pat))
+                n += _rm_all(paths)
+        elif finished:
+            print("[onstart] preserving intermediates for %d finished sample(s): "
+                  "pipeline.done is absent" % len(finished))
+        if n:
+            print("[onstart] reclaimed %d orphaned temp file(s)/dir(s)" % n)
+    except Exception:
+        pass
+
 onsuccess: shell(# "rm -f zslurm-*"
                  # "rm -rf logs"
                  "rm -rf tmp")
 onerror:
             shell("""
             sample_pattern="{sample_pattern}"
-            grep 'Error in rule' zslurm_logs/* | awk '{{print $1 "\t" $4}}' | awk -F"[/:]" '{{print$1 "\t" $2}}' | awk '{{print$1 "\t" $3}}'>> error_rules.txt
-            grep -A 2 'Error in rule' zslurm_logs/* | grep 'input' | awk -F[,] '{{print$1}}' | grep -E -o '{sample_pattern}' >> error_samples.txt
-            paste error_rules.txt error_samples.txt > error.log
+            # Error reporting must never mask the workflow's original failure.
+            # In particular, grep exits with 1 when a valid search has no
+            # matches; with Snakemake's pipefail setting that previously made
+            # this onerror hook fail as a second, misleading exception.
+            rm -f error_rules.txt error_samples.txt error.log
+            {{ grep -r 'Error in rule' zslurm_logs/ | awk '{{print $1 "\t" $4}}' | awk -F"[/:]" '{{print$1 "\t" $2}}' | awk '{{print$1 "\t" $3}}' || true; }} > error_rules.txt
+            {{ grep -r -A 2 'Error in rule' zslurm_logs/ | grep 'input' | awk -F[,] '{{print$1}}' | grep -E -o "$sample_pattern" || true; }} > error_samples.txt
+            paste error_rules.txt error_samples.txt > error.log || true
             """)
-
-

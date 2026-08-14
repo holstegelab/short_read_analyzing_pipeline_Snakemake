@@ -5,6 +5,10 @@ import os
 import math
 import zlib
 import time
+import subprocess
+import sys
+import tempfile
+import shutil
 from shlex import quote
 
 from constants import *
@@ -12,6 +16,83 @@ from read_samples import *
 from pathlib import Path
 import functools
 from snakemake.shell import shell
+
+
+def zslurm_lease_command(workflow_config):
+    """Return the pipeline-local ZSlurm lease client by default.
+
+    Fused rules activate different Conda environments, so relying on whichever
+    ``zslurm_lease`` happens to be on the submit host's PATH is not portable.
+    Keep the client with the workflow and pass that shared absolute path into
+    every fused runner. An explicit config/environment override remains
+    available for development and protocol compatibility tests.
+    """
+    pipeline_default = (
+        Path(__file__).resolve().parent / 'scripts' / 'zslurm_lease_client.py'
+    )
+    configured = workflow_config.get(
+        'zslurm_lease_command',
+        os.environ.get('ZSLURM_LEASE_COMMAND', str(pipeline_default)),
+    )
+    configured = os.path.expanduser(str(configured))
+    if os.sep in configured and not os.path.isabs(configured):
+        configured = str(Path(__file__).resolve().parent / configured)
+    resolved = (
+        configured
+        if os.sep in configured
+        else shutil.which(configured)
+    )
+    if resolved and os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+        return os.path.realpath(resolved)
+    return configured
+
+
+# --- Active-storage reservation: shared helper + staged release --------------
+# active_use_gb() reserves the input+bam PEAK at start_sample and is the shared basis
+# for the staged RELEASE of the reservation, and lives here in common so every module
+# (Aligner markdup, Encrypt copy_to_dcache, Snakefile finished_sample) can reach it.
+#
+# The peak collapses in stages, so we hand the reservation back in stages instead of
+# holding the full peak until finished_sample:
+#   * markdup done  -> fastqs + intermediate bams gone (only markdup.bam remains)
+#   * cram uploaded -> mapped_hg38.cram gone
+#   * finished      -> markdup.bam gone (deepvariant/stats/whatshap/chrM done)
+# Fractions are deliberately CONSERVATIVE: releasing too much risks a real active
+# disk overflow; releasing too little only over-reserves (safe). Tune here. They MUST
+# sum to <= 1.0; a sample must traverse markdup + copy_to_dcache for the per-sample
+# add/remove to balance exactly (partial paths only ever under-release = safe).
+ACTIVE_RELEASE_FRAC_MARKDUP = 0.30
+ACTIVE_RELEASE_FRAC_UPLOAD = 0.15
+
+def active_use_gb(wildcards):
+    """Reserve source-input lifecycle plus the estimated processing peak."""
+    sample = SAMPLEINFO[wildcards['sample']]
+    filesize = sample['filesize']
+    capture_kit = sample['capture_kit']
+    active_filesize = 2.0 * filesize if 'cram' in sample['file_type'] else filesize
+    # Every route owns the input bytes for its whole sample lifecycle.  For an
+    # external route these bytes are materialized here; for an active route
+    # they already exist but must still be included so staged releases balance
+    # the reservation and the scheduler sees the real active-storage pressure.
+    res = filesize
+    if capture_kit == 'WGS38_to_exome' or capture_kit == 'WGS37_to_exome':
+        res += 2.0 * active_filesize * 0.15
+    else:
+        res += 2.0 * active_filesize
+    return res
+
+def active_release_markdup(wildcards):
+    """Release the fastq + intermediate-bam share of the reservation at markdup."""
+    return ACTIVE_RELEASE_FRAC_MARKDUP * active_use_gb(wildcards)
+
+def active_release_upload(wildcards):
+    """Release the cram share of the reservation once the cram has been uploaded."""
+    return ACTIVE_RELEASE_FRAC_UPLOAD * active_use_gb(wildcards)
+
+def active_release_finished(wildcards):
+    """Release the remainder (markdup.bam share) at finished_sample."""
+    return max(0.0, 1.0 - ACTIVE_RELEASE_FRAC_MARKDUP - ACTIVE_RELEASE_FRAC_UPLOAD) * active_use_gb(wildcards)
+
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 main_chrs = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -501,7 +582,79 @@ def remote_base_for_samplefile(samplefile):
     return remote_base_for_sample(samples[0])
 
 
+def _dcache_endpoint(value):
+    endpoint = parse_dcache_uri(value)
+    if endpoint is None:
+        return None
+    remote, path = endpoint
+    config_path = DCACHE_CONFIGS.get(remote)
+    if not config_path:
+        raise FileNotFoundError(
+            f"No macaroon config registered for dCache remote {remote!r}; "
+            "put <remote>.conf next to the sample listing"
+        )
+    return remote, path, config_path
+
+
+def copy_from_dcache_uri(remote_uri, local_path, *, no_stage=False):
+    """Download one dCache URI directly with checksum verification."""
+    endpoint = _dcache_endpoint(remote_uri)
+    if endpoint is None:
+        raise ValueError(f"Not a dCache URI: {remote_uri!r}")
+    remote, remote_path, config_path = endpoint
+    local_path = os.path.abspath(str(local_path))
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    fd, file_list = tempfile.mkstemp(prefix=".dcache-download-", suffix=".tsv", dir=os.path.dirname(local_path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{remote_path}\t{local_path}\n")
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "scripts" / "dcache_transfer.py"),
+            "download",
+            "--config",
+            str(config_path),
+            "--remote",
+            str(remote),
+            "--file-list",
+            file_list,
+            "--workers",
+            "1",
+        ]
+        if no_stage:
+            cmd.append("--no-stage")
+        subprocess.run(cmd, check=True)
+    finally:
+        try:
+            os.unlink(file_list)
+        except FileNotFoundError:
+            pass
+
+
 def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, config_path, ada_script, remote_profile='agh_processed'):
+    endpoint = _dcache_endpoint(remote_dir)
+    if endpoint is not None:
+        remote, bare_remote_dir, endpoint_config = endpoint
+        remote_file = os.path.join(bare_remote_dir, remote_name)
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "scripts" / "dcache_transfer.py"),
+            "upload",
+            "--config",
+            str(endpoint_config),
+            "--remote",
+            str(remote),
+            "--source",
+            str(local_path),
+            "--destination",
+            remote_file,
+            "--checksum-output",
+            str(checksum_path),
+        ]
+        subprocess.run(cmd, check=True)
+        return
+
     adler_local = 1
     with open(local_path, 'rb') as fhandle:
         for chunk in iter(lambda: fhandle.read(16 * 1024 * 1024), b''):

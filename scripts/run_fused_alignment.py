@@ -172,13 +172,47 @@ def shrink_lease(
         "set", "--cores", str(cores), "--mem-mb", str(memory_mb), "--wait", "0",
     ]
     last_error: Exception | None = None
-    for _ in range(2):
+    last_response: dict[str, Any] | None = None
+    # zslurm_chief samples live PSS every five seconds by default. Cover at
+    # least two fresh samples so a just-exited high-memory phase cannot leave
+    # the job at its maximum reservation for the entire low-memory tail.
+    attempts = 11
+    for attempt in range(1, attempts + 1):
         try:
             response = _lease_request(str(lease["command"]), arguments)
-            lease["shrink"] = {"performed": True, "response": response}
-            return lease
+            last_response = response
+            target_reached = (
+                float(response["held_cores"]) <= float(cores) + 1e-6
+                and float(response["held_mem_mb"]) <= float(memory_mb) + 1e-6
+            )
+            if target_reached:
+                lease["shrink"] = {
+                    "performed": True,
+                    "target_reached": True,
+                    "attempts": attempt,
+                    "response": response,
+                }
+                return lease
+            last_error = LeaseError(
+                "lease safety floor retained "
+                f"{response['held_cores']} cores and {response['held_mem_mb']} MB"
+            )
         except Exception as exc:
             last_error = exc
+        if attempt < attempts:
+            # A completed high-memory subprocess can remain briefly visible in
+            # the chief's process-tree sample. Retry the idempotent absolute
+            # target after that observation has had time to settle.
+            time.sleep(1.0)
+    if last_response is not None:
+        lease["shrink"] = {
+            "performed": True,
+            "target_reached": False,
+            "attempts": attempts,
+            "response": last_response,
+            "reason": str(last_error),
+        }
+        return lease
     try:
         status = _lease_request(str(lease["command"]), ["status"])
     except Exception:
@@ -189,6 +223,8 @@ def shrink_lease(
     ):
         lease["shrink"] = {
             "performed": True,
+            "target_reached": True,
+            "attempts": attempts,
             "response": status,
             "verified_after_lost_reply": True,
         }

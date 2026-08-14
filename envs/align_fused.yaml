@@ -9,5 +9,3 @@ dependencies:
   - htslib=1.17
   - python=3.12
   - setuptools
-  - pkg-config
-  - c-compiler

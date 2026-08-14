@@ -4,6 +4,8 @@ use-conda: True
 use-singularity: True
 conda-prefix: /home/hulsmanm/.snakemake
 apptainer-prefix: /home/hulsmanm/.apptainer
+# Any container rule that uses this bind must set ssd_use="required", so zslurm
+# cannot place it on an engine without /scratch-node.
 singularity-args: "-B /scratch-node:/scratch-node"
 executor: zslurm
 default-resources:

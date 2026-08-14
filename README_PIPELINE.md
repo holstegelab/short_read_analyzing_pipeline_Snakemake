@@ -1,0 +1,115 @@
+# Pipeline Overview
+
+## Scope
+
+This document summarizes the short read Snakemake pipeline, focusing on per-sample processing, statistics packaging, current archival behaviour, and the path toward region-level tarball uploads of gVCFs and exome subsets.
+
+## Per-sample flow (WGS and WES)
+
+1. **Staging and space reservation** (`Aligner.smk`)
+   - `start_sample` reserves active storage; retrieves data if stored on tape/dCache using `archive_to_active` or `dcache_to_active` indicator files (`get_source_files`).
+   - `get_readgroups` checkpoint populates `SAMPLEINFO` read group metadata when missing.
+   - A `dcache:<remote>:/path` `.source` is staged as a stable batch directly from Snellius. `dcache_to_active` then uses `dcache_cp` to Adler-32-verify each sample before readgroup inspection, while the existing `archive:` path remains unchanged.
+
+2. **Optional readgroup split & FASTQ preparation**
+   - `split_alignments_by_readgroup` splits multi-RG BAM/CRAMs.
+   - `external_alignments_to_fastq` or `{sample}.{readgroup}.fastq.cut_*.fq.gz` produced via `adapter_removal` + `adapter_removal_identify` (`Aligner.smk`).
+
+3. **Alignment and merge**
+   - `align_reads` runs Dragmap per readgroup; `merge_bam_alignment`, `dechimer`, `sort_bam_alignment`, `check_rg_bam`, `merge_rgs` consolidate across readgroups.
+
+4. **QC, contamination, duplicates**
+   - `merge_rgs_badmap` for contamination FASTQs.
+   - `markdup`, `mCRAM` finalize BAM→CRAM conversion (`CRAM/{sample}.mapped_hg38.cram`).
+   - `get_validated_sex`, `verifybamid`, `hs_stats`, `Artifact_stats`, `samtools_stat*`, `bamstats_*`, `coverage`, `gatherstats` family generate QC artefacts in `stat/` and samplefile-level tabs.
+
+5. **gVCF generation**
+   - `HaplotypeCaller` produces region-split gVCFs; `reblock_gvcf` compresses blocks. For DeepVariant, equivalent pipeline in `Deepvariant.smk` culminating in `DVWhatshapPhasingMerge`.
+   - `extract_exomes_gvcf` (Snakemake rule in `gVCF.smk`) produces WES subset for WGS samples via `SelectVariants`; WES samples bypass extraction (`cp`).
+   - `gvcf_sample_done` marks completion once all region files exist (level 1 for WGS, level 0 for WES).
+
+6. **Finishing and archival**
+   - `stat_sample_done` creates `{sample}.done` sentinel used by `Snakefile::finished_sample` and `tar_stats_per_sample`.
+   - `tar_stats_per_sample` packages per-sample QC into `stat/{sample}.stats.tar.gz`, currently using `tar --remove-files` to delete inputs.
+   - `Encrypt_crams` and `copy_to_dcache` encrypt and upload CRAM/CRAI to dCache, marking `{sample}.mapped_hg38.cram.copied`.
+   - If the cohort has a `dcache:<remote>:/path` `.target`, all processed-data upload helpers use that remote/config directly from Snellius and retain the established `cram/`, `stat/`, `kraken/`, `gvcf/`, and `chrM/` layout below the target root.
+   - `Snakefile::finished_sample` touches `{SOURCEDIR}/{sample}.finished` after CRAM copy, gVCF done, stats done, Kraken output ready.
+- `{sample}.done` (from `Stat.smk::stat_sample_done`) only asserts statistics availability; `{sample}.finished` is the global completion marker consumed by `Snakefile::finished_sample` to release active-storage reservations.
+
+## Statistics packaging dependencies
+
+- **Per-sample QC artefacts only** `Stat.smk::tar_stats_per_sample` now takes explicit per-sample inputs (`{sample}.hs_metrics`, `{sample}.samtools.stat`, `{sample}.bam_all.tsv`, `{sample}.markdup.stat`, etc.) plus readgroup logs enumerated via `get_rg_files`. Cohort-wide tables (`{samplefile}.*.tab`/`.hdf5`) are no longer listed as inputs.
+- **Temp outputs at source** The producing rules (`hs_stats`, `samtools_stat`, `Artifact_stats`, `bamstats_all`, `verifybamid`, `coverage`) now emit their main artefacts as `temp(...)`. Snakemake keeps them until `tar_stats_per_sample` (and other consumers) finish, then cleans them automatically.
+- **Sample readiness** `tar_stats_per_sample` still depends on `{sample}.done` via `stat_sample_done`, and `Snakefile::finished_sample` uses the same sentinel chain to ensure CRAM, gVCF, stats, and Kraken outputs complete before marking `{sample}.finished`.
+
+## Artefacts and persistence
+
+Persistent by default:
+- `CRAM/{sample}.mapped_hg38.cram` + `.crai` (until encrypted copy step finishes).
+- `CRAM/{sample}.mapped_hg38.cram.c4gh`, `.copied`, `.ADLER32` (post-upload verification).
+- `stat/{sample}.stats.tar.gz` (but original inputs removed; consider `temp()` refactor).
+- Cohort files: `{samplefile}.bam_quality.tab`, `{samplefile}.bam_rg_quality.tab`, `{samplefile}.oxo_quality.tab`, `{samplefile}.coverage.hdf5`, `{samplefile}.sex_chrom.tab`.
+- gVCF outputs: `gVCF/reblock/{region}/{sample}.{region}.wg.vcf.gz` (WES, or WGS before exome extraction), `gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz` (WGS exome slices), `Deepvariant/gVCF/...` equivalents when DeepVariant active.
+- `SOURCEDIR/{sample}.finished` sentinel, plus Kraken deliverables.
+
+Temporary/auto-cleaned (many declared with `temp()` or candidates):
+- Intermediate FASTQs (`FQ/`, `FQ_BADMAP/`), raw HaplotypeCaller outputs (`gVCF/raw/...`), DragSTR models, aligner temp outputs, etc.
+- `stat/{sample}.done` is `temp(touch(...))` and removed after downstream completion.
+
+## `extract_exomes` behaviour (WGS vs WES)
+
+- Rule `extract_exomes_gvcf` (in `gVCF.smk`) operates per `{sample, region}`.
+  - For WGS (`"wgs" in SAMPLEINFO[sample]['sample_type']`), runs GATK `SelectVariants -L {region_to_file(... interval_list)} -ip 500` to clip the reblocked gVCF to exome capture bins, generate `gVCF/exome_extract/{region}/...`.
+  - For WES samples, simply copies reblocked gVCF to exome_extract path, because it already contains only exome intervals.
+- `Deepvariant.smk::extract_exomes_dv` mirrors behaviour on `DEEPVARIANT/gVCF/...` outputs using `DVWhatshapPhasingMerge` as source; handles sex-based skipping (`skipsex`).
+
+## WGS region-level handling today
+
+- Regions defined in `common.py` via `level0_range`, `level1_range`, etc.; `level1_regions` (~10 autosomal chunks + X/Y haploid splits) used for per-sample gVCF outputs.
+- `Combine_gVCF.smk::combinegvcfs` merges per-region sample gVCFs into cohort-level `GVCF/MERGED/{samplefile}.{region}.wg.vcf.gz` using WGS interval (`region_to_file(..., wgs=True)`), dropping to level0 for WES samples.
+- `DBImport.smk`/`GLnexus.smk` `generate_gvcf_input_*` functions map WGS vs WES to appropriate region granularity (e.g., `convert_to_level1` for WGS, `convert_to_level0` for WES) when building GenomicsDB or GLnexus inputs.
+
+## Path to region-level tarballs (future work)
+
+Target: after per-region gVCF (and exome subset) generation across cohort, create tar archives grouped by region, suitable for dCache upload.
+
+### Current assets
+- Region definitions (`level1_regions`, `level2_regions`, etc.) already used for per-sample gVCFs.
+- Per-sample gVCFs live under `GVCF/reblock/{region}/{sample}.{region}.wg.vcf.gz` (and DeepVariant equivalents). These are the files to tar together, grouped by region at level2, with padded interval lists already baked into the upstream calling rules.
+
+### Required steps
+
+1. **Decide archive granularity**
+   - Whole-genome gVCFs: tar per-sample level2 region files from `GVCF/reblock/{region}/` so each archive contains all samples for a region (gVCF + `.tbi`) using the padded bins already used upstream.
+   - Exome gVCFs: use `GVCF/exome_extract/{region}/` for WGS-derived exomes plus `convert_to_level0` mapping for WES samples; DeepVariant equivalents sit under `Deepvariant/gVCF/...`.
+
+2. **Snakemake rule additions**
+   - New rule `tar_gvcf_region` iterating over `level1_regions` (or chosen level) to collect all `{sample}.{region}.wg.vcf.gz` plus indexes, output `GVCF/regions/{region}.gvcf.tar.gz`. Use Snakemake `expand()` to include WES copies (converted via `convert_to_level0` or `convert_to_level1` as needed).
+   - Equivalent rule for exome subset e.g., `GVCF/exome_regions/{region}.gvcf.tar.gz` drawing from `gVCF/exome_extract/` (WGS) plus `gVCF/reblock/` for WES (converted region names).
+   - Consider per-samplefile vs global dataset grouping; align with `Combine_gVCF.smk` naming for cohort-scope vs sample-scope deliverables.
+
+3. **Dependency wiring**
+   - Ensure tar rule inputs include combined stats or `gvcf_sample_done` to guarantee all sample-level gVCFs are ready. Example: `input: expand(pj(GVCF, "exome_extract", region, f"{sample}.{region}.wg.vcf.gz"), sample=sample_names)`.
+   - For exome tar, ensure WES sample region mapping uses `convert_to_level0` to find correct file names.
+
+4. **Use `temp()` to manage storage**
+   - Keep original gVCFs persistent until remote transfer verified; mark derived tars as final deliverables. Optionally mark per-sample gVCFs as `temp()` once tar + upload succeed to reclaim space.
+
+5. **Upload automation**
+   - Mirror `Encrypt.smk::copy_to_dcache` logic: new module/rules to upload region tarballs and exome tarballs. Implement checksum verification before touching `.copied` sentinel (e.g., `GVCF/{region}.tar.copied`).
+   - Add configuration toggles for enabling gVCF/exome uploads.
+
+6. **Update combined workflows**
+   - `Snakefile` `END_RULE`/`CLEAN_RULE` should include new targets so `snakemake --cleanup-metadata` removes adhesives, and `END_POINT` gating ensures full DAG.
+
+## Open questions / next actions
+- Confirm desired grouping (per-cohort vs per-sample) for region tarballs to size outputs appropriately.
+- Audit which upstream rules need `temp()` adjustments (e.g. `Stat.smk::stat_sample_done` inputs) before removing `--remove-files` in tar steps.
+- Extend config schema with toggles for gVCF/exome tar creation and dCache uploads, mirroring existing CRAM encryption settings.
+
+## TODO for implementation
+- Define target file list for region tar (per-sample vs per-cohort). The current per-sample structure suggests tar-by-region across samples to support distributed retrieval.
+- Implement Snakemake rules for tar creation and optional upload, ensuring they respect sex-specific region omissions (skip Y/H for female). Leverage existing `generate_gvcf_input_*` functions as reference for mapping sample types to region splits.
+- Review chunking level: Level1 (10 autosomal + X/Y) may suit tar size; Level2 (100 autosomal partitions) yields smaller files but more tars.
+- Evaluate concurrency impact on disk usage; ensure new tar rules declare resources to avoid oversubscription.
+- Adjust `Stat.smk::tar_stats_per_sample` to drop `--remove-files` and mark upstream outputs `temp()` for consistent behaviour (optional but recommended for clarity).

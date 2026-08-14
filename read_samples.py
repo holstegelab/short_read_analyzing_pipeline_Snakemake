@@ -19,6 +19,55 @@ from collections import OrderedDict
 
 
 PROTOCOLS = ['archive','dcache']
+DCACHE_CONFIGS = {}
+
+
+def parse_dcache_uri(value):
+    """Parse ``dcache:<remote>:/path`` into ``(remote, /path)``.
+
+    The legacy ``dcache://path`` form remains supported and selects the
+    ``dcache`` remote/config profile.
+    """
+    value = str(value).strip()
+    if not value.startswith('dcache:'):
+        return None
+
+    payload = value[len('dcache:'):]
+    if ':' in payload:
+        remote, path = payload.split(':', 1)
+    else:
+        remote, path = 'dcache', payload
+
+    remote = remote.strip()
+    if not remote or any(ch not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-' for ch in remote):
+        raise ValueError(f'Invalid dCache remote in URI: {value!r}')
+
+    path = '/' + path.lstrip('/')
+    if any(part == '..' for part in path.split('/')):
+        raise ValueError(f'dCache URI escapes its root: {value!r}')
+    return remote, path
+
+
+def resolve_dcache_config(remote, samplefile_dir):
+    """Resolve ``<remote>.conf`` without exposing credential contents."""
+    candidates = [
+        os.path.join(samplefile_dir, remote + '.conf'),
+        os.path.expanduser(os.path.join('~/macaroons', remote + '.conf')),
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            resolved = os.path.realpath(candidate)
+            DCACHE_CONFIGS[remote] = resolved
+            return resolved
+    raise FileNotFoundError(
+        f"No macaroon config found for dCache remote {remote!r}; checked: "
+        + ', '.join(candidates)
+    )
+
+
+def register_dcache_config(remote, config_path):
+    if remote and config_path:
+        DCACHE_CONFIGS[str(remote)] = os.path.realpath(str(config_path))
 
 
 def _env_is_true(var_name):
@@ -233,22 +282,41 @@ def read_samplefile(filename, prefixpath=None):
     filename = os.path.realpath(filename)
     #TODO: add check for uniq sample names
 
-    basename = os.path.splitext(filename)[0] 
+    basename = os.path.splitext(filename)[0]
+    samplefile_dir = os.path.dirname(filename)
+    source_remote = None
+    source_root = None
+    source_config = None
     if os.path.exists(basename + '.source'):
         with open(basename + '.source','r') as fsource:
             prefixpath = fsource.readline().strip()
-        print(f'SOURCE PATH OVERRIDE: by {basename}.source file to {prefixpath}')            
+        if not prefixpath:
+            raise ValueError(f'Empty source sidecar: {basename}.source')
+        source_endpoint = parse_dcache_uri(prefixpath)
+        if source_endpoint:
+            source_remote, source_root = source_endpoint
+            source_config = resolve_dcache_config(source_remote, samplefile_dir)
+        print(f'SOURCE PATH OVERRIDE: by {basename}.source file to {prefixpath}')
 
     if not prefixpath:
         prefixpath = os.path.dirname(filename)
 
+    target_remote = None
+    target_root = None
+    target_config = None
     if os.path.exists(basename + '.target'):
         with open(basename + '.target','r') as ftarget:
             targetpath = ftarget.readline().strip()
-        print(f'TARGET PATH set to {targetpath}') 
+        if not targetpath:
+            raise ValueError(f'Empty target sidecar: {basename}.target')
+        target_endpoint = parse_dcache_uri(targetpath)
+        if target_endpoint:
+            target_remote, target_root = target_endpoint
+            target_config = resolve_dcache_config(target_remote, samplefile_dir)
+        print(f'TARGET PATH set to {targetpath}')
     else:
         targetpath = None
-        print(f'TARGET PATH not set (no .target file)') 
+        print(f'TARGET PATH not set (no .target file)')
 
 
     samples = []
@@ -275,7 +343,11 @@ def read_samplefile(filename, prefixpath=None):
                 sample_config = {}
             else:
                 study, sample_id, file_type, sample_type, capture_kit, sex, filenames1, filenames2, sample_config = row
-                sample_config = dict([tuple(e.split('=')) for e in sample_config.split(',')])
+                sample_config = dict(
+                    entry.split('=', 1)
+                    for entry in sample_config.split(',')
+                    if entry.strip()
+                )
 
             warning(sample_id.startswith(study),
                     'Sample id needs to start with study name to prevent sample name conflicts for ' + sample_id)
@@ -299,9 +371,23 @@ def read_samplefile(filename, prefixpath=None):
                     warning(capture_kit == '' or capture_kit.startswith('WGS'),
                             'Capture kit is not empty or WGS for a' + sample_type + ' sample')
                     filesize = 75.0 * base_filesize_factor
+            else:
+                try:
+                    filesize = float(filesize)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Invalid filesize for sample {sample_id}: {filesize!r}; "
+                        "expected GiB as a number"
+                    ) from exc
 
             filenames1 = [a.strip() for a in filenames1.split(',') if a.strip() != '']
             filenames2 = [a.strip() for a in filenames2.split(',') if a.strip() != '']
+            if source_remote:
+                # A leading slash in a sample listing denotes the root of the
+                # selected dCache remote, not the local filesystem root.
+                filenames1 = [a.lstrip('/') for a in filenames1]
+                if 'cram' not in file_type:
+                    filenames2 = [a.lstrip('/') for a in filenames2]
             cpref = os.path.splitext(os.path.commonprefix([os.path.basename(e) for e in (filenames1 + filenames2)]))[0].strip('_')
             if len(cpref) > 8:
                 alternative_names.add(cpref)
@@ -334,11 +420,17 @@ def read_samplefile(filename, prefixpath=None):
 
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
                     'target':targetpath,
+                   'source_remote': source_remote, 'source_root': source_root, 'source_config': source_config,
+                   'target_remote': target_remote, 'target_root': target_root, 'target_config': target_config,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
                    'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 
                    'no_dedup':str(sample_config.get('no_dedup','0')).lower() in ('1','true','yes','y','on'), 
                    'remove_duplicated_reads': str(sample_config.get('remove_duplicated_reads','0')).lower() in ('1','true','yes','y','on'),
                    'erf_correct': str(sample_config.get('erf_correct','0')).lower() in ('1','true','yes','y','on'),
+                   # Opt in per sample/listing. Reference-independent output is
+                   # appropriate for unaligned CRAMs, but should not silently
+                   # disable reference compression for other CRAM workflows.
+                   'cram_no_ref': str(sample_config.get('cram_no_ref','0')).lower() in ('1','true','yes','y','on'),
                    'cram_refs':cram_refs}
                 
             all_files = [append_prefix(prefixpath,f) for f in itertools.chain(filenames1,filenames2)] 
@@ -398,6 +490,8 @@ def check(warnings, condition, message):
 
 def append_prefix(prefix, filename):
     """Appends a prefix to a filename if it is not an absolute path"""
+    if any(str(prefix).startswith(protocol + ':') for protocol in PROTOCOLS):
+        return str(prefix).rstrip('/') + '/' + str(filename).lstrip('/')
     if not os.path.isabs(filename):
         return os.path.join(prefix, filename)
     else:
@@ -753,6 +847,9 @@ def samplefile(sfilename):
             regenerate_dat = dat_mtime < os.path.getmtime(sfilename)
             if not regenerate_dat and os.path.isfile(exclude_filename):
                 regenerate_dat = dat_mtime < os.path.getmtime(exclude_filename)
+            for sidecar in (real_samplefile[:-4] + '.source', real_samplefile[:-4] + '.target'):
+                if not regenerate_dat and os.path.isfile(sidecar):
+                    regenerate_dat = dat_mtime < os.path.getmtime(sidecar)
 
         if regenerate_dat:
             if not os.path.isfile(sfilename):
@@ -763,6 +860,10 @@ def samplefile(sfilename):
             utils.save(sampleinfodict,datfilename)
         else:
             sampleinfodict = utils.load(datfilename)
+
+        for info in sampleinfodict.values():
+            register_dcache_config(info.get('source_remote'), info.get('source_config'))
+            register_dcache_config(info.get('target_remote'), info.get('target_config'))
 
         SAMPLEFILE_TO_ALL_SAMPLES[basename] = sampleinfodict
         exclusions = load_sample_exclusions(exclude_filename)
@@ -830,8 +931,9 @@ def load_samplefiles(filedir, cache):
 
                         archive_retrieved = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.archive_retrieved'))
                         dcache_retrieved = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.dcache_retrieved'))
+                        route_ready = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.route_ready'))
 
-                        if (archive_retrieved or dcache_retrieved) or \
+                        if (route_ready or archive_retrieved or dcache_retrieved) or \
                             os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.finished')):
                             info['need_retrieval'] = False
                             filesize=0

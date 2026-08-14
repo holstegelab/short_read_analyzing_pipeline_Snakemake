@@ -426,15 +426,12 @@ static PyObject *py_fastq_stats(PyObject *self, PyObject *args) {
             }
         } else {
             c1_qual ^= hash_qual_line_with_shift_seqaware(q1, s1, rq1, qual_shift);
+            c2_qual ^= hash_qual_line_with_shift_seqaware(q2, s2, rq2, qual_shift);
         }
 
         uint64_t hseq2 = fnv1a64_init();
         hseq2 = fnv1a64_update(hseq2, s2, (size_t)rs2);
         c2_seq ^= hseq2;
-
-        if (qual_shift_determined) {
-            c2_qual ^= hash_qual_line_with_shift_seqaware(q2, s2, rq2, qual_shift);
-        }
 
         nbases1 += (long long)rs1;
         nbases2 += (long long)rs2;

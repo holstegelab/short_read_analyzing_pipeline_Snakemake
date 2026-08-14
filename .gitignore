@@ -11,3 +11,27 @@ token_git
 zslurm*.out
 slurm-*.out
 *.token
+
+# Local Snakemake, editor, Python, and native-build artefacts.
+.snakemake/
+.vscode/
+__pycache__/
+*.py[cod]
+*.so
+*.swp
+scripts/build/
+scripts/bam_dechimer
+scripts/bam_merge
+scripts/fix_bam_rg_pairs
+scripts/*.bak.*
+
+# Local diagnostic/run outputs kept in the worktree, not workflow sources.
+/NL_DemenTree_phase1.A73.dv.wgs.gvcf.tar
+/example.bcftools_sections/
+/example.bcftools_stats.summary.tsv
+/example.bcftools_stats.txt
+/example.enhanced.summary.tsv
+/test
+/test.bed
+/todo.txt
+/envs/preprocess.post-deploy.sh.DISABLE

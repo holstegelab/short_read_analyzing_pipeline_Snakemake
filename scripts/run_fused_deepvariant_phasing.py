@@ -192,6 +192,10 @@ def main() -> int:
             )
             dv_body = (
                 "set -euo pipefail\n"
+                # DeepVariant 1.9 logs its complete child environment.  The
+                # lease credentials are only needed by this parent runner,
+                # after DeepVariant exits, so do not expose them in that log.
+                "unset ZSLURM_LEASE_TOKEN ZSLURM_LEASE_SOCKET\n"
                 "export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1\n"
                 f"export TF_NUM_INTRAOP_THREADS={args.num_shards} TF_NUM_INTEROP_THREADS={args.num_shards}\n"
                 f"{q(deepvariant)} "

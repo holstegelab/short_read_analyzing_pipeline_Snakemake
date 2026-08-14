@@ -66,10 +66,10 @@ def deepvariant_remote_tar_path(samplefile, region, tar_kind):
 
 
 def deepvariant_remote_tar_target(samplefile, region, tar_kind):
-    return os.path.join(
-        dcache_read_prefix.rstrip("/"),
-        deepvariant_remote_tar_path(samplefile, region, tar_kind)
-    )
+    remote_path = deepvariant_remote_tar_path(samplefile, region, tar_kind)
+    if parse_dcache_uri(remote_path):
+        return remote_path
+    return os.path.join(dcache_read_prefix.rstrip("/"), remote_path)
 
 
 def deepvariant_tar_member_name(sample, region, tar_kind):
@@ -237,7 +237,9 @@ rule glnexus_HC:
     resources:
         n = "64",
         mem_mb = 160000,
-        active_use_add= 100
+        active_use_add= 100,
+        ssd_use="required",
+        ssd_gb=100
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_HC")
         cmds = [run_bcftools_HC(i, params.bed, wildcards.region) for i in input]
@@ -275,13 +277,17 @@ rule fetch_deepvariant_tar_from_dcache:
     resources:
         mem_mb=2000,
         n="0.2",
+        dcache_download_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
     run:
         os.makedirs(os.path.dirname(output.tar), exist_ok=True)
-        shell(
-            "rclone --config {params.token} copyto {params.remote_tar} {output.tar}"
-        )
+        if parse_dcache_uri(params.remote_tar):
+            copy_from_dcache_uri(params.remote_tar, str(output.tar), no_stage=True)
+        else:
+            shell(
+                "rclone --config {params.token} copyto {params.remote_tar} {output.tar}"
+            )
 
 
 rule materialize_deepvariant_gvcf_for_glnexus:
@@ -331,7 +337,9 @@ rule glnexus_DV:
     resources:
         n = "64",
         mem_mb = 120000,
-        active_use_add= 100
+        active_use_add= 100,
+        ssd_use="required",
+        ssd_gb=100
     run:
         shell("mkdir -p {wildcards.region}_gvcfs_DV")
         cmds = [run_bcftools_DV(i, params.bed, wildcards.region) for i in input]

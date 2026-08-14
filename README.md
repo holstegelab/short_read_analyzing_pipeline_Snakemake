@@ -213,9 +213,38 @@ Available additional commands:
 
 ### `{cohort}.source` - additional file with paths to the files.
 If your files are stored on dCache or archive, you can use this file to specify the paths to the files.
-File is 1-liner with the following structure:
-`{dcache or archive}://{path to the files}` for example:  `archive://archive/hulsmanm/source_files/UCL_NIH/`
-`/archive/hulsmanm/source_files/UCL_NIH/` will be added to the path from the `{cohort}.tsv` file.
+The file contains one line.
+
+- NFS archive: `archive://archive/hulsmanm/source_files/UCL_NIH/`
+- dCache: `dcache:<remote>:/<root>`, for example `dcache:mine_hiseq2000:/`
+
+For dCache, put `<remote>.conf` next to the cohort listing. The remote name
+must match the rclone section in that config. Absolute-looking paths in the
+TSV are interpreted below the selected dCache remote root. The pipeline
+stages stable batches directly from Snellius. Each sample is copied to active
+storage with `dcache_cp`, Adler-32 verified, and then its stage pin is released.
+
+### `{cohort}.target` - processed-data destination.
+
+This optional one-line file controls where processed pipeline output is
+written. A dCache target uses the same URI form:
+
+`dcache:<remote>:/<processed-root>`
+
+Put the corresponding `<remote>.conf` next to the listing. CRAMs, statistics,
+Kraken results and region-level gVCF bundles retain their existing
+subdirectory layout below this root. Uploads run directly from Snellius and are only
+marked copied after the remote Adler-32 checksum matches.
+
+Bulk staging uses the managed `ada` default pin lifetime of 7 days. Relevant
+tuning keys are `dcache_stage_poll_seconds`, `dcache_stage_timeout`, and
+`dcache_download_workers`.
+
+Transfer jobs request `dcache_download_slots=1` or `dcache_upload_slots=1` from
+zslurm. The manager-wide maxima are configured in zslurm, so downloads and
+uploads are throttled independently. `dcache_download_lock_slots` (default 4)
+is a separate, download-only advisory lock around `dcache_cp`; the old pipeline
+key `dcache_transfer_slots` remains a fallback for that local lock.
 
 
 
