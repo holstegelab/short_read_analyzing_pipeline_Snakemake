@@ -103,10 +103,12 @@ with `deepvariant_apptainer_output`.
     2. Open Zslurm
     3. run pipeline with **snakemake** command
 
-      > snakemake --profile ~/.config/snakemake/zslurm/ --snakefile ~/short_read_analyzing_pipeline_Snakemake/Snakefile --use-conda --use-singularity --rerun-incomplete --retries 0 --config END_POINT=Genotype caller=Deepvariant Combine_gVCF_method=GLnexus
+      > snakemake --profile ~/short_read_analyzing_pipeline_Snakemake/profiles/zslurm --snakefile ~/short_read_analyzing_pipeline_Snakemake/Snakefile --config END_POINT=Genotype caller=Deepvariant Combine_gVCF_method=GLnexus
 
     > **NOTE ABOUT PROFILE**
-    > copy zslurm.yaml to ~/.config/snakemake/zslurm/config.yaml and change conda prefix to your conda prefix
+    > `profiles/zslurm/config.yaml` uses the native Snakemake executor and the
+    > directional dCache resources. Change its Conda/Apptainer prefixes when
+    > running under a different account.
 
    The per-read-group alignment/merge/dechimer/sort fusion is enabled by
    default. To disable it for a compatibility run:
