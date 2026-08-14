@@ -30,7 +30,7 @@ def _config_bool(value, name):
 
 
 FUSE_EXTERNAL_ADAPTER = _config_bool(
-    config.get('fuse_external_adapter', False), 'fuse_external_adapter'
+    config.get('fuse_external_adapter', True), 'fuse_external_adapter'
 )
 EXTERNAL_ADAPTER_LEASE_MODE = str(
     config.get('external_adapter_lease_mode', 'required')
@@ -1403,7 +1403,7 @@ def get_all_prepared_fastq(wildcards):  #{{{
 
 
 FUSE_KMER_SEX = _config_bool(
-    config.get('fuse_kmer_sex', False), 'fuse_kmer_sex'
+    config.get('fuse_kmer_sex', True), 'fuse_kmer_sex'
 )
 KMER_SEX_LEASE_MODE = str(
     config.get('kmer_sex_lease_mode', 'required')
@@ -1585,7 +1585,7 @@ def get_prepared_fastq(wildcards):  #{{{
 
 
 FUSE_ALIGNMENT_PHASES = _config_bool(
-    config.get('fuse_alignment_phases', False), 'fuse_alignment_phases'
+    config.get('fuse_alignment_phases', True), 'fuse_alignment_phases'
 )
 ALIGNMENT_LEASE_MODE = str(
     config.get('alignment_lease_mode', 'required')

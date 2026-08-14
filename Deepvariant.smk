@@ -35,7 +35,7 @@ def _deepvariant_config_bool(value, name):
 
 
 FUSE_DEEPVARIANT_PHASING = _deepvariant_config_bool(
-    config.get('fuse_deepvariant_phasing', False),
+    config.get('fuse_deepvariant_phasing', True),
     'fuse_deepvariant_phasing',
 )
 DEEPVARIANT_LEASE_MODE = str(

@@ -36,10 +36,10 @@ def _chrm_config_bool(value, name):
 
 
 FUSE_CHRM_EXTRACT_ALIGN = _chrm_config_bool(
-    config.get('fuse_chrm_extract_align', False), 'fuse_chrm_extract_align'
+    config.get('fuse_chrm_extract_align', True), 'fuse_chrm_extract_align'
 )
 FUSE_CHRM_MUTECT_TAIL = _chrm_config_bool(
-    config.get('fuse_chrm_mutect_tail', False), 'fuse_chrm_mutect_tail'
+    config.get('fuse_chrm_mutect_tail', True), 'fuse_chrm_mutect_tail'
 )
 
 

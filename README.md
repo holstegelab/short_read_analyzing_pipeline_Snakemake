@@ -108,69 +108,72 @@ with `deepvariant_apptainer_output`.
     > **NOTE ABOUT PROFILE**
     > copy zslurm.yaml to ~/.config/snakemake/zslurm/config.yaml and change conda prefix to your conda prefix
 
-   The per-read-group alignment/merge/dechimer/sort fusion is opt-in:
+   The per-read-group alignment/merge/dechimer/sort fusion is enabled by
+   default. To disable it for a compatibility run:
 
    ```text
-   --config fuse_alignment_phases=true alignment_lease_mode=required
+   --config fuse_alignment_phases=false
    ```
 
-   Keep `fuse_alignment_phases=false` (the default) until the active ZSlurm
-   manager and chiefs expose dynamic lease support. `required` performs a
-   lease preflight before DRAGMAP; `optional` retains the maximum reservation
-   when leases are unavailable; `disabled` is intended only for local tests.
+   The default `alignment_lease_mode=required` performs a lease preflight
+   before DRAGMAP. `optional` retains the maximum reservation when leases are
+   unavailable; `disabled` is intended only for local tests.
 
-   The sample-level KMC/sex fusion is independently opt-in:
+   The sample-level KMC/sex fusion is also enabled by default and can be
+   disabled independently:
 
    ```text
-   --config fuse_kmer_sex=true kmer_sex_lease_mode=required
+   --config fuse_kmer_sex=false
    ```
 
    It keeps the temporary KMC database on assigned node SSD and shrinks from
    2 cores/36 GB to 0.5 core/3 GB before the sex-statistics phase.
 
-   Regional DeepVariant plus Whatshap/merge is independently opt-in:
+   Regional DeepVariant plus Whatshap/merge is enabled by default and can be
+   disabled independently:
 
    ```text
-   --config fuse_deepvariant_phasing=true deepvariant_lease_mode=required
+   --config fuse_deepvariant_phasing=false
    ```
 
    Raw regional VCF/gVCF files remain on assigned node SSD; the job shrinks
    from 8 cores/10 GB to 1 core/9 GB before phasing and publication.
 
-   BAM/CRAM read-group extraction plus adapter removal is independently
-   opt-in; native FASTQ samples remain on the legacy adapter rule:
+   BAM/CRAM read-group extraction plus adapter removal is enabled by default;
+   native FASTQ samples remain on the legacy adapter rule. To disable it:
 
    ```text
-   --config fuse_external_adapter=true external_adapter_lease_mode=required
+   --config fuse_external_adapter=false
    ```
 
    The fused job publishes the legacy temporary raw FASTQ outputs because the
    BAM-tag merge still consumes them, but extraction and adapter processing
    happen only once and adapter processing reads the SSD-local copy.
 
-   chrM/NUMT extraction plus the four realignments is independently opt-in:
+   chrM/NUMT extraction plus the four realignments is enabled by default:
 
    ```text
-   --config fuse_chrm_extract_align=true
+   --config fuse_chrm_extract_align=false
    ```
 
    The four intermediate paired FASTQs and alignment scratch files stay on
    the assigned node SSD. The eight legacy BAM/index paths remain unchanged.
 
    The downstream chrM/NUMT Mutect, merge/filter, and BP-resolution tail is a
-   separate opt-in fusion:
+   separate fusion, also enabled by default:
 
    ```text
-   --config fuse_chrm_mutect_tail=true
+   --config fuse_chrm_mutect_tail=false
    ```
 
    It stages the four realigned BAMs once and publishes only both final
    annotated gVCFs and their indexes; all VCF intermediates stay on node SSD.
 
-   The BAM-reading QC fan-out is independently opt-in:
+   The BAM-reading QC fan-out is enabled by default and can be disabled
+   independently:
 
    ```text
-   --config fuse_bam_qc=true bam_qc_lease_mode=required
+   --config fuse_bam_qc=false
    ```
 
    VerifyBamID, HS metrics, artifact/OxoG metrics, samtools stats, sampled BAM

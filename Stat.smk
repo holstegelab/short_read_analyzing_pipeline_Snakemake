@@ -22,7 +22,7 @@ def _stat_config_bool(value, name):
     raise ValueError(f"{name} must be a boolean, got {value!r}")
 
 
-FUSE_BAM_QC = _stat_config_bool(config.get('fuse_bam_qc', False), 'fuse_bam_qc')
+FUSE_BAM_QC = _stat_config_bool(config.get('fuse_bam_qc', True), 'fuse_bam_qc')
 BAM_QC_LEASE_MODE = str(config.get('bam_qc_lease_mode', 'required')).strip().lower()
 if BAM_QC_LEASE_MODE not in {'required', 'optional', 'disabled'}:
     raise ValueError("bam_qc_lease_mode must be required, optional, or disabled")

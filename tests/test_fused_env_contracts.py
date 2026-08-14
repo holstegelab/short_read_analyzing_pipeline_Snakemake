@@ -60,3 +60,25 @@ def test_parallel_bam_qc_fusion_contains_every_qc_executable():
         "verifybamid2",
         "mosdepth",
     } <= dependencies
+
+
+def test_all_production_fusions_are_enabled_by_default():
+    defaults = {
+        "Aligner.smk": (
+            "config.get('fuse_external_adapter', True)",
+            "config.get('fuse_kmer_sex', True)",
+            "config.get('fuse_alignment_phases', True)",
+        ),
+        "Deepvariant.smk": (
+            "config.get('fuse_deepvariant_phasing', True)",
+        ),
+        "Stat.smk": ("config.get('fuse_bam_qc', True)",),
+        "chrM_analysis.smk": (
+            "config.get('fuse_chrm_extract_align', True)",
+            "config.get('fuse_chrm_mutect_tail', True)",
+        ),
+    }
+    for filename, expected_fragments in defaults.items():
+        source = (REPO / filename).read_text()
+        for fragment in expected_fragments:
+            assert fragment in source
