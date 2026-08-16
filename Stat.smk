@@ -119,7 +119,7 @@ rule tar_stats_per_sample:
         numt=pj(STAT,'{sample}.numt_read_stats.tsv'),
         phase=pj(STAT,'{sample}.phase_stats.tsv'),
     output:
-        tar=pj(STAT,"{sample}.stats.tar.gz")
+        tar=temp(pj(STAT,"{sample}.stats.tar.gz"))
     resources:
         time = get_time('tar_stats_per_sample'),
         n="1",
@@ -134,11 +134,11 @@ rule coverage:
         bam=pj(BAM, "{sample}.markdup.bam"),
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
     output:
-        pj(STAT,'cov','{sample}.regions.bed.gz'),
-        pj(STAT,'cov','{sample}.regions.bed.gz.csi'),
-        pj(STAT,'cov','{sample}.mosdepth.global.dist.txt'),
-        pj(STAT,'cov','{sample}.mosdepth.summary.txt'),
-        pj(STAT,'cov','{sample}.mosdepth.region.dist.txt')
+        temp(pj(STAT,'cov','{sample}.regions.bed.gz')),
+        temp(pj(STAT,'cov','{sample}.regions.bed.gz.csi')),
+        temp(pj(STAT,'cov','{sample}.mosdepth.global.dist.txt')),
+        temp(pj(STAT,'cov','{sample}.mosdepth.summary.txt')),
+        temp(pj(STAT,'cov','{sample}.mosdepth.region.dist.txt'))
     priority: 27
     params:
         bed=WINDOWS,
@@ -295,9 +295,15 @@ rule copy_excluded_to_dcache:
                     return
                 remote_name = os.path.basename(lp)
                 checksum_tmp = f"{output.checksums}.{sample}.{remote_name}.tmp"
-                copy_with_checksum(lp, remote_dir, remote_name, checksum_tmp, AGH_DCACHE_CONFIG, params.ada_script)
-                with open(checksum_tmp, 'r') as handle:
-                    checksum_entries.append(f"{sample}/{remote_name}\t{handle.readline().strip()}\n")
+                try:
+                    copy_with_checksum(lp, remote_dir, remote_name, checksum_tmp, AGH_DCACHE_CONFIG, params.ada_script)
+                    with open(checksum_tmp, 'r') as handle:
+                        checksum_entries.append(f"{sample}/{remote_name}\t{handle.readline().strip()}\n")
+                finally:
+                    try:
+                        os.remove(checksum_tmp)
+                    except FileNotFoundError:
+                        pass
 
             prefix = sinfo.get('prefix', '')
             ftype = sinfo.get('file_type')
@@ -419,9 +425,15 @@ rule copy_samplefile_stats_to_dcache:
         checksum_entries = []
         for local_file, remote_name in files:
             checksum_path = f"{output.checksums}.{remote_name}.tmp"
-            copy_with_checksum(local_file, target_dir, remote_name, checksum_path, AGH_DCACHE_CONFIG, params.ada_script)
-            with open(checksum_path, 'r') as handle:
-                checksum_entries.append(f"{remote_name}\t{handle.readline().strip()}\n")
+            try:
+                copy_with_checksum(local_file, target_dir, remote_name, checksum_path, AGH_DCACHE_CONFIG, params.ada_script)
+                with open(checksum_path, 'r') as handle:
+                    checksum_entries.append(f"{remote_name}\t{handle.readline().strip()}\n")
+            finally:
+                try:
+                    os.remove(checksum_path)
+                except FileNotFoundError:
+                    pass
 
         with open(output.checksums, 'w') as sum_out:
             sum_out.writelines(checksum_entries)
@@ -449,11 +461,16 @@ rule tar_badmap_fastqs:
             (str(input.fastq2), os.path.basename(str(input.fastq2))),
         ]
 
-        with tarfile.open(staging_path, "w:gz") as tar_handle:
-            for local_path, arcname in file_map:
-                tar_handle.add(local_path, arcname=arcname)
-
-        os.replace(staging_path, out_path)
+        try:
+            with tarfile.open(staging_path, "w:gz") as tar_handle:
+                for local_path, arcname in file_map:
+                    tar_handle.add(local_path, arcname=arcname)
+            os.replace(staging_path, out_path)
+        finally:
+            try:
+                os.remove(staging_path)
+            except FileNotFoundError:
+                pass
 
 rule copy_badmap_to_dcache:
     input:
@@ -478,15 +495,19 @@ rule copy_badmap_to_dcache:
         remote_name = os.path.basename(local_tar)
         checksum_tmp = f"{output.checksum}.tmp"
 
-        copy_with_checksum(local_tar, remote_dir, remote_name, checksum_tmp, AGH_DCACHE_CONFIG, params.ada_script)
+        try:
+            copy_with_checksum(local_tar, remote_dir, remote_name, checksum_tmp, AGH_DCACHE_CONFIG, params.ada_script)
 
-        with open(checksum_tmp, 'r') as handle:
-            checksum_value = handle.readline().strip()
+            with open(checksum_tmp, 'r') as handle:
+                checksum_value = handle.readline().strip()
 
-        with open(output.checksum, 'w') as sum_out:
-            sum_out.write(f"{remote_name}\t{checksum_value}\n")
-
-        os.remove(checksum_tmp)
+            with open(output.checksum, 'w') as sum_out:
+                sum_out.write(f"{remote_name}\t{checksum_value}\n")
+        finally:
+            try:
+                os.remove(checksum_tmp)
+            except FileNotFoundError:
+                pass
 
         shell(f"touch {quote(str(output.copied))}")
 
@@ -759,11 +780,11 @@ if FUSE_BAM_QC:
             samtools_exome=temp(ensure(pj(STAT, "{sample}.samtools.exome.stat"), non_empty=True)),
             bam_all=temp(ensure(pj(STAT, '{sample}.bam_all.tsv'), non_empty=True)),
             bam_exome=temp(ensure(pj(STAT, '{sample}.bam_exome.tsv'), non_empty=True)),
-            coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz'),
-            coverage_csi=pj(STAT, 'cov', '{sample}.regions.bed.gz.csi'),
-            coverage_global=pj(STAT, 'cov', '{sample}.mosdepth.global.dist.txt'),
-            coverage_summary=pj(STAT, 'cov', '{sample}.mosdepth.summary.txt'),
-            coverage_region=pj(STAT, 'cov', '{sample}.mosdepth.region.dist.txt')
+            coverage_regions=temp(pj(STAT, 'cov', '{sample}.regions.bed.gz')),
+            coverage_csi=temp(pj(STAT, 'cov', '{sample}.regions.bed.gz.csi')),
+            coverage_global=temp(pj(STAT, 'cov', '{sample}.mosdepth.global.dist.txt')),
+            coverage_summary=temp(pj(STAT, 'cov', '{sample}.mosdepth.summary.txt')),
+            coverage_region=temp(pj(STAT, 'cov', '{sample}.mosdepth.region.dist.txt'))
         params:
             runner=srcdir('scripts/run_fused_bam_qc.py'),
             ref=get_ref_by_validated_sex,

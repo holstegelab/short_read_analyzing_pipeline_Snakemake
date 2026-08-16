@@ -679,8 +679,6 @@ def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, confi
     while f'{adler_local:08x}' != adler_remote and retries <= 3:
         shell(f"rclone --config {config_q} -v copyto {local_q} {remote_file_full_q}")
         shell(f"{ada_q} --tokenfile {config_q} --api https://dcacheview.grid.surfsara.nl:22880/api/v1 --checksum {remote_file_q} | awk '{{{{print $2}}}}' | awk -F '=' '{{{{print $2}}}}' > {checksum_q}")
-        shell(f"cp {checksum_q} {checksum_q}.tmp")
-
         with open(checksum_path, 'r') as sum_file:
             adler_remote = sum_file.readline().rstrip('\n')
 

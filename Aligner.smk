@@ -215,6 +215,9 @@ def get_source_files(wildcards):  #{{{
                 files.append(ancient(pj(
                     SOURCEDIR, wildcards['sample'] + '.route_ready'
                 )))
+                files.append(ancient(external_data_dir(
+                    wildcards['sample'], sinfo
+                )))
                 route_ready_added = True
         else:
             files.append(f)
@@ -580,20 +583,90 @@ def _start_sample_tier_remove(wildcards, route):
     return SAMPLEINFO[wildcards['sample']]['filesize']
 
 
+def _start_sample_pattern(*routes):
+    samples = sorted(
+        re.escape(sample)
+        for sample in SAMPLEINFO
+        if _start_sample_route({'sample': sample}) in routes
+    )
+    return '(?:' + '|'.join(samples) + ')' if samples else r'(?!)'
+
+
+START_SAMPLE_ACTIVE_PATTERN = _start_sample_pattern('active')
+START_SAMPLE_ARCHIVE_PATTERN = _start_sample_pattern('archive')
+START_SAMPLE_DCACHE_PATTERN = _start_sample_pattern('dcache')
+START_SAMPLE_EXTERNAL_PATTERN = _start_sample_pattern('archive', 'dcache')
+
+
+def _run_start_sample(wildcards, output, params):
+    helper_dir = os.path.dirname(str(params.job_helper))
+    if helper_dir not in sys.path:
+        sys.path.insert(0, helper_dir)
+    from start_sample_job import run_start_sample_job
+
+    run_start_sample_job(
+        sample=SAMPLEINFO[wildcards['sample']],
+        sample_name=str(wildcards.sample),
+        expected_route=str(params.expected_route),
+        destination=(
+            str(output.materialized)
+            if hasattr(output, 'materialized')
+            else None
+        ),
+        started=str(output.started),
+        route_ready=str(output.route_ready),
+        append_prefix=append_prefix,
+        dcache_source_file=_dcache_source_file,
+        transfer_script=str(params.transfer_script),
+        source_dir=SOURCEDIR,
+        dcache_download_workers=max(
+            1, int(config.get('dcache_download_workers', 2))
+        ),
+        dcache_download_lock_slots=max(1, int(config.get(
+            'dcache_download_lock_slots',
+            config.get('dcache_transfer_slots', 4),
+        ))),
+    )
+
+
 #}}}
 
-rule start_sample:
-    """Reserve the sample lifecycle and route active/archive/dCache input.
-
-    One job owns both the destination reservation and any required transfer,
-    eliminating the former start-versus-transfer storage deadlock.  Completion
-    markers are installed only after route-specific validation succeeds.
-    """
+rule start_sample_active:
+    """Reserve the sample lifecycle after validating active source input."""
     input:
         retrieve_batch
     output:
         started=pj(SOURCEDIR,"{sample}.started"),
         route_ready=pj(SOURCEDIR,"{sample}.route_ready")
+    wildcard_constraints:
+        sample=START_SAMPLE_ACTIVE_PATTERN
+    resources:
+        time=_start_sample_time,
+        partition=_start_sample_partition,
+        active_use_add=_start_sample_active_add,
+        arch_use_remove=0,
+        dcache_use_remove=0,
+        dcache_download_slots=0,
+        mem_mb=_start_sample_mem_mb,
+        n=_start_sample_cores
+    params:
+        expected_route='active',
+        job_helper=srcdir('scripts/start_sample_job.py'),
+        transfer_script=srcdir('scripts/dcache_transfer.py')
+    run:
+        _run_start_sample(wildcards, output, params)
+
+
+rule start_sample_archive:
+    """Reserve and materialize one archive sample in a tracked temp directory."""
+    input:
+        retrieve_batch
+    output:
+        started=pj(SOURCEDIR,"{sample}.started"),
+        route_ready=temp(pj(SOURCEDIR,"{sample}.route_ready")),
+        materialized=temp(directory(pj(SOURCEDIR,"{sample}.data")))
+    wildcard_constraints:
+        sample=START_SAMPLE_ARCHIVE_PATTERN
     resources:
         time=_start_sample_time,
         partition=_start_sample_partition,
@@ -601,217 +674,45 @@ rule start_sample:
         arch_use_remove=lambda wildcards: _start_sample_tier_remove(
             wildcards, 'archive'
         ),
-        dcache_use_remove=lambda wildcards: _start_sample_tier_remove(
-            wildcards, 'dcache'
-        ),
-        dcache_download_slots=lambda wildcards: int(
-            _start_sample_route(wildcards) == 'dcache'
-        ),
+        dcache_use_remove=0,
+        dcache_download_slots=0,
         mem_mb=_start_sample_mem_mb,
         n=_start_sample_cores
     params:
-        route_helper=srcdir('scripts/start_sample_route.py'),
+        expected_route='archive',
+        job_helper=srcdir('scripts/start_sample_job.py'),
         transfer_script=srcdir('scripts/dcache_transfer.py')
     run:
-        import bz2
-        import gzip
-        import shutil
-        from pathlib import Path
+        _run_start_sample(wildcards, output, params)
 
-        helper_dir = os.path.dirname(str(params.route_helper))
-        if helper_dir not in sys.path:
-            sys.path.insert(0, helper_dir)
-        from start_sample_route import (
-            StartSampleRouteError,
-            make_partial_directory,
-            promote_directory,
-            quarantine_incomplete,
-            routed_relative_path,
-            safe_relative_path,
-            sample_filenames,
-            sample_route,
-            validate_materialized,
-            write_completion_markers,
-            write_manifest,
-        )
 
-        sample = SAMPLEINFO[wildcards['sample']]
-        route = sample_route(sample)
-        sample_name = str(wildcards.sample)
-        destination = Path(external_data_dir(sample_name, sample))
-        records = []
-        legacy_marker = None
-
-        if route == 'active':
-            for filename in sample_filenames(sample):
-                source = Path(append_prefix(sample['prefix'], filename))
-                if not source.is_file():
-                    raise FileNotFoundError(
-                        f"active source file is absent for {sample_name}: {source}"
-                    )
-                records.append({'path': str(source), 'bytes': source.stat().st_size})
-        else:
-            legacy_marker = pj(SOURCEDIR, sample_name + f'.{route}_retrieved')
-            try:
-                records = validate_materialized(destination, sample, route)
-                print(
-                    f"[start_sample] adopting validated {route} destination "
-                    f"for {sample_name}: {destination}",
-                    flush=True,
-                )
-            except StartSampleRouteError as existing_error:
-                if destination.exists() or destination.is_symlink():
-                    quarantine = quarantine_incomplete(destination)
-                    print(
-                        f"[start_sample] quarantined incomplete destination "
-                        f"{quarantine}: {existing_error}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                partial = make_partial_directory(destination)
-                try:
-                    if route == 'archive':
-                        for filename in sample_filenames(sample):
-                            if os.path.isabs(filename):
-                                source = Path(filename)
-                                if not source.is_file():
-                                    raise FileNotFoundError(source)
-                                continue
-                            source_value = append_prefix(sample['prefix'], filename)
-                            if ':/' in source_value:
-                                source_value = source_value.split(':/', 1)[1]
-                            source = Path(source_value)
-                            relative = safe_relative_path(filename)
-                            copied = partial / relative
-                            copied.parent.mkdir(parents=True, exist_ok=True)
-                            subprocess.run(
-                                [
-                                    'rsync', '--size-only', '--partial',
-                                    str(source), str(copied),
-                                ],
-                                check=True,
-                            )
-                            if copied.suffix == '.bz2':
-                                converted = partial / routed_relative_path(
-                                    filename, route
-                                )
-                                temporary_gz = converted.with_name(
-                                    converted.name + f'.tmp.{os.getpid()}'
-                                )
-                                converted.parent.mkdir(parents=True, exist_ok=True)
-                                with bz2.open(copied, 'rb') as source_handle, \
-                                     gzip.open(
-                                         temporary_gz, 'wb', compresslevel=1
-                                     ) as destination_handle:
-                                    shutil.copyfileobj(
-                                        source_handle,
-                                        destination_handle,
-                                        length=16 * 1024 * 1024,
-                                    )
-                                os.replace(temporary_gz, converted)
-                                copied.unlink()
-                    else:
-                        remote = sample.get('source_remote')
-                        config_path = sample.get('source_config')
-                        if not remote or not config_path:
-                            raise ValueError(
-                                f"Missing dCache remote/config for {sample_name}"
-                            )
-                        rows = []
-                        for filename in sample_filenames(sample):
-                            file_remote, remote_path = _dcache_source_file(
-                                sample, filename
-                            )
-                            if file_remote != remote:
-                                raise ValueError(
-                                    f"Mixed dCache remotes for {sample_name}: "
-                                    f"{remote!r} and {file_remote!r}"
-                                )
-                            rows.append((
-                                remote_path,
-                                partial / safe_relative_path(filename),
-                            ))
-                        fd, list_path = tempfile.mkstemp(
-                            prefix=f'.{sample_name}.dcache-download-',
-                            suffix='.tsv',
-                            dir=SOURCEDIR,
-                            text=True,
-                        )
-                        try:
-                            with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-                                for remote_path, local_path in rows:
-                                    handle.write(f"{remote_path}\t{local_path}\n")
-                            download_workers = max(
-                                1, int(config.get('dcache_download_workers', 2))
-                            )
-                            subprocess.run(
-                                [
-                                    sys.executable,
-                                    str(params.transfer_script),
-                                    'download',
-                                    '--config', str(config_path),
-                                    '--remote', str(remote),
-                                    '--file-list', list_path,
-                                    '--workers', str(min(len(rows), download_workers)),
-                                    '--download-lock-slots',
-                                    str(max(1, int(config.get(
-                                        'dcache_download_lock_slots',
-                                        config.get('dcache_transfer_slots', 4),
-                                    )))),
-                                    '--no-stage',
-                                ],
-                                check=True,
-                            )
-                        finally:
-                            try:
-                                os.unlink(list_path)
-                            except FileNotFoundError:
-                                pass
-
-                    records = validate_materialized(partial, sample, route)
-                    write_manifest(
-                        partial,
-                        sample_name=sample_name,
-                        route=route,
-                        records=records,
-                    )
-                    promote_directory(partial, destination)
-                except Exception:
-                    if partial.exists() or partial.is_symlink():
-                        quarantine_incomplete(partial)
-                    raise
-
-                records = validate_materialized(destination, sample, route)
-
-            # A legacy directory without a manifest becomes self-validating for
-            # future retries after its expected file set and sizes pass.
-            write_manifest(
-                destination,
-                sample_name=sample_name,
-                route=route,
-                records=records,
-            )
-
-            if route == 'archive':
-                for filename in sample_filenames(sample):
-                    if os.path.isabs(filename):
-                        continue
-                    source_value = append_prefix(sample['prefix'], filename)
-                    if ':/' in source_value:
-                        source_value = source_value.split(':/', 1)[1]
-                    subprocess.run(
-                        ['/opt/dacommands/bin/darelease', source_value],
-                        check=False,
-                    )
-
-        write_completion_markers(
-            started=output.started,
-            route_ready=output.route_ready,
-            route=route,
-            sample_name=sample_name,
-            files=records,
-            legacy_marker=legacy_marker,
-        )
+rule start_sample_dcache:
+    """Reserve and download one dCache sample in a tracked temp directory."""
+    input:
+        retrieve_batch
+    output:
+        started=pj(SOURCEDIR,"{sample}.started"),
+        route_ready=temp(pj(SOURCEDIR,"{sample}.route_ready")),
+        materialized=temp(directory(pj(SOURCEDIR,"{sample}.dcache_data")))
+    wildcard_constraints:
+        sample=START_SAMPLE_DCACHE_PATTERN
+    resources:
+        time=_start_sample_time,
+        partition=_start_sample_partition,
+        active_use_add=_start_sample_active_add,
+        arch_use_remove=0,
+        dcache_use_remove=lambda wildcards: _start_sample_tier_remove(
+            wildcards, 'dcache'
+        ),
+        dcache_download_slots=1,
+        mem_mb=_start_sample_mem_mb,
+        n=_start_sample_cores
+    params:
+        expected_route='dcache',
+        job_helper=srcdir('scripts/start_sample_job.py'),
+        transfer_script=srcdir('scripts/dcache_transfer.py')
+    run:
+        _run_start_sample(wildcards, output, params)
 
 
 def get_cram_ref(wildcards):  #{{{
@@ -859,6 +760,9 @@ def ensure_source_aligned_file(wildcards):  #{{{
     if sinfo['from_external']:
         result.append(ancient(pj(
             SOURCEDIR, wildcards['sample'] + '.route_ready'
+        )))
+        result.append(ancient(external_data_dir(
+            wildcards['sample'], sinfo
         )))
 
 
@@ -1127,6 +1031,9 @@ def get_fastqpaired(wildcards):  #{{{
         if sinfo['from_external']:  #ensure the data folder is available if this data is retrieved from tape.
             files.append(ancient(pj(
                 SOURCEDIR, wildcards['sample'] + '.route_ready'
+            )))
+            files.append(ancient(external_data_dir(
+                wildcards['sample'], sinfo
             )))
 
     else:  #source file is a bam /cram file. We will extract fastq files with the following names:
@@ -1650,8 +1557,8 @@ rule merge_bam_alignment_dechimer:
     output:
         bam=temp(pj(BAM,"{sample}.{readgroup}.dechimer.bam")),
         stats=pj(STAT,"{sample}.{readgroup}.dechimer_stats.tsv"),
-        badmap_fastq1=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
-        badmap_fastq2=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
+        badmap_fastq1=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz")),
+        badmap_fastq2=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz")),
         merge_stats=ensure(pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"),non_empty=True),
         checked=temp(pj(BAM,"{sample}.{readgroup}.bam_checked")),
         check_stats=pj(STAT,"{sample}.{readgroup}.bam_check_stats.tsv")
@@ -1761,8 +1668,8 @@ if FUSE_ALIGNMENT_PHASES:
             bai=temp(pj(BAM,"{sample}.{readgroup}.sorted.bam.bai")),
             dragmap_log=pj(STAT,"{sample}.{readgroup}.dragmap.log"),
             stats=pj(STAT,"{sample}.{readgroup}.dechimer_stats.tsv"),
-            badmap_fastq1=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz"),
-            badmap_fastq2=pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"),
+            badmap_fastq1=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz")),
+            badmap_fastq2=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz")),
             merge_stats=ensure(
                 pj(STAT,"{sample}.{readgroup}.merge_stats.tsv"),
                 non_empty=True,
@@ -2057,6 +1964,25 @@ rule markdup:
                 samtools markdup -T "$MDTMP" -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
             fi
         """
+
+
+localrules: release_materialized_source
+
+rule release_materialized_source:
+    """Keep external source data through alignment, then let temp GC reclaim it."""
+    input:
+        ready=pj(SOURCEDIR, "{sample}.route_ready"),
+        materialized=lambda wildcards: external_data_dir(
+            wildcards['sample'], SAMPLEINFO[wildcards['sample']]
+        ),
+        bam=pj(BAM, "{sample}.markdup.bam")
+    output:
+        marker=temp(touch(pj(SOURCEDIR, "{sample}.materialized_consumed")))
+    wildcard_constraints:
+        sample=START_SAMPLE_EXTERNAL_PATTERN
+    shell:
+        "touch {output.marker:q}"
+
 
 rule mCRAM:
     """Convert bam to mapped cram."""

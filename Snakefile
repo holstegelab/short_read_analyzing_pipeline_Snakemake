@@ -104,6 +104,10 @@ def finished_sample_inputs(wildcards, require_gvcf=False, require_deepvariant=Fa
         files.append(pj(DEEPVARIANT, f"{wildcards.sample}.done"))
     if chrM_flag == "Yes":
         files.append(pj(chrM, f"{wildcards.sample}.done"))
+    if SAMPLEINFO[wildcards.sample].get('from_external'):
+        files.append(pj(
+            SOURCEDIR, f"{wildcards.sample}.materialized_consumed"
+        ))
     return files
 
 rule_all_combine = []
@@ -508,13 +512,31 @@ onstart:
                 s = os.path.basename(fin)[:-len(".finished")]
                 se = glob.escape(s)
                 paths = [os.path.join(SOURCEDIR, s + ".data"),
-                         os.path.join(SOURCEDIR, s + ".dcache_data")]
+                         os.path.join(SOURCEDIR, s + ".dcache_data"),
+                         os.path.join(FQ_BADMAP, s + ".badmap.fastqs.tar.gz"),
+                         os.path.join(STAT, s + ".stats.tar.gz")]
                 for pat in (os.path.join(FQ, se + ".*.fq.gz"),
                             os.path.join(FQ_BADMAP, se + ".badmap.*.fastq.gz"),
+                            os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz"),
+                            os.path.join(STAT, "cov", se + ".*"),
                             os.path.join(BAM, se + ".*.bam"),
                             os.path.join(BAM, se + ".*.bam.bai")):
                     paths.extend(glob.glob(pat))
                 n += _rm_all(paths)
+            # Samplefile/cohort archives are also declared temp(), but can be
+            # stranded when a previous Snakemake invocation ended after their
+            # upload consumer completed. pipeline.done proves every upload and
+            # aggregation consumer has finished.
+            aggregate_temp = []
+            for pat in (
+                os.path.join(STAT, "*.stats_bundle.tar.gz"),
+                os.path.join(KRAKEN, "*.kraken_reports.tar.gz"),
+                os.path.join(KRAKEN, "*.kraken_read_classification.tar.gz"),
+                os.path.join(chrM, "tar", "chrM_gvcfs.tar.gz"),
+                os.path.join(GVCF_TAR, "deepvariant_level2_*", "*.gvcf.tar"),
+            ):
+                aggregate_temp.extend(glob.glob(pat))
+            n += _rm_all(aggregate_temp)
         elif finished:
             print("[onstart] preserving intermediates for %d finished sample(s): "
                   "pipeline.done is absent" % len(finished))
