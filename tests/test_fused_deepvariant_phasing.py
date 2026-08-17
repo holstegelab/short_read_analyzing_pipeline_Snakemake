@@ -150,6 +150,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
             "--whatshap", str(whatshap), "--bcftools", str(bcftools),
             "--bgzip", str(bgzip), "--tabix", str(tabix),
             "--initial-cores", "8", "--initial-memory-mb", "10000",
+            "--attempt", "3",
             "--lease-command", str(lease), "--ssd-gb", "16",
             "--scratch-base", str(scratch), "--poll-interval", "0.05",
         ]
@@ -171,6 +172,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     assert dv_env_log.read_text() == "|"
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is True
+    assert metrics["attempt"] == 3
     assert [phase["label"] for phase in metrics["phases"]] == [
         "deepvariant_phasing_fused.deepvariant",
         "deepvariant_phasing_fused.phasing_merge",

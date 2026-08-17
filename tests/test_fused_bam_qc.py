@@ -88,8 +88,8 @@ import sys
 args = sys.argv[1:]
 if 'status' in args:
     print(json.dumps({{
-        'ok': True, 'status': 'current', 'held_cores': 12,
-        'max_cores': 12, 'held_mem_mb': 12000, 'max_mem_mb': 12000,
+        'ok': True, 'status': 'current', 'held_cores': 6,
+        'max_cores': 6, 'held_mem_mb': 7500, 'max_mem_mb': 7500,
         'epoch': 0,
     }}))
 elif 'release' in args:
@@ -102,7 +102,7 @@ elif 'release' in args:
         handle.write(json.dumps(record, sort_keys=True) + '\\n')
     print(json.dumps({{
         'ok': True, 'status': 'released', 'held_cores': 0.1,
-        'max_cores': 12, 'held_mem_mb': 1504, 'max_mem_mb': 12000,
+        'max_cores': 6, 'held_mem_mb': 1504, 'max_mem_mb': 7500,
         'epoch': 1, 'release_id': record['release_id'],
         'requested_release_cores': record['cores'],
         'requested_release_mem_mb': record['mem_mb'],
@@ -165,7 +165,7 @@ else:
             "--metrics", str(outputs / "metrics.json"), "--samtools", str(samtools),
             "--gatk", str(gatk), "--verifybamid", str(verify),
             "--mosdepth", str(mosdepth), "--pypy", str(pypy),
-            "--cores", "12", "--memory-mb", "12000", "--ssd-gb", "32",
+            "--cores", "6", "--memory-mb", "7500", "--ssd-gb", "32",
             "--lease-mode", "required", "--lease-command", str(lease),
             "--scratch-base", str(scratch), "--poll-interval", "0.05",
         )
@@ -197,8 +197,8 @@ else:
     releases = [json.loads(line) for line in lease_log.read_text().splitlines()]
     assert len(releases) == 6
     assert len({release["release_id"] for release in releases}) == 6
-    assert sum(release["cores"] for release in releases) == 12
-    assert sum(release["mem_mb"] for release in releases) == 10496
+    assert sum(release["cores"] for release in releases) == 6
+    assert sum(release["mem_mb"] for release in releases) == 7500
 
 
 def test_parallel_qc_releases_resources_when_a_task_fails(tmp_path):

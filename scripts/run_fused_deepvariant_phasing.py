@@ -68,7 +68,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--initial-cores", type=float, required=True)
     parser.add_argument("--initial-memory-mb", type=float, required=True)
     parser.add_argument("--low-cores", type=float, default=1.0)
-    parser.add_argument("--low-memory-mb", type=float, default=9000)
+    parser.add_argument("--low-memory-mb", type=float, default=3200)
+    parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument(
         "--lease-mode",
         choices=("required", "optional", "disabled"),
@@ -341,6 +342,7 @@ def main() -> int:
                 "label": "deepvariant_phasing_fused",
                 "sample": args.sample,
                 "region": args.region,
+                "attempt": args.attempt,
                 "success": success,
                 "started_at_epoch": started,
                 "duration_seconds": round(time.time() - started, 6),

@@ -270,7 +270,9 @@ def get_sequencing_mode(wildcards):#{{{
     return "WGS" if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else "WES"#}}}
 
 def get_mem_mb_deepvariant(wildcards, attempt):#{{{
-    res = 10000
+    # Size the normal attempt at the observed median process-tree PSS.  The
+    # ZSlurm reservation is a packing estimate, not a hard memory limit.
+    res = 8700
     return (attempt - 1) * 0.5 * res + res#}}}
 
 
@@ -604,11 +606,16 @@ if FUSE_DEEPVARIANT_PHASING:
             n="8",
             nshards=8,
             mem_mb=get_mem_mb_deepvariant,
+            attempt=lambda wildcards, attempt: attempt,
             time=get_time('deepvariant_phasing_fused'),
             ssd_use="required",
             ssd_gb=16
         shell:
             """
+            set +e
+            printf '[deepvariant_phasing_fused] snakemake_attempt=%s\\n' \
+                {resources.attempt:q} > {log.runner:q}
+            rm -f -- {log.io_profile:q}
             python {params.runner:q} \
                 --sample {wildcards.sample:q} \
                 --region {wildcards.region:q} \
@@ -645,11 +652,21 @@ if FUSE_DEEPVARIANT_PHASING:
                 --initial-cores {resources.n} \
                 --initial-memory-mb {resources.mem_mb} \
                 --low-cores 1 \
-                --low-memory-mb 9000 \
+                --low-memory-mb 3200 \
+                --attempt {resources.attempt} \
                 --lease-mode {params.lease_mode:q} \
                 --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
-                2> {log.runner:q}
+                2>> {log.runner:q}
+            status=$?
+            set -e
+            if [ "$status" -ne 0 ]; then
+                cp -- {log.runner:q} "{log.runner}.attempt-{resources.attempt}.failed.log" || true
+                if [ -s {log.io_profile:q} ]; then
+                    cp -- {log.io_profile:q} "{log.io_profile}.attempt-{resources.attempt}.failed.json" || true
+                fi
+            fi
+            exit "$status"
             """
 
     ruleorder: deepvariant_phasing_fused > DVWhatshapPhasingMerge

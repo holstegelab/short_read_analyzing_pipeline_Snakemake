@@ -799,8 +799,10 @@ if FUSE_BAM_QC:
         priority: 99
         resources:
             time=get_time('bam_qc_fused'),
-            n=12,
-            mem_mb=12000,
+            # ZSlurm reservations deliberately follow observed median usage;
+            # they are packing estimates rather than hard cgroup limits.
+            n=6,
+            mem_mb=7500,
             ssd_use="required",
             ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
                 input.bam,

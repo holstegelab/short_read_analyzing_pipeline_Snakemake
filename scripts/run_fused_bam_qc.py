@@ -22,12 +22,14 @@ from run_fused_alignment import (
 
 
 QC_RELEASE_RESOURCES = {
-    "verifybamid": (2.0, 512.0),
-    "hs_metrics": (2.0, 3840.0),
-    "artifact_oxog": (2.0, 3840.0),
-    "samtools_stats": (2.0, 512.0),
-    "bamstats": (2.0, 768.0),
-    "mosdepth": (2.0, 1024.0),
+    # Relative shares of the 6-core/7500-MB median-sized reservation.  The
+    # tools may briefly use more; the reservation only controls ZSlurm packing.
+    "verifybamid": (1.0, 350.0),
+    "hs_metrics": (1.0, 2650.0),
+    "artifact_oxog": (1.0, 2650.0),
+    "samtools_stats": (1.0, 350.0),
+    "bamstats": (1.0, 550.0),
+    "mosdepth": (1.0, 950.0),
 }
 
 
@@ -73,8 +75,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verifybamid", default="verifybamid2")
     parser.add_argument("--mosdepth", default="mosdepth")
     parser.add_argument("--pypy", default="pypy")
-    parser.add_argument("--cores", type=int, default=12)
-    parser.add_argument("--memory-mb", type=int, default=12000)
+    parser.add_argument("--cores", type=int, default=6)
+    parser.add_argument("--memory-mb", type=int, default=7500)
     parser.add_argument(
         "--lease-mode",
         choices=("required", "optional", "disabled"),
