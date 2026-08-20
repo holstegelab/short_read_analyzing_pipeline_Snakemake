@@ -541,11 +541,7 @@ def _start_sample_time(wildcards, attempt=1):
 
 
 def _start_sample_partition(wildcards):
-    return (
-        'archive'
-        if _start_sample_route(wildcards) in ('archive', 's3')
-        else 'compute'
-    )
+    return 'archive' if _start_sample_route(wildcards) == 'archive' else 'compute'
 
 
 def _start_sample_cores(wildcards):
@@ -749,9 +745,9 @@ rule start_sample_s3:
         active_use_add=_start_sample_active_add,
         arch_use_remove=0,
         dcache_use_remove=0,
-        # Reuse the manager's existing inbound-transfer pool.  This safely
-        # caps aggregate S3+dCache ingress without a manager/plugin restart.
-        dcache_download_slots=1,
+        # The executor supplies a dCache-download fallback until the running
+        # manager supports the independent S3 pool.
+        s3_download_slots=1,
         mem_mb=_start_sample_mem_mb,
         n=_start_sample_cores
     params:

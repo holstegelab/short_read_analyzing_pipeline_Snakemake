@@ -9,7 +9,7 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 1. **Staging and space reservation** (`Aligner.smk`)
    - Route-specific `start_sample_*` rules reserve active storage and validate or materialize inputs from active disk, `/archive`, dCache, or requester-pays S3 (`get_source_files`).
    - `get_readgroups` checkpoint populates `SAMPLEINFO` read group metadata when missing.
-   - A `dcache:<remote>:/path` `.source` is staged as a stable batch directly from Snellius and downloaded with Adler-32 verification. An `s3://bucket/path` `.source` is downloaded per sample on a staging node with the configured AWS profile and `--request-payer requester`; AWS credentials never belong in the sample sheet. S3 and dCache downloads share ZSlurm's inbound-transfer slot pool.
+   - A `dcache:<remote>:/path` `.source` is staged as a stable batch directly from Snellius and downloaded with Adler-32 verification. An `s3://bucket/path` `.source` is downloaded per sample on a compute node with the configured AWS profile and `--request-payer requester`; AWS credentials never belong in the sample sheet. S3 downloads request ZSlurm's independent `s3_download_slots` pool. During a rolling manager upgrade, the executor falls back to the dCache-download pool so concurrency remains bounded.
 
    For an S3-backed sheet, put only the common object prefix in the sidecar,
    for example `s3://wanglab-dss-share/distribution/adsp/cram`. Keep column 7
