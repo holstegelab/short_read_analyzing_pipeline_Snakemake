@@ -12,7 +12,7 @@ from typing import Mapping, Sequence
 
 
 MANIFEST_NAME = ".start_sample_manifest.json"
-SUPPORTED_ROUTES = {"active", "archive", "dcache"}
+SUPPORTED_ROUTES = {"active", "archive", "dcache", "s3"}
 
 
 class StartSampleRouteError(RuntimeError):
@@ -63,7 +63,7 @@ def sample_filenames(sample: Mapping[str, object]) -> list[str]:
 def expected_relative_files(
     sample: Mapping[str, object], route: str
 ) -> list[Path]:
-    if route not in {"archive", "dcache"}:
+    if route not in {"archive", "dcache", "s3"}:
         return []
     result: list[Path] = []
     for filename in sample_filenames(sample):

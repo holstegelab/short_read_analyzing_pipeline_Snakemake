@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from start_sample_route import (  # noqa: E402
     write_manifest,
 )
 from start_sample_job import run_start_sample_job  # noqa: E402
+import start_sample_job  # noqa: E402
 
 
 def test_route_and_archive_conversion_are_explicit():
@@ -29,6 +31,10 @@ def test_route_and_archive_conversion_are_explicit():
     assert expected_relative_files(sample, "archive") == [
         Path("lane/R1.fq.gz"), Path("lane/R2.fq.gz")
     ]
+    assert sample_route({"from_external": "s3"}) == "s3"
+    assert expected_relative_files(
+        {"file1": ["snd10000/sample.cram"], "file2": []}, "s3"
+    ) == [Path("snd10000/sample.cram")]
     assert sample_route({"from_external": False}) == "active"
     with pytest.raises(StartSampleRouteError, match="unsafe"):
         safe_relative_path("../escape.fastq.gz")
@@ -143,3 +149,70 @@ def test_dcache_start_job_adopts_declared_materialization(tmp_path):
 
     assert json.loads(route_ready.read_text())["route"] == "dcache"
     assert validate_materialized(destination, sample, "dcache") == records
+
+
+def test_s3_start_job_retries_signed_requester_pays_download(
+    monkeypatch, tmp_path
+):
+    sample = {
+        "from_external": "s3",
+        "prefix": "s3://wanglab-dss-share/distribution/adsp/cram",
+        "file1": ["snd10000/sample.cram"],
+        "file2": [],
+    }
+    destination = tmp_path / "source" / "S1.s3_data"
+    started = tmp_path / "source" / "S1.started"
+    route_ready = tmp_path / "source" / "S1.route_ready"
+    commands = []
+    sleeps = []
+
+    def fake_run(command, *, check, env):
+        commands.append((command, env))
+        if len(commands) == 1:
+            raise subprocess.CalledProcessError(1, command)
+        cp_index = command.index("cp")
+        Path(command[cp_index + 2]).write_bytes(b"cram")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(start_sample_job.subprocess, "run", fake_run)
+    monkeypatch.setattr(start_sample_job.time, "sleep", sleeps.append)
+
+    run_start_sample_job(
+        sample=sample,
+        sample_name="S1",
+        expected_route="s3",
+        destination=destination,
+        started=started,
+        route_ready=route_ready,
+        append_prefix=lambda prefix, filename: (
+            prefix.rstrip("/") + "/" + filename.lstrip("/")
+        ),
+        dcache_source_file=lambda _sample, _filename: (_ for _ in ()).throw(
+            AssertionError("S3 route must not resolve dCache input")
+        ),
+        transfer_script=tmp_path / "unused.py",
+        source_dir=tmp_path / "source",
+        dcache_download_workers=1,
+        dcache_download_lock_slots=1,
+        aws_cli="/managed/aws",
+        s3_max_attempts=2,
+        s3_initial_backoff_seconds=0.25,
+        s3_max_backoff_seconds=1,
+    )
+
+    assert sleeps == [0.25]
+    assert len(commands) == 2
+    command, environment = commands[-1]
+    assert command[0] == "/managed/aws"
+    assert command[command.index("cp") + 1] == (
+        "s3://wanglab-dss-share/distribution/adsp/cram/"
+        "snd10000/sample.cram"
+    )
+    assert command[command.index("--request-payer") + 1] == "requester"
+    assert "--no-sign-request" not in command
+    assert environment["AWS_EC2_METADATA_DISABLED"] == "true"
+    assert (destination / "snd10000" / "sample.cram").read_bytes() == b"cram"
+    assert json.loads(route_ready.read_text())["route"] == "s3"
+    assert validate_materialized(destination, sample, "s3") == [
+        {"path": "snd10000/sample.cram", "bytes": 4}
+    ]

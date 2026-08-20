@@ -14,8 +14,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Callable, Mapping
+from urllib.parse import urlsplit
 
 from start_sample_route import (
     StartSampleRouteError,
@@ -48,6 +50,10 @@ def run_start_sample_job(
     source_dir: str | os.PathLike[str],
     dcache_download_workers: int,
     dcache_download_lock_slots: int,
+    aws_cli: str = "aws",
+    s3_max_attempts: int = 6,
+    s3_initial_backoff_seconds: float = 30,
+    s3_max_backoff_seconds: float = 300,
 ) -> None:
     """Validate or materialize one sample, then publish atomic markers."""
 
@@ -102,7 +108,7 @@ def run_start_sample_job(
                         partial=partial,
                         append_prefix=append_prefix,
                     )
-                else:
+                elif route == "dcache":
                     _download_dcache_sample(
                         sample=sample,
                         sample_name=sample_name,
@@ -112,6 +118,21 @@ def run_start_sample_job(
                         source_dir=source_dir,
                         download_workers=dcache_download_workers,
                         download_lock_slots=dcache_download_lock_slots,
+                    )
+                elif route == "s3":
+                    _download_s3_sample(
+                        sample=sample,
+                        sample_name=sample_name,
+                        partial=partial,
+                        append_prefix=append_prefix,
+                        aws_cli=aws_cli,
+                        max_attempts=s3_max_attempts,
+                        initial_backoff_seconds=s3_initial_backoff_seconds,
+                        max_backoff_seconds=s3_max_backoff_seconds,
+                    )
+                else:  # Protected by sample_route(), retained as a hard guard.
+                    raise StartSampleRouteError(
+                        f"no materializer for source route {route!r}"
                     )
 
                 records = validate_materialized(partial, sample, route)
@@ -249,6 +270,124 @@ def _download_dcache_sample(
             os.unlink(list_path)
         except FileNotFoundError:
             pass
+
+
+def _validated_s3_uri(value: str) -> str:
+    """Validate an S3 object URI without accepting embedded authentication."""
+    if any(character in value for character in ("\0", "\n", "\r")):
+        raise StartSampleRouteError("S3 URI contains a control character")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise StartSampleRouteError(f"invalid S3 URI {value!r}: {exc}") from exc
+    if parsed.scheme != "s3" or not parsed.netloc or not parsed.path.lstrip("/"):
+        raise StartSampleRouteError(f"invalid S3 object URI: {value!r}")
+    if parsed.username or parsed.password or port is not None:
+        raise StartSampleRouteError(
+            "S3 source URI must not contain credentials or a port"
+        )
+    if parsed.query or parsed.fragment:
+        raise StartSampleRouteError(
+            "S3 source URI must not contain a query or fragment"
+        )
+    if any(
+        character
+        not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-"
+        for character in parsed.netloc
+    ):
+        raise StartSampleRouteError(f"invalid S3 bucket: {parsed.netloc!r}")
+    if any(part == ".." for part in parsed.path.split("/")):
+        raise StartSampleRouteError(f"S3 object URI escapes its root: {value!r}")
+    return f"s3://{parsed.netloc}/{parsed.path.lstrip('/')}"
+
+
+def _download_s3_sample(
+    *,
+    sample: Mapping[str, object],
+    sample_name: str,
+    partial: Path,
+    append_prefix: Callable[[str, str], str],
+    aws_cli: str,
+    max_attempts: int,
+    initial_backoff_seconds: float,
+    max_backoff_seconds: float,
+) -> None:
+    """Download requester-pays objects with bounded exponential backoff.
+
+    The command intentionally uses the normal AWS credential chain.  Anonymous
+    access is not enabled for the NIAGADS bucket, and credentials must never be
+    serialized into a sample sheet or command-line argument.
+    """
+    max_attempts = max(1, int(max_attempts))
+    initial_backoff_seconds = max(0.0, float(initial_backoff_seconds))
+    max_backoff_seconds = max(0.0, float(max_backoff_seconds))
+    environment = os.environ.copy()
+    environment.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+    environment.setdefault("AWS_RETRY_MODE", "adaptive")
+    environment.setdefault("AWS_MAX_ATTEMPTS", "10")
+    environment.setdefault("AWS_PAGER", "")
+
+    for filename in sample_filenames(sample):
+        source_uri = _validated_s3_uri(
+            append_prefix(str(sample["prefix"]), filename)
+        )
+        destination = partial / safe_relative_path(filename)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(
+            f".{destination.name}.s3-part-{os.getpid()}"
+        )
+        last_error: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            temporary.unlink(missing_ok=True)
+            command = [
+                str(aws_cli),
+                "--cli-connect-timeout",
+                "30",
+                "--cli-read-timeout",
+                "0",
+                "s3",
+                "cp",
+                source_uri,
+                str(temporary),
+                "--request-payer",
+                "requester",
+                "--only-show-errors",
+            ]
+            try:
+                subprocess.run(command, check=True, env=environment)
+                if not temporary.is_file() or temporary.stat().st_size <= 0:
+                    raise StartSampleRouteError(
+                        f"AWS CLI returned success without a non-empty object "
+                        f"for {sample_name}: {source_uri}"
+                    )
+                os.replace(temporary, destination)
+                last_error = None
+                break
+            except (OSError, subprocess.CalledProcessError, StartSampleRouteError) as exc:
+                last_error = exc
+                temporary.unlink(missing_ok=True)
+                if attempt >= max_attempts:
+                    break
+                delay = min(
+                    max_backoff_seconds,
+                    initial_backoff_seconds * (2 ** (attempt - 1)),
+                )
+                print(
+                    f"[start_sample] S3 download attempt {attempt}/"
+                    f"{max_attempts} failed for {sample_name}; retrying in "
+                    f"{delay:g}s: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                time.sleep(delay)
+
+        if last_error is not None:
+            raise StartSampleRouteError(
+                f"S3 download failed after {max_attempts} attempts for "
+                f"{sample_name}: {source_uri}"
+            ) from last_error
 
 
 def _release_archive_sources(

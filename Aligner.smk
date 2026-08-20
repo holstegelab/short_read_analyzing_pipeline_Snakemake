@@ -210,7 +210,7 @@ def get_source_files(wildcards):  #{{{
             continue
         f = append_prefix(prefixpath,f)
 
-        if f.startswith('archive:') or f.startswith('dcache:'):
+        if any(f.startswith(route + ':') for route in ('archive', 'dcache', 's3')):
             if not route_ready_added:
                 files.append(ancient(pj(
                     SOURCEDIR, wildcards['sample'] + '.route_ready'
@@ -493,7 +493,9 @@ def retrieve_batch(wildcards):  #{{{
 
     sample = SAMPLEINFO[wildcards['sample']]
     route = _start_sample_route(wildcards)
-    if route == 'active':
+    if route in ('active', 's3'):
+        # S3 is object storage and needs no batch-level tape staging.  The
+        # per-sample start rule performs the complete requester-pays download.
         return []
 
     route_ready = pj(SOURCEDIR, wildcards['sample'] + '.route_ready')
@@ -533,22 +535,29 @@ def _start_sample_time(wildcards, attempt=1):
         'active': 'start_sample',
         'archive': 'archive_to_active',
         'dcache': 'dcache_to_active',
+        's3': 's3_to_active',
     }[_start_sample_route(wildcards)]
     return get_time(rule_name)(wildcards, attempt)
 
 
 def _start_sample_partition(wildcards):
-    return 'archive' if _start_sample_route(wildcards) == 'archive' else 'compute'
+    return (
+        'archive'
+        if _start_sample_route(wildcards) in ('archive', 's3')
+        else 'compute'
+    )
 
 
 def _start_sample_cores(wildcards):
-    return {'active': 0.1, 'archive': 0.6, 'dcache': 1.0}[
+    return {'active': 0.1, 'archive': 0.6, 'dcache': 1.0, 's3': '0.2'}[
         _start_sample_route(wildcards)
     ]
 
 
 def _start_sample_mem_mb(wildcards):
-    return 1024 if _start_sample_route(wildcards) == 'dcache' else 256
+    return {'dcache': 1024, 's3': 512}.get(
+        _start_sample_route(wildcards), 256
+    )
 
 
 def _start_sample_active_add(wildcards):
@@ -595,7 +604,8 @@ def _start_sample_pattern(*routes):
 START_SAMPLE_ACTIVE_PATTERN = _start_sample_pattern('active')
 START_SAMPLE_ARCHIVE_PATTERN = _start_sample_pattern('archive')
 START_SAMPLE_DCACHE_PATTERN = _start_sample_pattern('dcache')
-START_SAMPLE_EXTERNAL_PATTERN = _start_sample_pattern('archive', 'dcache')
+START_SAMPLE_S3_PATTERN = _start_sample_pattern('s3')
+START_SAMPLE_EXTERNAL_PATTERN = _start_sample_pattern('archive', 'dcache', 's3')
 
 
 def _run_start_sample(wildcards, output, params):
@@ -626,6 +636,14 @@ def _run_start_sample(wildcards, output, params):
             'dcache_download_lock_slots',
             config.get('dcache_transfer_slots', 4),
         ))),
+        aws_cli=str(config.get('aws_cli', 'aws')),
+        s3_max_attempts=max(1, int(config.get('s3_max_attempts', 6))),
+        s3_initial_backoff_seconds=max(
+            0, float(config.get('s3_initial_backoff_seconds', 30))
+        ),
+        s3_max_backoff_seconds=max(
+            0, float(config.get('s3_max_backoff_seconds', 300))
+        ),
     )
 
 
@@ -709,6 +727,35 @@ rule start_sample_dcache:
         n=_start_sample_cores
     params:
         expected_route='dcache',
+        job_helper=srcdir('scripts/start_sample_job.py'),
+        transfer_script=srcdir('scripts/dcache_transfer.py')
+    run:
+        _run_start_sample(wildcards, output, params)
+
+
+rule start_sample_s3:
+    """Download one requester-pays S3 sample into tracked active storage."""
+    input:
+        retrieve_batch
+    output:
+        started=pj(SOURCEDIR,"{sample}.started"),
+        route_ready=temp(pj(SOURCEDIR,"{sample}.route_ready")),
+        materialized=temp(directory(pj(SOURCEDIR,"{sample}.s3_data")))
+    wildcard_constraints:
+        sample=START_SAMPLE_S3_PATTERN
+    resources:
+        time=_start_sample_time,
+        partition=_start_sample_partition,
+        active_use_add=_start_sample_active_add,
+        arch_use_remove=0,
+        dcache_use_remove=0,
+        # Reuse the manager's existing inbound-transfer pool.  This safely
+        # caps aggregate S3+dCache ingress without a manager/plugin restart.
+        dcache_download_slots=1,
+        mem_mb=_start_sample_mem_mb,
+        n=_start_sample_cores
+    params:
+        expected_route='s3',
         job_helper=srcdir('scripts/start_sample_job.py'),
         transfer_script=srcdir('scripts/dcache_transfer.py')
     run:

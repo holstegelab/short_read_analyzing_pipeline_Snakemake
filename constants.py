@@ -225,6 +225,7 @@ RUNTIME = {
     'archive_get':                             (  8400,   8400),
     'dcache_get':                              ( 90000,  90000),
     'dcache_to_active':                        ( 43200,  43200),
+    's3_to_active':                            ( 43200,  43200),
     'samtools_stats':                          (  7200,   7200),
     'kmer_reads':                              (  6600,   2100),
     'hs_stats':                                (  6300,   2100),

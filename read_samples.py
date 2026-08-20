@@ -12,13 +12,14 @@ import stat
 import bz2
 import time
 import argparse
+from urllib.parse import urlsplit
 import utils
 
 from constants import *
 from collections import OrderedDict
 
 
-PROTOCOLS = ['archive','dcache']
+PROTOCOLS = ['archive','dcache','s3']
 DCACHE_CONFIGS = {}
 
 
@@ -46,6 +47,37 @@ def parse_dcache_uri(value):
     if any(part == '..' for part in path.split('/')):
         raise ValueError(f'dCache URI escapes its root: {value!r}')
     return remote, path
+
+
+def parse_s3_uri(value):
+    """Parse a credential-free ``s3://bucket/key`` source reference.
+
+    Authentication is deliberately not encoded in sample sheets.  The AWS CLI
+    resolves credentials from its normal environment/profile when a start job
+    materializes the object.
+    """
+    value = str(value).strip()
+    if not value.startswith('s3:'):
+        return None
+
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f'Invalid S3 URI {value!r}: {exc}') from exc
+    if parsed.scheme != 's3' or not parsed.netloc or not parsed.path.lstrip('/'):
+        raise ValueError(f'Invalid S3 URI: {value!r}')
+    if parsed.username or parsed.password or port is not None:
+        raise ValueError(f'S3 URI must not contain credentials or a port: {value!r}')
+    if parsed.query or parsed.fragment:
+        raise ValueError(f'S3 URI must not contain a query or fragment: {value!r}')
+    if any(ch not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-' for ch in parsed.netloc):
+        raise ValueError(f'Invalid S3 bucket in URI: {value!r}')
+
+    key = '/' + parsed.path.lstrip('/')
+    if any(part == '..' for part in key.split('/')):
+        raise ValueError(f'S3 URI escapes its root: {value!r}')
+    return parsed.netloc, key
 
 
 def resolve_dcache_config(remote, samplefile_dir):
@@ -271,7 +303,7 @@ def read_samplefile(filename, prefixpath=None):
     Targetpath can be given by a .target file in the same directory as the sample file.
 
     Paths can be prepended by a protocol (e.g. archive:/path/to/data) to indicate that the data is not local.
-    Accepted protocol values: archive, dcache
+    Accepted protocol values: archive, dcache, s3
 
 
     :param filename: name of the sample file
@@ -285,6 +317,7 @@ def read_samplefile(filename, prefixpath=None):
     basename = os.path.splitext(filename)[0]
     samplefile_dir = os.path.dirname(filename)
     source_remote = None
+    source_bucket = None
     source_root = None
     source_config = None
     if os.path.exists(basename + '.source'):
@@ -296,6 +329,10 @@ def read_samplefile(filename, prefixpath=None):
         if source_endpoint:
             source_remote, source_root = source_endpoint
             source_config = resolve_dcache_config(source_remote, samplefile_dir)
+        else:
+            s3_endpoint = parse_s3_uri(prefixpath)
+            if s3_endpoint:
+                source_bucket, source_root = s3_endpoint
         print(f'SOURCE PATH OVERRIDE: by {basename}.source file to {prefixpath}')
 
     if not prefixpath:
@@ -382,9 +419,9 @@ def read_samplefile(filename, prefixpath=None):
 
             filenames1 = [a.strip() for a in filenames1.split(',') if a.strip() != '']
             filenames2 = [a.strip() for a in filenames2.split(',') if a.strip() != '']
-            if source_remote:
+            if source_remote or source_bucket:
                 # A leading slash in a sample listing denotes the root of the
-                # selected dCache remote, not the local filesystem root.
+                # selected external remote, not the local filesystem root.
                 filenames1 = [a.lstrip('/') for a in filenames1]
                 if 'cram' not in file_type:
                     filenames2 = [a.lstrip('/') for a in filenames2]
@@ -421,6 +458,7 @@ def read_samplefile(filename, prefixpath=None):
             res = {'samplefile': orig_filename[:-4], 'file1': filenames1, 'file2': filenames2, 'prefix': prefixpath,
                     'target':targetpath,
                    'source_remote': source_remote, 'source_root': source_root, 'source_config': source_config,
+                   'source_bucket': source_bucket,
                    'target_remote': target_remote, 'target_root': target_root, 'target_config': target_config,
                    'sample': sample_id, 'filesize': filesize, 'alt_name': alternative_names, 'study': study,
                    'file_type': file_type, 'sample_type': sample_type, 'capture_kit': capture_kit, 'sex': sex, 
@@ -909,7 +947,9 @@ def load_samplefiles(filedir, cache):
                         print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w_filtered)))
                     
 
-                    #assign to batches for staging from archive or dcache
+                    # Assign stable accounting batches for external routes.
+                    # S3 does not need a batch-stage job, but retaining the
+                    # assignment keeps the cached sample metadata uniform.
                     cursize_full = 0 #size if all files need to be staged
                     cursize_actual = 0 #size excluding files that are already retrieved
                     
@@ -929,17 +969,18 @@ def load_samplefiles(filedir, cache):
                         info['need_retrieval'] = True
                         filesize = info['filesize']
 
-                        archive_retrieved = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.archive_retrieved'))
-                        dcache_retrieved = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.dcache_retrieved'))
+                        protocol = info['from_external']
+                        legacy_retrieved = os.path.exists(os.path.join(
+                            os.getcwd(), SOURCEDIR,
+                            sample + f'.{protocol}_retrieved'
+                        ))
                         route_ready = os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.route_ready'))
 
-                        if (route_ready or archive_retrieved or dcache_retrieved) or \
+                        if (route_ready or legacy_retrieved) or \
                             os.path.exists(os.path.join(os.getcwd(), SOURCEDIR, sample + '.finished')):
                             info['need_retrieval'] = False
                             filesize=0
                         
-                        
-                        protocol = info['from_external']
                         
                         #check if batch is full
                         if (cursize[protocol]['full'] + info['filesize']) > MAX_BATCH_SIZE: #stable batch allocation

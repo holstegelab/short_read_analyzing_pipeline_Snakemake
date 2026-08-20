@@ -541,7 +541,11 @@ sample_names = SAMPLEINFO.keys()
 def external_data_dir(sample, sinfo=None):
     """Return the protocol-specific active-storage directory for a sample."""
     info = SAMPLEINFO[sample] if sinfo is None else sinfo
-    suffix = ".dcache_data" if info.get("from_external") == "dcache" else ".data"
+    suffix = {
+        "archive": ".data",
+        "dcache": ".dcache_data",
+        "s3": ".s3_data",
+    }.get(info.get("from_external"), ".data")
     return pj(SOURCEDIR, str(sample) + suffix)
 
 
