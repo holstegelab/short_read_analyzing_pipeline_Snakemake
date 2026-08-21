@@ -26,7 +26,13 @@ def test_kmer_sex_fusion_has_runtime_and_analysis_modules():
     # kmc and kmc_tools are installed by kmc.post-deploy.sh.
     assert {"python", "numpy", "pandas", "scipy", "pyyaml"} <= dependencies
     post_deploy = (REPO / "envs" / "kmc.post-deploy.sh").read_text()
-    assert "make -j32" in post_deploy
+    assert "KMC_BUILD_JOBS=${KMC_BUILD_JOBS:-32}" in post_deploy
+    assert "make -j${KMC_BUILD_JOBS}" in post_deploy
+    assert "KMC_COMMIT=751ef36a3c1ccc6dda664f529ad218dc51d76f55" in post_deploy
+    assert (
+        "Params.n_threads = Params.n_readers + Params.n_splitters;"
+        in post_deploy
+    )
     assert "cp ${CONDA_PREFIX}/software/kmc/bin/* ${CONDA_PREFIX}/bin" in post_deploy
 
 
