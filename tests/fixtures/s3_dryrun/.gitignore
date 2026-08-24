@@ -1,0 +1,3 @@
+*.adat
+.snakemake/
+tmp/

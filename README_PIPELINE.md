@@ -7,9 +7,18 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 ## Per-sample flow (WGS and WES)
 
 1. **Staging and space reservation** (`Aligner.smk`)
-   - `start_sample` reserves active storage; retrieves data if stored on tape/dCache using `archive_to_active` or `dcache_to_active` indicator files (`get_source_files`).
+   - Route-specific `start_sample_*` rules reserve active storage and validate or materialize inputs from active disk, `/archive`, dCache, or requester-pays S3 (`get_source_files`).
    - `get_readgroups` checkpoint populates `SAMPLEINFO` read group metadata when missing.
-   - A `dcache:<remote>:/path` `.source` is staged as a stable batch directly from Snellius. `dcache_to_active` then uses `dcache_cp` to Adler-32-verify each sample before readgroup inspection, while the existing `archive:` path remains unchanged.
+   - A `dcache:<remote>:/path` `.source` is staged as a stable batch directly from Snellius and downloaded with Adler-32 verification. An `s3://bucket/path` `.source` is downloaded per sample on a compute node with the configured AWS profile and `--request-payer requester`; AWS credentials never belong in the sample sheet. S3 downloads request ZSlurm's independent `s3_download_slots` pool. During a rolling manager upgrade, the executor falls back to the dCache-download pool so concurrency remains bounded.
+
+   For an S3-backed sheet, put only the common object prefix in the sidecar,
+   for example `s3://wanglab-dss-share/distribution/adsp/cram`. Keep column 7
+   relative to that prefix and set the ninth-column `filesize=<GiB>` value from
+   catalog metadata so active-storage accounting is resolved without querying
+   S3 while building the DAG. The route is non-interactive and uses the normal
+   AWS credential chain; anonymous `--no-sign-request` access is not assumed.
+   Optional workflow configuration keys are `aws_cli`, `s3_max_attempts`,
+   `s3_initial_backoff_seconds`, and `s3_max_backoff_seconds`.
 
 2. **Optional readgroup split & FASTQ preparation**
    - `split_alignments_by_readgroup` splits multi-RG BAM/CRAMs.

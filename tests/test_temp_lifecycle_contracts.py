@@ -16,6 +16,7 @@ def test_external_start_routes_publish_tracked_temp_directories():
     snakefile = (REPO / "Snakefile").read_text()
     archive = rule_body(aligner, "start_sample_archive")
     dcache = rule_body(aligner, "start_sample_dcache")
+    s3 = rule_body(aligner, "start_sample_s3")
     release = rule_body(aligner, "release_materialized_source")
 
     assert 'materialized=temp(directory(pj(SOURCEDIR,"{sample}.data")))' in archive
@@ -25,6 +26,11 @@ def test_external_start_routes_publish_tracked_temp_directories():
     )
     assert "sample=START_SAMPLE_ARCHIVE_PATTERN" in archive
     assert "sample=START_SAMPLE_DCACHE_PATTERN" in dcache
+    assert 'materialized=temp(directory(pj(SOURCEDIR,"{sample}.s3_data")))' in s3
+    assert "sample=START_SAMPLE_S3_PATTERN" in s3
+    assert "s3_download_slots=1" in s3
+    assert "dcache_download_slots=1" not in s3
+    assert "_start_sample_route(wildcards) == 'archive'" in aligner
     assert "files.append(ancient(external_data_dir(" in aligner
     assert 'bam=pj(BAM, "{sample}.markdup.bam")' in release
     assert 'materialized=lambda wildcards: external_data_dir(' in release

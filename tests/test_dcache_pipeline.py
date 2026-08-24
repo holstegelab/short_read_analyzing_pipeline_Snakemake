@@ -37,6 +37,17 @@ def test_parse_dcache_uri_rejects_escape():
         read_samples.parse_dcache_uri("dcache:mine:/cohort/../secret")
 
 
+def test_parse_s3_uri_and_reject_embedded_authentication():
+    assert read_samples.parse_s3_uri(
+        "s3://wanglab-dss-share/distribution/adsp/cram"
+    ) == ("wanglab-dss-share", "/distribution/adsp/cram")
+    assert read_samples.parse_s3_uri("/local/file") is None
+    with pytest.raises(ValueError, match="credentials"):
+        read_samples.parse_s3_uri("s3://user:secret@bucket/key")
+    with pytest.raises(ValueError, match="escapes"):
+        read_samples.parse_s3_uri("s3://bucket/root/../secret")
+
+
 def test_external_cram_sidecars_are_parsed(tmp_path):
     listing = tmp_path / "cohort.tsv"
     source = tmp_path / "cohort.source"
@@ -85,6 +96,32 @@ def test_external_cram_no_ref_defaults_to_false(tmp_path):
     sample = read_samples.read_samplefile(str(listing))[0]
 
     assert sample["cram_no_ref"] is False
+
+
+def test_s3_external_cram_sidecar_is_parsed_without_credentials(tmp_path):
+    listing = tmp_path / "cohort.tsv"
+    (tmp_path / "cohort.source").write_text(
+        "s3://wanglab-dss-share/distribution/adsp/cram\n",
+        encoding="utf-8",
+    )
+    listing.write_text(
+        "study\tstudy_sample1\tcram\tillumina_wgs\t\tF\t"
+        "/snd10000/sample.cram\t/reference/hg38.fa\tfilesize=2.5\n",
+        encoding="utf-8",
+    )
+
+    sample = read_samples.read_samplefile(str(listing))[0]
+
+    assert sample["from_external"] == "s3"
+    assert sample["source_bucket"] == "wanglab-dss-share"
+    assert sample["source_root"] == "/distribution/adsp/cram"
+    assert sample["source_remote"] is None
+    assert sample["source_config"] is None
+    assert sample["file1"] == ["snd10000/sample.cram"]
+    assert read_samples.append_prefix(sample["prefix"], sample["file1"][0]) == (
+        "s3://wanglab-dss-share/distribution/adsp/cram/"
+        "snd10000/sample.cram"
+    )
 
 
 def test_download_list_and_adler(tmp_path):
