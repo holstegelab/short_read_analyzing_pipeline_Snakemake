@@ -36,6 +36,16 @@ def test_kmer_sex_fusion_has_runtime_and_analysis_modules():
     assert "cp ${CONDA_PREFIX}/software/kmc/bin/* ${CONDA_PREFIX}/bin" in post_deploy
 
 
+def test_kmc_reserves_average_cpu_without_reducing_tool_parallelism():
+    aligner = (REPO / "Aligner.smk").read_text()
+    runner = (REPO / "scripts" / "run_fused_kmer_sex.py").read_text()
+
+    assert "KMC_RESERVED_CORES = 2" in aligner
+    assert aligner.count("n=str(KMC_RESERVED_CORES)") == 2
+    for option in ('"-sf12"', '"-sp12"', '"-sr1"'):
+        assert option in runner
+
+
 def test_alignment_fusion_combines_aligner_and_bam_tooling():
     dependencies = conda_dependencies("align_fused.yaml")
     assert {"python", "dragmap", "samtools", "htslib", "setuptools"} <= dependencies

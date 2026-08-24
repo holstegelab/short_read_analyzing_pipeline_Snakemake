@@ -1355,9 +1355,11 @@ def get_all_prepared_fastq(wildcards):  #{{{
 FUSE_KMER_SEX = _config_bool(
     config.get('fuse_kmer_sex', True), 'fuse_kmer_sex'
 )
-# KMC stage 1 runs 12 FASTQ readers, 12 splitters, one bin writer and one
-# bin reader concurrently with the command-line settings below.
-KMC_STAGE1_CORES = 26
+# KMC stage 1 can create 12 FASTQ readers, 12 splitters, one bin writer and
+# one bin reader with the command-line settings below.  Reserve for observed
+# average CPU use rather than the theoretical thread maximum: 2 cores yielded
+# about 67% CPU reservation efficiency over 2,778 successful production jobs.
+KMC_RESERVED_CORES = 2
 KMER_SEX_LEASE_MODE = str(
     config.get('kmer_sex_lease_mode', 'required')
 ).strip().lower()
@@ -1382,7 +1384,7 @@ rule kmer_reads:
     priority: 15
     resources:
         time = get_time('kmer_reads'),
-        n=str(KMC_STAGE1_CORES),
+        n=str(KMC_RESERVED_CORES),
         mem_mb=lambda wildcards, attempt: (attempt - 1) * 0.5 * int(36000) + int(36000),
         ssd_use="required",
         ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(input.fastq, factor=1.0, overhead_gb=3, minimum_gb=8)
@@ -1485,7 +1487,7 @@ if FUSE_KMER_SEX:
         priority: 15
         resources:
             time=get_time('kmer_sex_fused'),
-            n=str(KMC_STAGE1_CORES),
+            n=str(KMC_RESERVED_CORES),
             mem_mb=lambda wildcards, attempt: (
                 (attempt - 1) * 0.5 * 38000 + 38000
             ),
