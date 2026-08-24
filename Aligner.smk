@@ -780,7 +780,7 @@ def get_mem_mb_split_alignments(wildcards, attempt):  #{{{
     if len(readgroups_b) <= 1:
         return 512
     else:
-        res = 7000
+        res = 4000
     return attempt * res
 
 
@@ -1271,7 +1271,7 @@ if FUSE_EXTERNAL_ADAPTER:
                 --initial-cores {resources.n} \
                 --initial-memory-mb {resources.mem_mb} \
                 --adapter-cores 5 \
-                --adapter-memory-mb 1024 \
+                --adapter-memory-mb 768 \
                 --lease-mode {params.lease_mode:q} \
                 --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
@@ -1444,7 +1444,7 @@ if FUSE_KMER_SEX:
             time=get_time('kmer_sex_fused'),
             n=str(KMC_STAGE1_CORES),
             mem_mb=lambda wildcards, attempt: (
-                (attempt - 1) * 0.5 * 42000 + 42000
+                (attempt - 1) * 0.5 * 38000 + 38000
             ),
             ssd_use="required",
             ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
@@ -1508,10 +1508,10 @@ if ALIGNMENT_LEASE_MODE not in {'required', 'optional', 'disabled'}:
 
 def _fused_low_memory_mb(wildcards):
     # A 179-GB production readgroup made bam_merge reach about 15.3 GB RSS;
-    # coordinate sort has also peaked around 13.5 GB. Keep enough headroom for
-    # the entire merge/dechimer/sort tail at one monotonic target so the job
-    # never needs to reacquire memory after releasing the 40-GB align lease.
-    return 20000
+    # coordinate sort has also peaked around 13.5 GB. A 15-GB scheduling
+    # target tracks that observed tail peak while keeping the lease monotonic,
+    # so the job never needs to reacquire memory after the 40-GB alignment.
+    return 15000
 
 
 def _fused_ignore_qual_flag(wildcards):
@@ -1851,7 +1851,7 @@ rule merge_rgs:
     resources:
         time = get_time('merge_rgs'),
         n="1",
-        mem_mb=1250
+        mem_mb=750
     priority: 19
     conda: CONDA_MAIN
     run:
@@ -2000,7 +2000,7 @@ rule mCRAM:
         n="2",
         # Full-depth Knight WGS CRAM conversion was observed at about 1.44 GB,
         # leaving virtually no headroom with the previous 1.5 GB request.
-        mem_mb=2500
+        mem_mb=1800
     priority: 30
     conda: CONDA_MAIN
     log:

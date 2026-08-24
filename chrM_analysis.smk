@@ -509,7 +509,7 @@ if FUSE_CHRM_MUTECT_TAIL:
         resources:
             time=get_time('chrm_mutect_tail_fused'),
             n=4,
-            mem_mb=5000,
+            mem_mb=2000,
             ssd_use="required",
             ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
                 [input.bam_chrM, input.bam_shifted_chrM, input.bam_NUMTs, input.bam_shifted_NUMTs],

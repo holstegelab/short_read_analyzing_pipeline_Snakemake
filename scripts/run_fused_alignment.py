@@ -163,7 +163,7 @@ def lease_preflight(
 
 
 def shrink_lease(
-    lease: dict[str, Any], *, cores: float, memory_mb: float
+    lease: dict[str, Any], *, cores: float, memory_mb: float, phase: str | None = None
 ) -> dict[str, Any]:
     if not lease.get("available"):
         lease["shrink"] = {"performed": False, "reason": "lease unavailable"}
@@ -171,6 +171,8 @@ def shrink_lease(
     arguments = [
         "set", "--cores", str(cores), "--mem-mb", str(memory_mb), "--wait", "0",
     ]
+    if phase is not None:
+        arguments.extend(["--phase", phase])
     last_error: Exception | None = None
     last_response: dict[str, Any] | None = None
     # zslurm_chief samples live PSS every five seconds by default. Cover at
@@ -393,7 +395,10 @@ def main() -> int:
         )
 
         lease = shrink_lease(
-            lease, cores=args.low_cores, memory_mb=args.low_memory_mb
+            lease,
+            cores=args.low_cores,
+            memory_mb=args.low_memory_mb,
+            phase="alignment_tail",
         )
 
         merge_stats = job_tmp / "merge_stats.tsv"

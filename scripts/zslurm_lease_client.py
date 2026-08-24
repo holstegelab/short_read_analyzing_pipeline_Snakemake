@@ -109,6 +109,15 @@ def parser():
         metavar="SECONDS",
         help="maximum time to wait for growth (default: 3600)",
     )
+    set_parser.add_argument(
+        "--phase",
+        help="name the phase started by this request, even if resources are unchanged",
+    )
+
+    phase_parser = commands.add_parser(
+        "phase", help="start a named phase without changing held resources"
+    )
+    phase_parser.add_argument("name", help="semantic phase name")
 
     release_parser = commands.add_parser(
         "release", help="atomically release resources relative to the current holding"
@@ -165,14 +174,21 @@ def main(argv=None):
             mem_mb = args.mem_mb
             if args.mem_gb is not None:
                 mem_mb = args.mem_gb * 1024.0
-            if args.cores is None and mem_mb is None:
-                argument_parser.error("set requires --cores, --mem-mb, or --mem-gb")
+            if args.cores is None and mem_mb is None and args.phase is None:
+                argument_parser.error(
+                    "set requires --cores, --mem-mb, --mem-gb, or --phase"
+                )
             response = request_from_environment(
                 "set",
                 socket_timeout_s=max(10.0, args.wait + 5.0),
                 cores=args.cores,
                 mem_mb=mem_mb,
                 timeout_s=args.wait,
+                phase=args.phase,
+            )
+        elif args.command == "phase":
+            response = request_from_environment(
+                "phase", socket_timeout_s=10.0, phase=args.name
             )
         else:
             mem_mb = args.mem_mb

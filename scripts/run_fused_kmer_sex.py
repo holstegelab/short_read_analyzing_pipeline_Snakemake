@@ -140,7 +140,10 @@ def main() -> int:
         require_kmc_prefix(str(database))
 
         lease = shrink_lease(
-            lease, cores=args.low_cores, memory_mb=args.low_memory_mb
+            lease,
+            cores=args.low_cores,
+            memory_mb=args.low_memory_mb,
+            phase="sex_check",
         )
 
         chry = job_tmp / "chry.tsv"

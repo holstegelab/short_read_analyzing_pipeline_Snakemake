@@ -196,7 +196,10 @@ def main() -> int:
                 raise RuntimeError(f"FASTQ extraction output is absent: {path}")
 
         lease = shrink_lease(
-            lease, cores=args.adapter_cores, memory_mb=args.adapter_memory_mb
+            lease,
+            cores=args.adapter_cores,
+            memory_mb=args.adapter_memory_mb,
+            phase="adapter_removal",
         )
         base1, max1 = quality_base(raw1)
         base2, max2 = quality_base(raw2)

@@ -50,6 +50,18 @@ def _serve(socket_path: Path, requests: list[dict], count: int):
                             "max_mem_mb": 12000.0,
                             "epoch": 1,
                         }
+                    elif action == "phase":
+                        response = {
+                            "ok": True,
+                            "code": 0,
+                            "status": "phase_started",
+                            "phase": request["phase"],
+                            "held_cores": 2.5,
+                            "max_cores": 12.0,
+                            "held_mem_mb": 4096.0,
+                            "max_mem_mb": 12000.0,
+                            "epoch": 2,
+                        }
                     else:
                         release_id = request["release_id"]
                         duplicate = release_id in completed_release_ids
@@ -92,7 +104,7 @@ def test_pipeline_local_client_status_set_and_idempotent_release(tmp_path):
 
     requests = []
     socket_path = tmp_path / "lease.sock"
-    server = _serve(socket_path, requests, count=4)
+    server = _serve(socket_path, requests, count=5)
     environment = os.environ.copy()
     environment.update(
         {
@@ -113,8 +125,11 @@ def test_pipeline_local_client_status_set_and_idempotent_release(tmp_path):
             "4",
             "--wait",
             "7",
+            "--phase",
+            "alignment_tail",
         ).stdout
     )
+    phase = json.loads(_run(environment, "phase", "publishing").stdout)
     first_release = json.loads(
         _run(
             environment,
@@ -144,18 +159,23 @@ def test_pipeline_local_client_status_set_and_idempotent_release(tmp_path):
     assert status["status"] == "current"
     assert updated["held_cores"] == 2.5
     assert updated["held_mem_mb"] == 4096.0
+    assert phase["status"] == "phase_started"
+    assert phase["phase"] == "publishing"
     assert first_release["status"] == "released"
     assert duplicate_release["status"] == "duplicate"
     assert [request["action"] for request in requests] == [
         "status",
         "set",
+        "phase",
         "release",
         "release",
     ]
     assert all(request["version"] == 1 for request in requests)
     assert all(request["job_id"] == "123" for request in requests)
     assert requests[1]["timeout_s"] == 7.0
-    assert requests[2]["release_id"] == requests[3]["release_id"]
+    assert requests[1]["phase"] == "alignment_tail"
+    assert requests[2]["phase"] == "publishing"
+    assert requests[3]["release_id"] == requests[4]["release_id"]
 
 
 def test_pipeline_local_client_fails_cleanly_without_lease_environment():

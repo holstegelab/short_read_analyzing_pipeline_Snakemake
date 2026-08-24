@@ -229,7 +229,10 @@ def main() -> int:
                 raise RuntimeError(f"DeepVariant did not create required output: {path}")
 
         lease = shrink_lease(
-            lease, cores=args.low_cores, memory_mb=args.low_memory_mb
+            lease,
+            cores=args.low_cores,
+            memory_mb=args.low_memory_mb,
+            phase="phasing_merge",
         )
 
         phased = job_tmp / "phased.vcf.gz"

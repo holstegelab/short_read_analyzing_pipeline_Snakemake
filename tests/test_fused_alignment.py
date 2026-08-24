@@ -35,9 +35,12 @@ def test_shrink_lease_retries_a_temporary_memory_safety_floor(monkeypatch):
     monkeypatch.setattr(fused_alignment.time, "sleep", lambda _seconds: None)
     lease = {"available": True, "mode": "required", "command": "/lease"}
 
-    result = fused_alignment.shrink_lease(lease, cores=5, memory_mb=1024)
+    result = fused_alignment.shrink_lease(
+        lease, cores=5, memory_mb=1024, phase="alignment_tail"
+    )
 
     assert len(calls) == 2
+    assert all(call[1][-2:] == ["--phase", "alignment_tail"] for call in calls)
     assert result["shrink"]["performed"] is True
     assert result["shrink"]["target_reached"] is True
     assert result["shrink"]["attempts"] == 2
