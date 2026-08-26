@@ -57,8 +57,74 @@ echo '--- kmc_core/kmc.h
 +		// Stage 2. Keep it in sync when readers and splitters are set explicitly.
 +		Params.n_threads = Params.n_readers + Params.n_splitters;' >> kmc_make.patch
 
+echo '--- kmc_core/binary_reader.h
++++ kmc_core/binary_reader.h
+@@ -21,0 +22,3 @@
++#include <cerrno>
++#include <chrono>
++#include <cstring>
+@@ -22,0 +26 @@
++#include <thread>
+@@ -78,0 +83,39 @@
++	uint64 ReadPart(FILE* f, uchar* part, const string& file_name)
++	{
++		constexpr uint32 max_read_attempts = 5;
++		constexpr uint32 initial_retry_delay_ms = 100;
++
++		for (uint32 attempt = 1; attempt <= max_read_attempts; ++attempt)
++		{
++			errno = 0;
++			uint64 readed = fread(part, 1, part_size, f);
++			if (!ferror(f))
++				return readed;
++
++			const int read_errno = errno;
++			clearerr(f);
++
++			// fread may return valid bytes and set the error indicator at the
++			// same time. Process those bytes now; the next call resumes from the
++			// current file position with a cleared error indicator.
++			if (readed)
++				return readed;
++
++			if (attempt < max_read_attempts)
++			{
++				const uint32 retry_delay_ms = initial_retry_delay_ms << (attempt - 1);
++				std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
++				continue;
++			}
++
++			std::ostringstream ostr;
++			ostr << "Error while reading file: " << file_name
++				 << " after " << max_read_attempts << " attempts";
++			if (read_errno)
++				ostr << ": " << std::strerror(read_errno);
++			CCriticalErrorHandler::Inst().HandleCriticalError(ostr.str());
++		}
++
++		return 0;
++	}
++
+@@ -417 +460 @@
+-		vector<tuple<FILE*, CBinaryPackQueue*, CompressionType>> files;
++		vector<tuple<FILE*, CBinaryPackQueue*, CompressionType, string>> files;
+@@ -430 +473 @@
+-			files.push_back(make_tuple(f, q, mode));
++			files.push_back(make_tuple(f, q, mode, file_name));
+@@ -432 +475 @@
+-			uint64 readed = fread(part, 1, part_size, f);
++			uint64 readed = ReadPart(f, part, file_name);
+@@ -453 +496 @@
+-				uint64 readed = fread(part, 1, part_size, get<0>(f));
++				uint64 readed = ReadPart(get<0>(f), part, get<3>(f));
+@@ -467,0 +511 @@
++						get<3>(f) = file_name;
+@@ -469 +513 @@
+-						readed = fread(part, 1, part_size, get<0>(f));
++						readed = ReadPart(get<0>(f), part, get<3>(f));' >> kmc_make.patch
 
-patch --batch -p0 < kmc_make.patch
+
+patch --batch --ignore-whitespace -p0 < kmc_make.patch
 make -j${KMC_BUILD_JOBS}
 make
 

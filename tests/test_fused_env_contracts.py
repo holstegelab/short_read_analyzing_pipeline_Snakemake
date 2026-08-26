@@ -33,6 +33,11 @@ def test_kmer_sex_fusion_has_runtime_and_analysis_modules():
         "Params.n_threads = Params.n_readers + Params.n_splitters;"
         in post_deploy
     )
+    assert "uint64 ReadPart(FILE* f, uchar* part" in post_deploy
+    assert "max_read_attempts = 5" in post_deploy
+    assert "if (!ferror(f))" in post_deploy
+    assert "clearerr(f);" in post_deploy
+    assert post_deploy.count("ReadPart(") == 4
     assert "cp ${CONDA_PREFIX}/software/kmc/bin/* ${CONDA_PREFIX}/bin" in post_deploy
 
 
