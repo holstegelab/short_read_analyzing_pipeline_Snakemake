@@ -25,21 +25,6 @@ DEEPVARIANT_NATIVE_PREFIX = config.get(
 )
 
 
-def _deepvariant_config_bool(value, name):
-    if isinstance(value, bool):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized in {'1', 'true', 'yes', 'on'}:
-        return True
-    if normalized in {'0', 'false', 'no', 'off', ''}:
-        return False
-    raise ValueError(f"{name} must be true or false, got {value!r}")
-
-
-FUSE_DEEPVARIANT_PHASING = _deepvariant_config_bool(
-    config.get('fuse_deepvariant_phasing', True),
-    'fuse_deepvariant_phasing',
-)
 DEEPVARIANT_LEASE_MODE = str(
     config.get('deepvariant_lease_mode', 'required')
 ).strip().lower()
@@ -244,7 +229,6 @@ rule copy_deepvariant_wes_region_to_dcache:
         shell(f"touch {quote(str(output.copied))}")
 
 
-
 rule deepvariant_tar_wgs_all:
     input:
         expand(pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar.copied"), samplefile=WGS_SAMPLEFILES, region=level2_regions)
@@ -297,390 +281,110 @@ def region_to_bed_file_wgs(wildcards):#{{{
     region = wildcards['region']
     return region_to_file(region, wgs=True, extension='bed')#}}}
 
-rule deepvariant_apptainer:
-    """Opt-in DeepVariant 1.9.0 fallback using Apptainer."""
+include: "Deepvariant_apptainer.smk"
+
+
+rule deepvariant_phasing_fused:
+    """Call, phase, merge, and extract one regional DeepVariant gVCF."""
     input:
-        bed = region_to_bed_file,
-        bed_wgs = region_to_bed_file_wgs,
+        bed=region_to_bed_file,
         bam=pj(BAM, "{sample}.markdup.bam"),
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        validated_sex=pj(KMER,"{sample}.result.yaml"),
+        validated_sex=pj(KMER,"{sample}.result.yaml")
     output:
-        vcf = pj(DEEPVARIANT_APPTAINER,'VCF', "{region}","{sample}.{region}.vcf.gz"),
-        vcf_tbi = pj(DEEPVARIANT_APPTAINER,'VCF', "{region}","{sample}.{region}.vcf.gz.tbi"),
-        gvcf = pj(DEEPVARIANT_APPTAINER,'gVCF', "{region}","{sample}.{region}.g.vcf.gz"),
-        gvcf_tbi = pj(DEEPVARIANT_APPTAINER,'gVCF', "{region}","{sample}.{region}.g.vcf.gz.tbi")
+        vcf=temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz")),
+        vcf_tbi=temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz.tbi")),
+        wstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
+        mwstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
+        bcftools_stats=temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
+        bcftools_summary=ensure(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv"), non_empty=True),
+        tmp_gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
+        gvcf=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
+        gvcf_tbi=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        gvcf_exome=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+        gvcf_exome_tbi=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True)
+    log:
+        runner=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.log"),
+        io_profile=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.io.json")
     params:
-            mode=get_sequencing_mode,
-            haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
-            skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
-            inter_dir = pj(DEEPVARIANT_APPTAINER,'DV_intermediate'),
-            # check = CHECKEMPTY
-    container: 'docker://google/deepvariant:1.9.0'
-    resources:
-        n="7",
-        nshards=8,
-        # Limit concurrent Apptainer launches in Snakemake with
-        # --resources deepvariant_container_slots=N. Without this, a retry
-        # wave can exhaust the pilot node's user-namespace quota.
-        deepvariant_container_slots=1,
-        mem_mb=get_mem_mb_deepvariant,
-        time = get_time('deepvariant'),
-        ssd_use="possible",
-        # Live WGS region jobs use 0.9--1.4 GiB. Keep room for a larger
-        # interval, TFRecords and transient post-processing files.
-        ssd_gb=4
-    shell:
-        """
-        if [ {params.skipsex} -eq 0 ]
-        then
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            JOB_ID="${{SLURM_JOB_ID}}"
-            if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
-            if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant_apptainer/$JOB_ID"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant_apptainer/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
-            RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
-            echo "SSD base: $TMP_SSD" >&2
-            echo "RUNDIR_BASE: $RUNDIR_BASE" >&2
-            echo "JOB_ID: $JOB_ID" >&2
-            echo "RUNDIR: $RUNDIR" >&2
-            /bin/rm -rf "$RUNDIR" 2>/dev/null || true
-            mkdir -p "$RUNDIR"
-            trap '/bin/rm -rf "$RUNDIR" 2>/dev/null || true' EXIT INT TERM
-
-            OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
-            TF_NUM_INTRAOP_THREADS={resources.nshards} TF_NUM_INTEROP_THREADS={resources.nshards} \
-            /opt/deepvariant/bin/run_deepvariant \
-              --make_examples_extra_args "normalize_reads=true,regions={input.bed},small_model_call_multiallelics=false" \
-              --call_variants_extra_args "config_string=inter_op_parallelism_threads: {resources.nshards} intra_op_parallelism_threads: {resources.nshards} device_count: {{ key: 'CPU' value: {resources.nshards} }}" \
-              --num_shards={resources.nshards} \
-              --model_type={params.mode} \
-              --ref={REF_MALE} --reads={input.bam} \
-              --output_vcf={output.vcf} --output_gvcf={output.gvcf} \
-              --haploid_contigs {params.haploid_contigs} \
-              --intermediate_results_dir "$RUNDIR" \
-              --postprocess_cpus {resources.nshards}
-        else
-            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.vcf}
-            tabix -f -p vcf {output.vcf}
-            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.gvcf}
-            tabix -f -p vcf {output.gvcf}            
-        fi
-        """
-
-def get_deepvariant_apptainer_gvcfs(wildcards):
-    files = []
-    for sample in sample_names:
-        regions = level1_regions if 'wgs' in SAMPLEINFO[sample]['sample_type'] else level0_regions
-        for region in regions:
-            gvcf = pj(DEEPVARIANT_APPTAINER, 'gVCF', region, f'{sample}.{region}.g.vcf.gz')
-            files.extend([gvcf, gvcf + '.tbi'])
-    return files
-
-
-rule DeepVariant_apptainer_all:
-    input:
-        get_deepvariant_apptainer_gvcfs
-
-
-rule deepvariant:
-    """Production DeepVariant 1.9.0 without a container runtime or user namespace."""
-    input:
-        bed = region_to_bed_file,
-        bed_wgs = region_to_bed_file_wgs,
-        bam=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        validated_sex=pj(KMER,"{sample}.result.yaml"),
-    output:
-        vcf = temp(pj(DEEPVARIANT, 'VCF', "{region}", "{sample}.{region}.vcf.gz")),
-        vcf_tbi = temp(pj(DEEPVARIANT, 'VCF', "{region}", "{sample}.{region}.vcf.gz.tbi")),
-        gvcf = temp(pj(DEEPVARIANT, 'gVCF', "{region}", "{sample}.{region}.g.vcf.gz")),
-        gvcf_tbi = temp(pj(DEEPVARIANT, 'gVCF', "{region}", "{sample}.{region}.g.vcf.gz.tbi"))
-    params:
+        runner=srcdir('scripts/run_fused_deepvariant_phasing.py'),
+        deepvariant_runner=get_deepvariant_native_runner,
         mode=get_sequencing_mode,
-        haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
-        skipsex=lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
-        inter_dir=pj(DEEPVARIANT, 'DV_intermediate'),
-        runner=get_deepvariant_native_runner
+        haploid_contigs=lambda wc: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wc.region.endswith('H') else 'chrNONE',
+        ploidy=lambda wc: 1 if wc.region.endswith('H') else 2,
+        skipsex=lambda wc, input: int(get_validated_sex_file(input) == 'female' and wc.region.startswith('Y')),
+        interval_bed=lambda wc: region_to_file(region=wc.region, extension='bed', padding=True),
+        merge_script=srcdir(MERGEPHASEDIRECT),
+        stats_parser=srcdir('scripts/deepvariant_bcftools_stats_parser.py'),
+        lease_mode=DEEPVARIANT_LEASE_MODE,
+        lease_command=zslurm_lease_command(config)
+    conda: CONDA_VCF
     resources:
-        n="8",
+        # Reserve observed average CPU; DeepVariant still runs 8 shards.
+        n="7.5",
         nshards=8,
         mem_mb=get_mem_mb_deepvariant,
-        time=get_time('deepvariant'),
+        attempt=lambda wildcards, attempt: attempt,
+        time=get_time('deepvariant_phasing_fused'),
+        tmpdir=tmpdir,
         ssd_use="possible",
-        ssd_gb=4
+        ssd_gb=16
     shell:
         """
-        if [ {params.skipsex} -eq 0 ]
-        then
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            JOB_ID="${{SLURM_JOB_ID}}"
-            if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
-            if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant/$JOB_ID"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
-            RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
-            echo "SSD base: $TMP_SSD" >&2
-            echo "RUNDIR_BASE: $RUNDIR_BASE" >&2
-            echo "JOB_ID: $JOB_ID" >&2
-            echo "RUNDIR: $RUNDIR" >&2
-            /bin/rm -rf "$RUNDIR" 2>/dev/null || true
-            mkdir -p "$RUNDIR"
-            trap '/bin/rm -rf "$RUNDIR" 2>/dev/null || true' EXIT INT TERM
-
-            OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
-            TF_NUM_INTRAOP_THREADS={resources.nshards} TF_NUM_INTEROP_THREADS={resources.nshards} \
-            {params.runner:q} \
-              --make_examples_extra_args "normalize_reads=true,regions={input.bed},small_model_call_multiallelics=false" \
-              --call_variants_extra_args "config_string=inter_op_parallelism_threads: {resources.nshards} intra_op_parallelism_threads: {resources.nshards} device_count: {{ key: 'CPU' value: {resources.nshards} }}" \
-              --num_shards={resources.nshards} \
-              --model_type={params.mode} \
-              --ref={REF_MALE} --reads={input.bam} \
-              --output_vcf={output.vcf} --output_gvcf={output.gvcf} \
-              --haploid_contigs {params.haploid_contigs} \
-              --intermediate_results_dir "$RUNDIR" \
-              --postprocess_cpus {resources.nshards}
-        else
-            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.vcf}
-            tabix -f -p vcf {output.vcf}
-            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.gvcf}
-            tabix -f -p vcf {output.gvcf}
+        set +e
+        printf '[deepvariant_phasing_fused] snakemake_attempt=%s\\n' \
+            {resources.attempt:q} > {log.runner:q}
+        rm -f -- {log.io_profile:q}
+        python {params.runner:q} \
+            --sample {wildcards.sample:q} \
+            --region {wildcards.region:q} \
+            --bed {input.bed:q} \
+            --bam {input.bam:q} \
+            --bai {input.bai:q} \
+            --validated-sex {input.validated_sex:q} \
+            --reference {REF:q} \
+            --deepvariant-reference {REF_MALE:q} \
+            --deepvariant-runner {params.deepvariant_runner:q} \
+            --model-type {params.mode:q} \
+            --haploid-contigs {params.haploid_contigs:q} \
+            --ploidy {params.ploidy} \
+            --skip-sex {params.skipsex} \
+            --interval-bed {params.interval_bed:q} \
+            --capture-auto-bed {INTERSECT_CAPTURE_KIT_AUTO_BED:q} \
+            --capture-x-bed {INTERSECT_CAPTURE_KIT_X_BED:q} \
+            --capture-y-bed {INTERSECT_CAPTURE_KIT_Y_BED:q} \
+            --merge-script {params.merge_script:q} \
+            --stats-parser {params.stats_parser:q} \
+            --output-vcf {output.vcf:q} \
+            --output-vcf-tbi {output.vcf_tbi:q} \
+            --output-wstats {output.wstats:q} \
+            --output-merge-stats {output.mwstats:q} \
+            --output-bcftools-stats {output.bcftools_stats:q} \
+            --output-bcftools-summary {output.bcftools_summary:q} \
+            --output-tmp-gvcf {output.tmp_gvcf:q} \
+            --output-gvcf {output.gvcf:q} \
+            --output-gvcf-tbi {output.gvcf_tbi:q} \
+            --output-exome-gvcf {output.gvcf_exome:q} \
+            --output-exome-gvcf-tbi {output.gvcf_exome_tbi:q} \
+            --metrics {log.io_profile:q} \
+            --num-shards {resources.nshards} \
+            --initial-cores {resources.n} \
+            --initial-memory-mb {resources.mem_mb} \
+            --low-cores 1 \
+            --low-memory-mb 4000 \
+            --attempt {resources.attempt} \
+            --lease-mode {params.lease_mode:q} \
+            --lease-command {params.lease_command:q} \
+            --ssd-gb {resources.ssd_gb} \
+            --shared-scratch-base {resources.tmpdir:q} \
+            2>> {log.runner:q}
+        status=$?
+        set -e
+        if [ "$status" -ne 0 ]; then
+            cp -- {log.runner:q} "{log.runner}.attempt-{resources.attempt}.failed.log" || true
+            if [ -s {log.io_profile:q} ]; then
+                cp -- {log.io_profile:q} "{log.io_profile}.attempt-{resources.attempt}.failed.json" || true
+            fi
         fi
+        exit "$status"
         """
-
-
-# python {params.check} {output.vcf}
-# python {params.check} {output.gvcf}
-
-rule DVWhatshapPhasingMerge:
-    """Phase VCF with Whatshap and merge into the gVCF"""
-    input:
-        vcf = rules.deepvariant.output.vcf,
-        vcf_tbi = rules.deepvariant.output.vcf_tbi,
-        gvcf = rules.deepvariant.output.gvcf,
-        gvcf_tbi = rules.deepvariant.output.gvcf_tbi,
-        bams=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        validated_sex=pj(KMER,"{sample}.result.yaml"),
-    output:
-        vcf = temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz")),
-        vcf_tbi = temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz.tbi")),
-        wstats = pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
-        mwstats = pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
-        bcftools_stats = temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
-        bcftools_summary = ensure(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv"), non_empty=True),
-        tmp_gvcf= temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
-        gvcf= pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
-        gvcf_tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
-        gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty = True),
-        gvcf_exome_tbi = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty = True),
-    params:
-        merge_script=srcdir(MERGEPHASEDIRECT),
-        stats_parser=srcdir("scripts/deepvariant_bcftools_stats_parser.py"),
-        ploidy=lambda wildcards: 1 if wildcards["region"].endswith("H") else 2,
-        skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
-        interval_bed=lambda wildcards: region_to_file(region=wildcards.region, extension="bed", padding=True),
-        capture_intersect_bed=lambda wildcards: (
-            INTERSECT_CAPTURE_KIT_AUTO_BED if wildcards.region.startswith('A') or wildcards.region.startswith('F') else (
-            INTERSECT_CAPTURE_KIT_X_BED if wildcards.region.startswith('X') else (
-            INTERSECT_CAPTURE_KIT_Y_BED))
-        )
-    log: pj(LOG, "Deepvariant", "{sample}.{region}.whatshap.log"),
-    resources: 
-        time = get_time('DVWhatshapPhasingMerge'),
-        n="1.0",
-        # Observed WGS phasing peaks at 5.8 GB; keep safe packing headroom.
-        mem_mb = 7000
-    conda: CONDA_VCF
-    shell: """
-        mkdir -p `dirname {output.wstats}` `dirname {output.vcf}` `dirname {output.gvcf}`
-        if [ {params.ploidy} -eq 2 ] && [ {params.skipsex} -eq 0 ]
-        then 
-            if [ {params.skipsex} -eq 0 ]
-            then 
-                echo "[DEBUG] start whatshap phase: {wildcards.sample} {wildcards.region}" >&2
-                echo "[DEBUG] input.vcf: {input.vcf}" >&2
-                echo "[DEBUG] output.vcf: {output.vcf}" >&2
-                ls -l `dirname {output.vcf}` || true
-                whatshap phase  --ignore-read-groups --reference {REF} {input.vcf} {input.bams} -o {output.vcf}
-                bcftools index -f -t {output.vcf}
-                whatshap stats {output.vcf} > {output.wstats}
-                mkdir -p `dirname {output.bcftools_stats}`
-                if [ "{wildcards.region}" = "F" ]; then
-                    rm -f {output.bcftools_summary}
-                    echo "[DEBUG] bcftools stats AUTO -> {output.bcftools_stats}" >&2
-                    bcftools stats -R {INTERSECT_CAPTURE_KIT_AUTO_BED} -F {REF} {output.vcf} > {output.bcftools_stats}
-                    python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary} --sample {wildcards.sample} --region A --append
-                    echo "[DEBUG] bcftools stats X -> {output.bcftools_stats}" >&2
-                    bcftools stats -R {INTERSECT_CAPTURE_KIT_X_BED} -F {REF} {output.vcf} > {output.bcftools_stats}
-                    python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary} --sample {wildcards.sample} --region X --append
-                    echo "[DEBUG] bcftools stats Y -> {output.bcftools_stats}" >&2
-                    bcftools stats -R {INTERSECT_CAPTURE_KIT_Y_BED} -F {REF} {output.vcf} > {output.bcftools_stats}
-                    python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary} --sample {wildcards.sample} --region Y --append
-                else
-                    echo "[DEBUG] bcftools stats region {wildcards.region} -> {output.bcftools_stats}" >&2
-                    bcftools stats -R {params.capture_intersect_bed} -F {REF} {output.vcf} > {output.bcftools_stats}
-                    python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary}
-                fi
-                echo "[DEBUG] merging phased VCF into gVCF" >&2
-                python {params.merge_script} {input.gvcf} {output.vcf} {output.tmp_gvcf} {output.mwstats}
-                bcftools view {output.tmp_gvcf} -o {output.gvcf}
-                bcftools index --tbi {output.gvcf}
-            else
-                touch {output.vcf}
-                touch {output.vcf_tbi}
-                touch {output.wstats}
-                touch {output.mwstats}
-                touch {output.tmp_gvcf}
-                touch {output.gvcf}
-                touch {output.gvcf_tbi}
-                touch {output.bcftools_stats}
-                touch {output.bcftools_summary}
-            fi
-        else
-            cp {input.vcf} {output.vcf}
-            cp {input.vcf_tbi} {output.vcf_tbi}
-            cp {input.gvcf} {output.gvcf}
-            cp {input.gvcf_tbi} {output.gvcf_tbi}
-
-            touch {output.tmp_gvcf}
-            touch {output.wstats}
-            touch {output.mwstats}
-            mkdir -p `dirname {output.bcftools_stats}`
-            if [ "{wildcards.region}" = "F" ]; then
-                rm -f {output.bcftools_summary}
-                echo "[DEBUG] (copy branch) bcftools stats AUTO -> {output.bcftools_stats}" >&2
-                bcftools stats -R {INTERSECT_CAPTURE_KIT_AUTO_BED} -F {REF} {output.vcf} > {output.bcftools_stats}
-                python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary} --sample {wildcards.sample} --region A --append
-                echo "[DEBUG] (copy branch) bcftools stats X -> {output.bcftools_stats}" >&2
-                bcftools stats -R {INTERSECT_CAPTURE_KIT_X_BED} -F {REF} {output.vcf} > {output.bcftools_stats}
-                python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary} --sample {wildcards.sample} --region X --append
-                echo "[DEBUG] (copy branch) bcftools stats Y -> {output.bcftools_stats}" >&2
-                bcftools stats -R {INTERSECT_CAPTURE_KIT_Y_BED} -F {REF} {output.vcf} > {output.bcftools_stats}
-                python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary} --sample {wildcards.sample} --region Y --append
-            else
-                echo "[DEBUG] (copy branch) bcftools stats region {wildcards.region} -> {output.bcftools_stats}" >&2
-                bcftools stats -R {params.capture_intersect_bed} -F {REF} {output.vcf} > {output.bcftools_stats}
-                python {params.stats_parser} {output.bcftools_stats} {output.bcftools_summary}
-            fi
-        fi
-
-        if [ {params.skipsex} -eq 0 ]
-        then
-            bcftools view -R {params.interval_bed} {output.gvcf} -O z -o {output.gvcf_exome}
-            bcftools index -f -t {output.gvcf_exome}
-        else
-            printf "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" | bgzip -c > {output.gvcf_exome}
-            tabix -f -p vcf {output.gvcf_exome}
-        fi
-        """
-
-
-if FUSE_DEEPVARIANT_PHASING:
-    rule deepvariant_phasing_fused:
-        """Call, phase, merge, and extract one regional DeepVariant gVCF."""
-        input:
-            bed=region_to_bed_file,
-            bam=pj(BAM, "{sample}.markdup.bam"),
-            bai=pj(BAM, "{sample}.markdup.bam.bai"),
-            validated_sex=pj(KMER,"{sample}.result.yaml")
-        output:
-            vcf=temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz")),
-            vcf_tbi=temp(pj(DEEPVARIANT, "VCF/{region}/{sample}.{region}.w.vcf.gz.tbi")),
-            wstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
-            mwstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
-            bcftools_stats=temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
-            bcftools_summary=ensure(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv"), non_empty=True),
-            tmp_gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
-            gvcf=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
-            gvcf_tbi=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
-            gvcf_exome=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
-            gvcf_exome_tbi=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True)
-        log:
-            runner=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.log"),
-            io_profile=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.io.json")
-        params:
-            runner=srcdir('scripts/run_fused_deepvariant_phasing.py'),
-            deepvariant_runner=get_deepvariant_native_runner,
-            mode=get_sequencing_mode,
-            haploid_contigs=lambda wc: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wc.region.endswith('H') else 'chrNONE',
-            ploidy=lambda wc: 1 if wc.region.endswith('H') else 2,
-            skipsex=lambda wc, input: int(get_validated_sex_file(input) == 'female' and wc.region.startswith('Y')),
-            interval_bed=lambda wc: region_to_file(region=wc.region, extension='bed', padding=True),
-            merge_script=srcdir(MERGEPHASEDIRECT),
-            stats_parser=srcdir('scripts/deepvariant_bcftools_stats_parser.py'),
-            lease_mode=DEEPVARIANT_LEASE_MODE,
-            lease_command=zslurm_lease_command(config)
-        conda: CONDA_VCF
-        resources:
-            # Reserve observed average CPU; DeepVariant still runs 8 shards.
-            n="7.5",
-            nshards=8,
-            mem_mb=get_mem_mb_deepvariant,
-            attempt=lambda wildcards, attempt: attempt,
-            time=get_time('deepvariant_phasing_fused'),
-            tmpdir=tmpdir,
-            ssd_use="possible",
-            ssd_gb=16
-        shell:
-            """
-            set +e
-            printf '[deepvariant_phasing_fused] snakemake_attempt=%s\\n' \
-                {resources.attempt:q} > {log.runner:q}
-            rm -f -- {log.io_profile:q}
-            python {params.runner:q} \
-                --sample {wildcards.sample:q} \
-                --region {wildcards.region:q} \
-                --bed {input.bed:q} \
-                --bam {input.bam:q} \
-                --bai {input.bai:q} \
-                --validated-sex {input.validated_sex:q} \
-                --reference {REF:q} \
-                --deepvariant-reference {REF_MALE:q} \
-                --deepvariant-runner {params.deepvariant_runner:q} \
-                --model-type {params.mode:q} \
-                --haploid-contigs {params.haploid_contigs:q} \
-                --ploidy {params.ploidy} \
-                --skip-sex {params.skipsex} \
-                --interval-bed {params.interval_bed:q} \
-                --capture-auto-bed {INTERSECT_CAPTURE_KIT_AUTO_BED:q} \
-                --capture-x-bed {INTERSECT_CAPTURE_KIT_X_BED:q} \
-                --capture-y-bed {INTERSECT_CAPTURE_KIT_Y_BED:q} \
-                --merge-script {params.merge_script:q} \
-                --stats-parser {params.stats_parser:q} \
-                --output-vcf {output.vcf:q} \
-                --output-vcf-tbi {output.vcf_tbi:q} \
-                --output-wstats {output.wstats:q} \
-                --output-merge-stats {output.mwstats:q} \
-                --output-bcftools-stats {output.bcftools_stats:q} \
-                --output-bcftools-summary {output.bcftools_summary:q} \
-                --output-tmp-gvcf {output.tmp_gvcf:q} \
-                --output-gvcf {output.gvcf:q} \
-                --output-gvcf-tbi {output.gvcf_tbi:q} \
-                --output-exome-gvcf {output.gvcf_exome:q} \
-                --output-exome-gvcf-tbi {output.gvcf_exome_tbi:q} \
-                --metrics {log.io_profile:q} \
-                --num-shards {resources.nshards} \
-                --initial-cores {resources.n} \
-                --initial-memory-mb {resources.mem_mb} \
-                --low-cores 1 \
-                --low-memory-mb 4000 \
-                --attempt {resources.attempt} \
-                --lease-mode {params.lease_mode:q} \
-                --lease-command {params.lease_command:q} \
-                --ssd-gb {resources.ssd_gb} \
-                --shared-scratch-base {resources.tmpdir:q} \
-                2>> {log.runner:q}
-            status=$?
-            set -e
-            if [ "$status" -ne 0 ]; then
-                cp -- {log.runner:q} "{log.runner}.attempt-{resources.attempt}.failed.log" || true
-                if [ -s {log.io_profile:q} ]; then
-                    cp -- {log.io_profile:q} "{log.io_profile}.attempt-{resources.attempt}.failed.json" || true
-                fi
-            fi
-            exit "$status"
-            """
-
-    ruleorder: deepvariant_phasing_fused > DVWhatshapPhasingMerge

@@ -44,10 +44,10 @@ def test_raw_intermediates_are_temporary_but_completed_results_are_durable():
 
     assert aligner.count(
         'badmap_fastq1=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R1.fastq.gz"))'
-    ) == 2
+    ) == 1
     assert aligner.count(
         'badmap_fastq2=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"))'
-    ) == 2
+    ) == 1
     assert 'tar=pj(STAT,"{sample}.stats.tar.gz")' in stats
     assert "coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz')" in stats
     assert 'os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz")' in snakefile

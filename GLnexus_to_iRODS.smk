@@ -254,11 +254,11 @@ def tool_versions_metadata():
     gatk_path = gatk_path_from_config()
     return {
         "dragen_os": {
-            "version": configured_version("dragen_os_version", "dragmap_version") or conda_dependency_version("envs/dragenos.yaml", "dragmap"),
+            "version": configured_version("dragen_os_version", "dragmap_version") or conda_dependency_version("envs/align_fused.yaml", "dragmap"),
             "command": config.get("dragmap", dragmap),
         },
         "glnexus": container_metadata("GLnexus.smk", "glnexus", "glnexus"),
-        "deepvariant": container_metadata("Deepvariant.smk", "deepvariant", "deepvariant"),
+        "deepvariant": container_metadata("Deepvariant_apptainer.smk", "deepvariant", "deepvariant"),
         "haplotypecaller": {
             "version": configured_version("haplotypecaller_version", "gatk_version") or gatk_version_from_path(gatk_path),
             "command": config.get("gatk", gatk),

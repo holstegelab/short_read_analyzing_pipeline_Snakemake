@@ -1,5 +1,10 @@
 # Work item: short-read pipeline resource and I/O redesign
 
+Historical design/progress notes. The current fused-only implementation and
+deployment guidance are in [README.md](README.md) and
+[PORTABILITY_PLAN.md](PORTABILITY_PLAN.md). Retired rule names, sort pilots and
+`fuse_*` switches below describe earlier revisions, not current run options.
+
 Status: **implementation in progress; chrM-tail and BAM-QC pilots complete**
 Last updated: **2026-08-10**
 Scope: `short_read_analyzing_pipeline_Snakemake`, ZSlurm, and the native

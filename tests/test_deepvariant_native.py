@@ -87,12 +87,13 @@ def test_launcher_reproduces_image_environment_without_leaking_library_path(tmp_
 
 
 def snakemake_rule_body(name):
-    text = DEEPVARIANT_RULES.read_text()
+    path = DEEPVARIANT_RULES.with_name("Deepvariant_apptainer.smk") if name == "deepvariant_apptainer" else DEEPVARIANT_RULES
+    text = path.read_text()
     return text.split(f"rule {name}:", 1)[1].split("\nrule ", 1)[0]
 
 
 def test_production_deepvariant_rule_is_namespace_free():
-    rule = snakemake_rule_body("deepvariant")
+    rule = snakemake_rule_body("deepvariant_phasing_fused")
     assert "get_deepvariant_native_runner" in rule
     assert "DEEPVARIANT" in rule
     assert "container:" not in rule

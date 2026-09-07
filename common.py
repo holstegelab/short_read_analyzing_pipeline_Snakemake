@@ -557,7 +557,7 @@ def external_data_dir(sample, sinfo=None):
 
 
 def get_time(rulename):
-    """`resources: time = get_time('align_reads')` -- expected wall-clock seconds.
+    """`resources: time = get_time('align_reads_fused')` -- expected wall-clock seconds.
 
     Reads the measured estimate from constants.RUNTIME and picks the exome or the
     WGS column from this sample's sample_type. Rules without a `sample` wildcard

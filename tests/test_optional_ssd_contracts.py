@@ -15,15 +15,10 @@ def rule_block(filename, rule_name):
 def test_low_io_rules_allow_normal_compute_nodes():
     optional_rules = {
         "Deepvariant.smk": (
-            "deepvariant_apptainer",
-            "deepvariant",
             "deepvariant_phasing_fused",
         ),
-        "Stat.smk": ("hs_stats", "artifacts_and_oxog_metrics"),
+        "Deepvariant_apptainer.smk": ("deepvariant_apptainer",),
         "chrM_analysis.smk": (
-            "extract_chrM_reads",
-            "extract_NUMTs_reads",
-            "align_chrM_and_NUMTs",
             "chrm_extract_align_fused",
             "chrm_mutect_tail_fused",
         ),

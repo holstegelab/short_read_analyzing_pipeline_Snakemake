@@ -53,7 +53,7 @@ def test_kmc_reserves_average_cpu_without_reducing_tool_parallelism():
     runner = (REPO / "scripts" / "run_fused_kmer_sex.py").read_text()
 
     assert "KMC_RESERVED_CORES = 2" in aligner
-    assert aligner.count("n=str(KMC_RESERVED_CORES)") == 1
+    assert "rule kmer_reads:" not in aligner
     assert 'n="1.6"' in rule_block(aligner, "kmer_sex_fused")
     assert "use_threads=KMC_RESERVED_CORES" in rule_block(
         aligner, "kmer_sex_fused"
@@ -97,23 +97,41 @@ def test_parallel_bam_qc_fusion_contains_every_qc_executable():
     } <= dependencies
 
 
-def test_all_production_fusions_are_enabled_by_default():
-    defaults = {
-        "Aligner.smk": (
-            "config.get('fuse_external_adapter', True)",
-            "config.get('fuse_kmer_sex', True)",
-            "config.get('fuse_alignment_phases', True)",
-        ),
-        "Deepvariant.smk": (
-            "config.get('fuse_deepvariant_phasing', True)",
-        ),
-        "Stat.smk": ("config.get('fuse_bam_qc', True)",),
-        "chrM_analysis.smk": (
-            "config.get('fuse_chrm_extract_align', True)",
-            "config.get('fuse_chrm_mutect_tail', True)",
-        ),
+def test_production_fusions_are_unconditional_and_have_no_predecessors():
+    stages = {
+        "Aligner.smk": {
+            "external_adapter_fused": ["external_alignments_to_fastq"],
+            "align_reads_fused": ["align_reads", "merge_bam_alignment_dechimer", "sort_bam_alignment"],
+            "kmer_sex_fused": ["kmer_reads", "get_validated_sex"],
+        },
+        "Deepvariant.smk": {"deepvariant_phasing_fused": ["deepvariant", "DVWhatshapPhasingMerge"]},
+        "Stat.smk": {"bam_qc_fused": ["coverage", "verifybamid", "hs_stats", "artifacts_and_oxog_metrics", "samtools_stats", "bamstats_all_and_exome"]},
+        "chrM_analysis.smk": {
+            "chrm_extract_align_fused": ["extract_chrM_reads", "extract_NUMTs_reads", "align_chrM_and_NUMTs"],
+            "chrm_mutect_tail_fused": ["mutect_calls_both", "merge_and_filter_both", "mutect_bp_resolution_both"],
+        },
     }
-    for filename, expected_fragments in defaults.items():
+    for filename, rules in stages.items():
         source = (REPO / filename).read_text()
-        for fragment in expected_fragments:
-            assert fragment in source
+        assert "FUSE_" not in source
+        assert "ruleorder:" not in source
+        for fused, predecessors in rules.items():
+            assert f"\nrule {fused}:" in source
+            for old in predecessors:
+                assert f"rule {old}:" not in source
+
+
+def test_adapter_routes_use_one_shared_implementation():
+    source = (REPO / "Aligner.smk").read_text()
+    assert "--identify-adapters" not in source
+    assert "sample=NATIVE_FASTQ_SAMPLE_PATTERN" in rule_block(source, "adapter_removal")
+    assert "sample=EXTERNAL_ALIGNMENT_SAMPLE_PATTERN" in rule_block(source, "external_adapter_fused")
+    for runner in ("run_fastq_adapter.py", "run_fused_external_adapter.py"):
+        assert "from adapter_processing import prepare_adapters" in (REPO / "scripts" / runner).read_text()
+
+
+def test_runtime_helpers_are_not_owned_by_an_alignment_runner():
+    for runner in (REPO / "scripts").glob("run_fused_*.py"):
+        source = runner.read_text()
+        assert "from run_fused_alignment import" not in source
+        assert "from pipeline_runtime import" in source

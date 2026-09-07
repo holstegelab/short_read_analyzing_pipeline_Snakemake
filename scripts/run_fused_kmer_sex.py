@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from io_profile import run_profiled
-from run_fused_alignment import (
+from pipeline_runtime import (
     _atomic_copy,
     _atomic_json,
     assigned_scratch,

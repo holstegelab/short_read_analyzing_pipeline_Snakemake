@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Keep both DRAGMAP post-deploy scripts identical.  The Bioconda
-# dragmap 1.3.0 release binary is unsafe: its release CPPFLAGS define NDEBUG,
+# The Bioconda dragmap 1.3.0 release binary is unsafe: its release CPPFLAGS define NDEBUG,
 # while upstream performs posix_memalign() inside BOOST_ASSERT().  The call is
 # consequently optimized away and DRAGMAP segfaults as soon as AVX2
 # Smith-Waterman is used.

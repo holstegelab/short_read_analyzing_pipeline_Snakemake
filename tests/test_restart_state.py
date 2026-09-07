@@ -142,7 +142,7 @@ def test_rebuild_reserves_again_only_for_completed_lifecycles():
 def test_external_adapter_specific_filter_also_excludes_completed_samples():
     import re
     aligner = (REPO/'Aligner.smk').read_text()
-    source = 'EXTERNAL_ALIGNMENT_SAMPLE_PATTERN =' + aligner.split('EXTERNAL_ALIGNMENT_SAMPLE_PATTERN =',1)[1].split('\n\nif FUSE_EXTERNAL_ADAPTER:',1)[0]
+    source = 'EXTERNAL_ALIGNMENT_SAMPLE_PATTERN =' + aligner.split('EXTERNAL_ALIGNMENT_SAMPLE_PATTERN =',1)[1].split('\nrule external_adapter_fused:',1)[0]
     ns = {'re':re, 'SAMPLEINFO':{'A':{'file_type':'cram'},'B':{'file_type':'cram'},
                                  'C':{'file_type':'fastq'}}, 'REUSED_SAMPLES':{'A'}}
     exec(source, ns)
@@ -160,6 +160,21 @@ def test_parsed_rule_guard_rejects_local_constraint_overrides():
     unsafe = SimpleNamespace(name='external_adapter_fused', output=['fq/{sample,(?:A|B)}.fq'])
     with pytest.raises(ValueError, match='external_adapter_fused still accepts reused sample A'):
         rs.verify_rule_filters([safe,unsafe], {'A'})
+
+
+def test_native_adapter_filter_excludes_finished_fastq_samples():
+    import re
+    text = (REPO / 'Aligner.smk').read_text()
+    source = 'NATIVE_FASTQ_SAMPLE_PATTERN =' + text.split('NATIVE_FASTQ_SAMPLE_PATTERN =', 1)[1].split('\nrule adapter_removal:', 1)[0]
+    ns = {'re': re, 'REUSED_SAMPLES': {'A'}, 'SAMPLEINFO': {
+        'A': {'file_type': 'fastq_paired'}, 'B': {'file_type': 'fastq_paired'},
+        'C': {'file_type': 'cram'},
+    }}
+    exec(source, ns)
+    pattern = ns['NATIVE_FASTQ_SAMPLE_PATTERN']
+    assert re.fullmatch(pattern, 'B')
+    assert not re.fullmatch(pattern, 'A')
+    assert not re.fullmatch(pattern, 'C')
 
 
 def test_preflight_recovers_before_freezing_and_reports_irrecoverable_files(tmp_path, monkeypatch):

@@ -11,7 +11,7 @@ REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_alignment.py"
 sys.path.insert(0, str(REPO / "scripts"))
 
-import run_fused_alignment as fused_alignment
+import pipeline_runtime as fused_alignment
 
 
 def _script(path, body):

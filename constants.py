@@ -30,17 +30,14 @@ PRECOMPUTEED_BED = pj(INTERVALS_DIR, 'precomputed_kits.json')
 SNAKEMAKE_DIR_PATH = os.path.dirname('')
 
 #conda env's paths
-CONDA_VERIFYBAMID = 'envs/verifybamid.yaml'
 CONDA_MAIN = 'envs/preprocess.yaml'
 CONDA_VCF = 'envs/vcf_handling.yaml'
-CONDA_PYPY = 'envs/pypy.yaml'
 CONDA_KMC = 'envs/kmc.yaml'
 CONDA_KRAKEN = 'envs/kraken.yaml'
 CONDA_MOSDEPTH = 'envs/mosdepth.yaml'
 CONDA_PCA = 'envs/PCA.yaml'
 CONDA_GATK_CNV = 'envs/gatk_gcnv.yaml'
 CONDA_ANNOVAR = 'envs/annovar.yaml'
-CONDA_DRAGMAP = 'envs/dragenos.yaml'
 CONDA_ALIGN_FUSED = 'envs/align_fused.yaml'
 CONDA_QC_FUSED = 'envs/qc_fused.yaml'
 CONDA_CK_FINDER = 'envs/capture_kit_finder.yaml'
@@ -208,17 +205,12 @@ current_dir = os.getcwd()
 # Rules absent from this table fall back to the profile default (time=3600).
 RUNTIME = {
     'merge_rgs':                               ( 23400,  23400),
-    'align_reads':                             ( 16200,   3600),
-    'merge_bam_alignment_dechimer':            ( 13800,  13800),
     # Sum of the two phase budgets until fused measurements are available.
     'align_reads_fused':                       ( 30000,  17400),
     'markdup':                                 ( 13200,   2700),
     'adapter_removal':                         ( 12900,   2700),
-    'external_alignments_to_fastq':            ( 12300,  12300),
     'external_adapter_fused':                  ( 25200,  15000),
-    'sort_bam_alignment':                      ( 10500,   2100),
     'extract_and_tar_deepvariant_level2_wgs':  (  9300,   9300),
-    'artifacts_and_oxog_metrics':              (  9300,   9300),
     'bam_qc_fused':                            ( 10800,  10800),
     'split_alignments_by_readgroup':           (  8700,   8700),
     'mCRAM':                                   (  8700,   8700),
@@ -226,35 +218,21 @@ RUNTIME = {
     'dcache_get':                              ( 90000,  90000),
     'dcache_to_active':                        ( 43200,  43200),
     's3_to_active':                            ( 43200,  43200),
-    'samtools_stats':                          (  7200,   7200),
-    'kmer_reads':                              (  6600,   2100),
-    'hs_stats':                                (  6300,   2100),
-    'get_validated_sex':                       (  5700,   5700),
     'kmer_sex_fused':                          ( 12300,   7800),
-    'deepvariant':                             (  4500,   4500),
-    'DVWhatshapPhasingMerge':                  (  3300,   3300),
+    'deepvariant_apptainer':                             (  4500,   4500),
     'deepvariant_phasing_fused':               (  7800,   7800),
-    'bamstats_all_and_exome':                  (  2700,   2700),
-    'coverage':                                (  2100,   2100),
-    'mutect_bp_resolution_both':               (  1800,   1800),
-    'verifybamid':                             (  1500,   1500),
     'extract_and_tar_deepvariant_level2_wes':  (  1200,   1200),
     'kraken':                                  (  1200,   1200),
-    'extract_NUMTs_reads':                     (  1200,   1200),
     'chrm_extract_align_fused':                (  2400,   2400),
     'chrm_mutect_tail_fused':                  (  3000,   3000),
     'Encrypt_crams':                           (  1200,   1200),
     'archive_to_active':                       (   900,    900),
     'merge_rgs_badmap':                        (   900,    900),
-    'mutect_calls_both':                       (   900,    900),
-    'align_chrM_and_NUMTs':                    (   600,    600),
     'copy_to_dcache':                          (   600,    600),
     'tar_badmap_fastqs':                       (   600,    600),
-    'extract_chrM_reads':                      (   600,    600),
     'copy_deepvariant_wgs_region_to_dcache':   (   300,    300),
     'copy_deepvariant_wes_region_to_dcache':   (   300,    300),
     'copy_badmap_to_dcache':                   (   300,    300),
-    'merge_and_filter_both':                   (   300,    300),
     'chrM_and_numt_read_stats':                (   300,    300),
     'whatsHap_phase_stats':                    (   300,    300),
     'tar_stats_per_sample':                    (   300,    300),

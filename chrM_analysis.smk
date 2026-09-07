@@ -11,7 +11,6 @@ wildcard_constraints:
     sample=PROCESSING_SAMPLE_PATTERN,
 
 
-
 module Aligner:
     snakefile: 'Aligner.smk'
     config: config
@@ -22,25 +21,6 @@ module Reference_preparation:
 
 mode = config.get("computing_mode", "WES")
 cur_dir = os.getcwd()
-
-
-def _chrm_config_bool(value, name):
-    if isinstance(value, bool):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized in {'1', 'true', 'yes', 'on'}:
-        return True
-    if normalized in {'0', 'false', 'no', 'off', ''}:
-        return False
-    raise ValueError(f"{name} must be a boolean, got {value!r}")
-
-
-FUSE_CHRM_EXTRACT_ALIGN = _chrm_config_bool(
-    config.get('fuse_chrm_extract_align', True), 'fuse_chrm_extract_align'
-)
-FUSE_CHRM_MUTECT_TAIL = _chrm_config_bool(
-    config.get('fuse_chrm_mutect_tail', True), 'fuse_chrm_mutect_tail'
-)
 
 
 rule chrM_analysis_all:
@@ -114,197 +94,67 @@ rule chrM_sample_done:
     output:
         done=touch(pj(chrM, "{sample}.done"))
 
-rule extract_chrM_reads:
-    input: rules.markdup.output.mdbams
-    output:
-        fq1 = ensure(temp(pj(chrM, '{sample}_chrM.R1.fastq.gz')), non_empty = True),
-        fq2 = ensure(temp(pj(chrM, '{sample}_chrM.R2.fastq.gz')), non_empty = True)
-    conda: CONDA_VCF
-    resources:
-        time = get_time('extract_chrM_reads'),
-        mem_mb=1000,
-        tmpdir=tmpdir,
-        ssd_use="possible",
-        ssd_gb=6
-    params:
-        threads=2
-    shell:
-        """
-        TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
-        JOB_ID="${{SLURM_JOB_ID}}"
-        if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
-        if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-        JOB_TMP="$TMPDIR_USE/chrM_extract/$JOB_ID/{wildcards.sample}"
-        mkdir -p "$JOB_TMP"
-        tmp_dir=$(mktemp -d -p "$JOB_TMP")
-        trap 'rm -rf "$tmp_dir" 2>/dev/null || true' EXIT INT TERM
-        samtools view -@ {params.threads} -b -o "$tmp_dir/{wildcards.sample}.chrM.raw.bam" {input} chrM
-        mkdir -p $(dirname {output.fq1})
-        samtools sort -n -@ {params.threads} -T "$tmp_dir/{wildcards.sample}.chrM.sorttmp" -o "$tmp_dir/{wildcards.sample}.chrM.sorted.bam" "$tmp_dir/{wildcards.sample}.chrM.raw.bam"
-        samtools collate -@ {params.threads} -o "$tmp_dir/{wildcards.sample}.chrM.collated.bam" "$tmp_dir/{wildcards.sample}.chrM.sorted.bam"
-        samtools fastq -O -N -@ {params.threads} -0 /dev/null -s /dev/null -1 {output.fq1} -2 {output.fq2} "$tmp_dir/{wildcards.sample}.chrM.collated.bam"
-        """
- 
-rule extract_NUMTs_reads:
-    input: rules.markdup.output.mdbams
-    output:
-        fq1 = ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs.R1.fastq.gz')), non_empty = True),
-        fq2 = ensure(temp(pj(chrM, "NUMTs", '{sample}_NUMTs.R2.fastq.gz')), non_empty = True)
-    conda: CONDA_VCF
-    params:
-        NUMTs_bed = NUMTs,
-        threads = 2
-    resources:
-        time = get_time('extract_NUMTs_reads'),
-        mem_mb=1000,
-        tmpdir=tmpdir,
-        ssd_use="possible",
-        ssd_gb=8
-    shell:
-        """
-        TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
-        JOB_ID="${{SLURM_JOB_ID}}"
-        if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
-        if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-        JOB_TMP="$TMPDIR_USE/numts_extract/$JOB_ID/{wildcards.sample}"
-        mkdir -p "$JOB_TMP"
-        tmp_dir=$(mktemp -d -p "$JOB_TMP")
-        trap 'rm -rf "$tmp_dir" 2>/dev/null || true' EXIT INT TERM
-        tmpbed="$tmp_dir/NUMTs_plus_chrM.bed"
-        cat {params.NUMTs_bed} > "$tmpbed"
-        echo -e "chrM\t1\t999999999" >> "$tmpbed"
-        samtools view -@ {params.threads} -b -L "$tmpbed" -o "$tmp_dir/{wildcards.sample}.NUMTs.raw.bam" {input}
-        mkdir -p $(dirname {output.fq1})
-        samtools sort -n -@ {params.threads} -T "$tmp_dir/{wildcards.sample}.NUMTs.sorttmp" -o "$tmp_dir/{wildcards.sample}.NUMTs.sorted.bam" "$tmp_dir/{wildcards.sample}.NUMTs.raw.bam"
-        samtools collate -@ {params.threads} -o "$tmp_dir/{wildcards.sample}.NUMTs.collated.bam" "$tmp_dir/{wildcards.sample}.NUMTs.sorted.bam"
-        samtools fastq -O -N -@ {params.threads} -0 /dev/null -s /dev/null -1 {output.fq1} -2 {output.fq2} "$tmp_dir/{wildcards.sample}.NUMTs.collated.bam"
-        """
-
-rule align_chrM_and_NUMTs:
+rule chrm_extract_align_fused:
+    """Extract chrM/NUMT reads and make four alignments in job scratch."""
     input:
-        chrM_fq1=rules.extract_chrM_reads.output.fq1,
-        chrM_fq2=rules.extract_chrM_reads.output.fq2,
-        numt_fq1=rules.extract_NUMTs_reads.output.fq1,
-        numt_fq2=rules.extract_NUMTs_reads.output.fq2
+        bam=pj(BAM, '{sample}.markdup.bam'),
+        bai=pj(BAM, '{sample}.markdup.bam.bai')
     output:
         bam_chrM=temp(pj(chrM, '{sample}_chrM_orig.reads.bam')),
-        bai_chrM=temp(pj(chrM,'{sample}_chrM_orig.reads.bai')),
-        bam_shifted_chrM=temp(pj(chrM,'{sample}_chrM_shifted.reads.bam')),
-        bai_shifted_chrM=temp(pj(chrM,'{sample}_chrM_shifted.reads.bai')),
+        bai_chrM=temp(pj(chrM, '{sample}_chrM_orig.reads.bai')),
+        bam_shifted_chrM=temp(pj(chrM, '{sample}_chrM_shifted.reads.bam')),
+        bai_shifted_chrM=temp(pj(chrM, '{sample}_chrM_shifted.reads.bai')),
         bam_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam')),
         bai_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai')),
-        bam_shifted_NUMTs=temp(pj(chrM,'NUMTs','{sample}_NUMTs_shifted.reads.bam')),
-        bai_shifted_NUMTs=temp(pj(chrM,'NUMTs','{sample}_NUMTs_shifted.reads.bai'))
-    conda: CONDA_MAIN
+        bam_shifted_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam')),
+        bai_shifted_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai'))
     params:
-        mt_ref=pj(ORIG_MT_fa),
-        mt_ref_shift=pj(SHIFTED_MT_fa),
-        threads_per_task=4,
-        rg=lambda wildcards: f"@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}"
+        runner=srcdir('scripts/run_fused_chrm_extract_align.py'),
+        numts=NUMTs,
+        mt_ref=ORIG_MT_fa,
+        mt_ref_shift=SHIFTED_MT_fa,
+        threads_per_tool=2
     log:
-        chrM_log=pj(LOG,'chrM','{sample}.orig_mt_align.log'),
-        numt_log=pj(LOG,'chrM','{sample}.origchrM_NUMT_align.log')
+        runner=pj(LOG, 'chrM', '{sample}.extract_align_fused.log'),
+        io_profile=pj(LOG, 'chrM', '{sample}.extract_align_fused.io.json')
+    conda: CONDA_MAIN
+    priority: 21
     resources:
-        time = get_time('align_chrM_and_NUMTs'),
-        n="3",
-        mem_mb=750,
+        time=get_time('chrm_extract_align_fused'),
+        # Scheduling follows observed average CPU; samtools/bwa retain
+        # two tool threads via params.threads_per_tool.
+        n="2.0",
+        mem_mb=2000,
         tmpdir=tmpdir,
         ssd_use="possible",
-        ssd_gb=4
+        ssd_gb=20
     shell:
         """
-        mkdir -p $(dirname {log.chrM_log})
-        mkdir -p $(dirname {log.numt_log})
-
-        TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-        if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-        if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
-        JOB_ID="${{SLURM_JOB_ID}}"
-        if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
-        if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-        JOB_TMP="$TMPDIR_USE/chrM_align/$JOB_ID/{wildcards.sample}"
-        mkdir -p "$JOB_TMP"
-        tmp_dir=$(mktemp -d -p "$JOB_TMP")
-        trap 'rm -rf "$tmp_dir" 2>/dev/null || true' EXIT INT TERM
-
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref} {input.chrM_fq1} {input.chrM_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.chrM_orig.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_chrM}
-        samtools index -@ {params.threads_per_task} -o {output.bai_chrM} {output.bam_chrM}
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref_shift} {input.chrM_fq1} {input.chrM_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.chrM_shifted.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_shifted_chrM}
-        samtools index -@ {params.threads_per_task} -o {output.bai_shifted_chrM} {output.bam_shifted_chrM}
-
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref} {input.numt_fq1} {input.numt_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.NUMTs_orig.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_NUMTs}
-        samtools index -@ {params.threads_per_task} -o {output.bai_NUMTs} {output.bam_NUMTs}
-        bwa mem -t 4 -R "{params.rg}" {params.mt_ref_shift} {input.numt_fq1} {input.numt_fq2} | samtools sort -T "$tmp_dir/{wildcards.sample}.NUMTs_shifted.sorttmp" -O bam -@ {params.threads_per_task} -o {output.bam_shifted_NUMTs}
-        samtools index -@ {params.threads_per_task} -o {output.bai_shifted_NUMTs} {output.bam_shifted_NUMTs}
+        python {params.runner:q} \
+            --input-bam {input.bam:q} \
+            --numts-bed {params.numts:q} \
+            --original-reference {params.mt_ref:q} \
+            --shifted-reference {params.mt_ref_shift:q} \
+            --sample {wildcards.sample:q} \
+            --output-bam-chrm {output.bam_chrM:q} \
+            --output-bai-chrm {output.bai_chrM:q} \
+            --output-bam-shifted-chrm {output.bam_shifted_chrM:q} \
+            --output-bai-shifted-chrm {output.bai_shifted_chrM:q} \
+            --output-bam-numts {output.bam_NUMTs:q} \
+            --output-bai-numts {output.bai_NUMTs:q} \
+            --output-bam-shifted-numts {output.bam_shifted_NUMTs:q} \
+            --output-bai-shifted-numts {output.bai_shifted_NUMTs:q} \
+            --metrics {log.io_profile:q} \
+            --threads {params.threads_per_tool} \
+            --memory-mb {resources.mem_mb} \
+            --ssd-gb {resources.ssd_gb} \
+            --shared-scratch-base {resources.tmpdir:q} \
+            2> {log.runner:q}
         """
 
 
-if FUSE_CHRM_EXTRACT_ALIGN:
-    rule chrm_extract_align_fused:
-        """Extract chrM/NUMT reads and make four alignments in job scratch."""
-        input:
-            bam=pj(BAM, '{sample}.markdup.bam'),
-            bai=pj(BAM, '{sample}.markdup.bam.bai')
-        output:
-            bam_chrM=temp(pj(chrM, '{sample}_chrM_orig.reads.bam')),
-            bai_chrM=temp(pj(chrM, '{sample}_chrM_orig.reads.bai')),
-            bam_shifted_chrM=temp(pj(chrM, '{sample}_chrM_shifted.reads.bam')),
-            bai_shifted_chrM=temp(pj(chrM, '{sample}_chrM_shifted.reads.bai')),
-            bam_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam')),
-            bai_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai')),
-            bam_shifted_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam')),
-            bai_shifted_NUMTs=temp(pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai'))
-        params:
-            runner=srcdir('scripts/run_fused_chrm_extract_align.py'),
-            numts=NUMTs,
-            mt_ref=ORIG_MT_fa,
-            mt_ref_shift=SHIFTED_MT_fa,
-            threads_per_tool=2
-        log:
-            runner=pj(LOG, 'chrM', '{sample}.extract_align_fused.log'),
-            io_profile=pj(LOG, 'chrM', '{sample}.extract_align_fused.io.json')
-        conda: CONDA_MAIN
-        priority: 21
-        resources:
-            time=get_time('chrm_extract_align_fused'),
-            # Scheduling follows observed average CPU; samtools/bwa retain
-            # two tool threads via params.threads_per_tool.
-            n="2.0",
-            mem_mb=2000,
-            tmpdir=tmpdir,
-            ssd_use="possible",
-            ssd_gb=20
-        shell:
-            """
-            python {params.runner:q} \
-                --input-bam {input.bam:q} \
-                --numts-bed {params.numts:q} \
-                --original-reference {params.mt_ref:q} \
-                --shifted-reference {params.mt_ref_shift:q} \
-                --sample {wildcards.sample:q} \
-                --output-bam-chrm {output.bam_chrM:q} \
-                --output-bai-chrm {output.bai_chrM:q} \
-                --output-bam-shifted-chrm {output.bam_shifted_chrM:q} \
-                --output-bai-shifted-chrm {output.bai_shifted_chrM:q} \
-                --output-bam-numts {output.bam_NUMTs:q} \
-                --output-bai-numts {output.bai_NUMTs:q} \
-                --output-bam-shifted-numts {output.bam_shifted_NUMTs:q} \
-                --output-bai-shifted-numts {output.bai_shifted_NUMTs:q} \
-                --metrics {log.io_profile:q} \
-                --threads {params.threads_per_tool} \
-                --memory-mb {resources.mem_mb} \
-                --ssd-gb {resources.ssd_gb} \
-                --shared-scratch-base {resources.tmpdir:q} \
-                2> {log.runner:q}
-            """
-
-    ruleorder: chrm_extract_align_fused > align_chrM_and_NUMTs
-
-rule mutect_calls_both:
+rule chrm_mutect_tail_fused:
+    """Run Mutect, merge/filter, and BP resolution with scratch intermediates."""
     input:
         bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
         bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
@@ -315,234 +165,51 @@ rule mutect_calls_both:
         bam_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
         bai_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai')
     output:
-        vcf_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_orig.vcf.gz')), non_empty=True),
-        tbi_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_orig.vcf.gz.tbi')), non_empty=True),
-        stat_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_orig.vcf.gz.stats')), non_empty=True),
-        vcf_shift_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted.vcf.gz')), non_empty=True),
-        tbi_shift_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted.vcf.gz.tbi')), non_empty=True),
-        stat_shift_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted.vcf.gz.stats')), non_empty=True),
-        vcf_shift_back_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz')), non_empty=True),
-        tbi_shift_back_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_shifted_backshifted.vcf.gz.tbi')), non_empty=True),
-        vcf_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz')), non_empty=True),
-        tbi_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.tbi')), non_empty=True),
-        stat_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', '{sample}.chrM_NUMT_orig.vcf.gz.stats')), non_empty=True),
-        vcf_shift_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted.vcf.gz')), non_empty=True),
-        tbi_shift_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted.vcf.gz.tbi')), non_empty=True),
-        stat_shift_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted.vcf.gz.stats')), non_empty=True),
-        vcf_shift_back_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz')), non_empty=True),
-        tbi_shift_back_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_shifted_backshifted.vcf.gz.tbi')), non_empty=True)
-    conda: CONDA_VCF
+        chrM=ensure(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz'), non_empty=True),
+        chrM_tbi=ensure(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi'), non_empty=True),
+        numt=ensure(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'), non_empty=True),
+        numt_tbi=ensure(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi'), non_empty=True)
     params:
-        mt_ref=pj(ORIG_MT_fa),
-        mt_ref_shift=pj(SHIFTED_MT_fa),
-        chain=pj(MT_CHAIN),
-        variants_dir_chrM=pj(chrM, 'variants'),
-        variants_dir_NUMT=pj(chrM, 'variants', 'NUMTs')
+        runner=srcdir('scripts/run_fused_chrm_tail.py'),
+        mt_ref=ORIG_MT_fa,
+        mt_ref_shift=SHIFTED_MT_fa,
+        chain=MT_CHAIN
+    log:
+        runner=pj(LOG, 'chrM', '{sample}.mutect_tail_fused.log'),
+        io_profile=pj(LOG, 'chrM', '{sample}.mutect_tail_fused.io.json')
+    conda: CONDA_VCF
+    priority: 22
     resources:
-        time = get_time('mutect_calls_both'),
-        n=2,
-        mem_mb=1500
+        time=get_time('chrm_mutect_tail_fused'),
+        # GATK's explicit ActiveProcessorCount settings remain unchanged.
+        n="1.1",
+        mem_mb=2500,
+        tmpdir=tmpdir,
+        ssd_use="possible",
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            [input.bam_chrM, input.bam_shifted_chrM, input.bam_NUMTs, input.bam_shifted_NUMTs],
+            factor=2.0,
+            overhead_gb=8,
+            minimum_gb=20,
+        )
     shell:
         """
-        mkdir -p {params.variants_dir_chrM}
-        mkdir -p {params.variants_dir_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -R {params.mt_ref} -L chrM:4142-12425 --mitochondria-mode -I {input.bam_chrM} -O {output.vcf_chrM}
-        tabix -f -p vcf {output.vcf_chrM}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -R {params.mt_ref_shift} -L chrM:4142-12426 --mitochondria-mode -I {input.bam_shifted_chrM} -O {output.vcf_shift_chrM}
-        tabix -f -p vcf {output.vcf_shift_chrM}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" LiftoverVcf -I {output.vcf_shift_chrM} -O {output.vcf_shift_back_chrM} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null
-        tabix -f -p vcf {output.vcf_shift_back_chrM}
-
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -R {params.mt_ref} -L chrM:4142-12425 --mitochondria-mode -I {input.bam_NUMTs} -O {output.vcf_NUMT}
-        tabix -f -p vcf {output.vcf_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -R {params.mt_ref_shift} -L chrM:4142-12426 --mitochondria-mode -I {input.bam_shifted_NUMTs} -O {output.vcf_shift_NUMT}
-        tabix -f -p vcf {output.vcf_shift_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" LiftoverVcf -I {output.vcf_shift_NUMT} -O {output.vcf_shift_back_NUMT} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null
-        tabix -f -p vcf {output.vcf_shift_back_NUMT}
+        python {params.runner:q} \
+            --bam-chrm {input.bam_chrM:q} --bai-chrm {input.bai_chrM:q} \
+            --bam-shifted-chrm {input.bam_shifted_chrM:q} --bai-shifted-chrm {input.bai_shifted_chrM:q} \
+            --bam-numts {input.bam_NUMTs:q} --bai-numts {input.bai_NUMTs:q} \
+            --bam-shifted-numts {input.bam_shifted_NUMTs:q} --bai-shifted-numts {input.bai_shifted_NUMTs:q} \
+            --original-reference {params.mt_ref:q} \
+            --shifted-reference {params.mt_ref_shift:q} \
+            --chain {params.chain:q} \
+            --sample {wildcards.sample:q} \
+            --output-chrm-gvcf {output.chrM:q} --output-chrm-tbi {output.chrM_tbi:q} \
+            --output-numt-gvcf {output.numt:q} --output-numt-tbi {output.numt_tbi:q} \
+            --metrics {log.io_profile:q} \
+            --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
+            --shared-scratch-base {resources.tmpdir:q} \
+            2> {log.runner:q}
         """
-
-rule merge_and_filter_both:
-    input:
-        o_vcf_chrM=rules.mutect_calls_both.output.vcf_chrM,
-        o_tbi_chrM=rules.mutect_calls_both.output.tbi_chrM,
-        sb_vcf_chrM=rules.mutect_calls_both.output.vcf_shift_back_chrM,
-        sb_tbi_chrM=rules.mutect_calls_both.output.tbi_shift_back_chrM,
-        orig_chrM=rules.mutect_calls_both.output.stat_chrM,
-        shift_chrM=rules.mutect_calls_both.output.stat_shift_chrM,
-        o_vcf_NUMT=rules.mutect_calls_both.output.vcf_NUMT,
-        o_tbi_NUMT=rules.mutect_calls_both.output.tbi_NUMT,
-        sb_vcf_NUMT=rules.mutect_calls_both.output.vcf_shift_back_NUMT,
-        sb_tbi_NUMT=rules.mutect_calls_both.output.tbi_shift_back_NUMT,
-        orig_NUMT=rules.mutect_calls_both.output.stat_NUMT,
-        shift_NUMT=rules.mutect_calls_both.output.stat_shift_NUMT
-    output:
-        merged_vcf_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_merged.vcf.gz')), non_empty=True),
-        merged_tbi_chrM=ensure(temp(pj(chrM, 'variants', '{sample}.chrM_merged.vcf.gz.tbi')), non_empty=True),
-        merged_stat_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_merged.vcf.gz.stats')), non_empty=True),
-        filtred_vcf_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz')), non_empty=True),
-        filtred_tbi_chrM=ensure(temp(pj(chrM,'variants','{sample}.chrM_filtred.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz')), non_empty=True),
-        merged_tbi_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', '{sample}.chrM_NUMT_merged.vcf.gz.tbi')), non_empty=True),
-        merged_stat_NUMT=ensure(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMT_merged.vcf.gz.stats')),
-        filtred_vcf_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred.vcf.gz')), non_empty=True),
-        filtred_tbi_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','{sample}.chrM_NUMTs_filtred.vcf.gz.tbi')), non_empty=True)
-    conda: CONDA_VCF
-    params:
-        mt_ref=pj(ORIG_MT_fa)
-    resources:
-        time = get_time('merge_and_filter_both'),
-        n=4,
-        mem_mb=500
-    shell:
-        """
-        gatk --java-options "-XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4" MergeMutectStats --stats {input.orig_chrM} --stats {input.shift_chrM} -O {output.merged_stat_chrM}
-        gatk --java-options "-XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4" MergeVcfs -I {input.sb_vcf_chrM} -I {input.o_vcf_chrM} -O {output.merged_vcf_chrM}
-        tabix -f -p vcf {output.merged_vcf_chrM}
-        gatk --java-options "-XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4" FilterMutectCalls -OVI true -V {output.merged_vcf_chrM} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf_chrM}
-        tabix -f -p vcf {output.filtred_vcf_chrM}
-
-        gatk --java-options "-XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4" MergeMutectStats --stats {input.orig_NUMT} --stats {input.shift_NUMT} -O {output.merged_stat_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4" MergeVcfs -I {input.sb_vcf_NUMT} -I {input.o_vcf_NUMT} -O {output.merged_vcf_NUMT}
-        tabix -f -p vcf {output.merged_vcf_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=4" FilterMutectCalls -OVI true -V {output.merged_vcf_NUMT} -R {params.mt_ref} --mitochondria-mode True -O {output.filtred_vcf_NUMT}
-        tabix -f -p vcf {output.filtred_vcf_NUMT}
-        """
-
-rule mutect_bp_resolution_both:
-    input:
-        bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
-        bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
-        bam_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bam'),
-        bai_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bai'),
-        anno_chrM=rules.merge_and_filter_both.output.filtred_vcf_chrM,
-        anno_tbi_chrM=rules.merge_and_filter_both.output.filtred_tbi_chrM,
-        bam_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam'),
-        bai_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai'),
-        bam_shifted_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
-        bai_shifted_NUMT=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai'),
-        anno_NUMT=rules.merge_and_filter_both.output.filtred_vcf_NUMT,
-        anno_tbi_NUMT=rules.merge_and_filter_both.output.filtred_tbi_NUMT
-    output:
-        vcf_BP_chrM=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_orig_BP.g.vcf.gz')), non_empty=True),
-        tbi_BP_chrM=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_orig_BP.g.vcf.gz.tbi')), non_empty=True),
-        stat_BP_chrM=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_orig_BP.g.vcf.gz.stats')), non_empty=True),
-        vcf_shift_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_shifted_BP.g.vcf.gz')), non_empty=True),
-        tbi_shift_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_shifted_BP.g.vcf.gz.tbi')), non_empty=True),
-        stat_shift_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_shifted_BP.g.vcf.gz.stats')), non_empty=True),
-        vcf_shift_back_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_shifted_backshifted_BP.g.vcf.gz')), non_empty=True),
-        tbi_shift_back_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_shifted_backshifted_BP.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz')), non_empty=True),
-        merged_tbi_BP_chrM=ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_BP_with_anno_chrM=ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'), non_empty=True),
-        merged_vcf_BP_with_anno_tbi_chrM=ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi'), non_empty=True),
-        merged_vcf_BP_norm_chrM=ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz')), non_empty=True),
-        vcf_BP_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_orig_BP_res.g.vcf.gz')), non_empty=True),
-        tbi_BP_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_orig_BP_res.g.vcf.gz.tbi')), non_empty=True),
-        stat_BP_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_orig_BP_res.g.vcf.gz.stats')), non_empty=True),
-        vcf_shift_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_BP_res.g.vcf.gz')), non_empty=True),
-        tbi_shift_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_BP_res.g.vcf.gz.tbi')), non_empty=True),
-        stat_shift_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_BP_res.g.vcf.gz.stats')), non_empty=True),
-        vcf_shift_back_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_backshifted_BP_res.g.vcf.gz')), non_empty=True),
-        tbi_shift_back_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_backshifted_BP_res.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz')), non_empty=True),
-        merged_tbi_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_with_anno_NUMT=ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'), non_empty=True),
-        merged_vcf_with_anno_tbi_NUMT=ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi'), non_empty=True),
-        merged_vcf_norm_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')), non_empty=True)
-    conda: CONDA_VCF
-    params:
-        mt_ref=pj(ORIG_MT_fa),
-        mt_ref_shift=pj(SHIFTED_MT_fa),
-        chain=pj(MT_CHAIN),
-        variants_dir_chrM=pj(chrM, 'variants'),
-        variants_dir_NUMT=pj(chrM, 'variants', 'NUMTs')
-    resources:
-        time = get_time('mutect_bp_resolution_both'),
-        n=1,
-        mem_mb=5000
-    shell:
-        """
-        mkdir -p {params.variants_dir_chrM}
-        mkdir -p {params.variants_dir_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM:4142-12425 --mitochondria-mode -I {input.bam_chrM} -O {output.vcf_BP_chrM}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:4142-12426 --mitochondria-mode -I {input.bam_shifted_chrM} -O {output.vcf_shift_BP_chrM}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" LiftoverVcf -I {output.vcf_shift_BP_chrM} -O {output.vcf_shift_back_BP_chrM} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" MergeVcfs -I {output.vcf_shift_back_BP_chrM} -I {output.vcf_BP_chrM} -O {output.merged_vcf_BP_chrM}
-        bcftools norm -d exact -o {output.merged_vcf_BP_norm_chrM} -O z {output.merged_vcf_BP_chrM}
-        tabix {output.merged_vcf_BP_norm_chrM}
-        bcftools annotate -a {input.anno_chrM} -c FILTER -O z -o {output.merged_vcf_BP_with_anno_chrM} {output.merged_vcf_BP_norm_chrM}
-        tabix {output.merged_vcf_BP_with_anno_chrM}
-
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref} -L chrM:4142-12425 --mitochondria-mode -I {input.bam_NUMT} -O {output.vcf_BP_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" Mutect2 -ERC BP_RESOLUTION -R {params.mt_ref_shift} -L chrM:4142-12426 --mitochondria-mode -I {input.bam_shifted_NUMT} -O {output.vcf_shift_BP_NUMT}
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" LiftoverVcf -I {output.vcf_shift_BP_NUMT} -O {output.vcf_shift_back_BP_NUMT} -C {params.chain} -R {params.mt_ref} --REJECT /dev/null
-        gatk --java-options "-XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1" MergeVcfs -I {output.vcf_shift_back_BP_NUMT} -I {output.vcf_BP_NUMT} -O {output.merged_vcf_NUMT}
-        bcftools norm -d exact -o {output.merged_vcf_norm_NUMT} -O z {output.merged_vcf_NUMT}
-        tabix {output.merged_vcf_norm_NUMT}
-        bcftools annotate -a {input.anno_NUMT} -c FILTER -O z -o {output.merged_vcf_with_anno_NUMT} {output.merged_vcf_norm_NUMT}
-        tabix {output.merged_vcf_with_anno_NUMT}
-        """
-
-if FUSE_CHRM_MUTECT_TAIL:
-    rule chrm_mutect_tail_fused:
-        """Run Mutect, merge/filter, and BP resolution with scratch intermediates."""
-        input:
-            bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
-            bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
-            bam_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bam'),
-            bai_shifted_chrM=pj(chrM, '{sample}_chrM_shifted.reads.bai'),
-            bam_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam'),
-            bai_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai'),
-            bam_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
-            bai_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai')
-        output:
-            chrM=ensure(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz'), non_empty=True),
-            chrM_tbi=ensure(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi'), non_empty=True),
-            numt=ensure(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'), non_empty=True),
-            numt_tbi=ensure(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi'), non_empty=True)
-        params:
-            runner=srcdir('scripts/run_fused_chrm_tail.py'),
-            mt_ref=ORIG_MT_fa,
-            mt_ref_shift=SHIFTED_MT_fa,
-            chain=MT_CHAIN
-        log:
-            runner=pj(LOG, 'chrM', '{sample}.mutect_tail_fused.log'),
-            io_profile=pj(LOG, 'chrM', '{sample}.mutect_tail_fused.io.json')
-        conda: CONDA_VCF
-        priority: 22
-        resources:
-            time=get_time('chrm_mutect_tail_fused'),
-            # GATK's explicit ActiveProcessorCount settings remain unchanged.
-            n="1.1",
-            mem_mb=2500,
-            tmpdir=tmpdir,
-            ssd_use="possible",
-            ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
-                [input.bam_chrM, input.bam_shifted_chrM, input.bam_NUMTs, input.bam_shifted_NUMTs],
-                factor=2.0,
-                overhead_gb=8,
-                minimum_gb=20,
-            )
-        shell:
-            """
-            python {params.runner:q} \
-                --bam-chrm {input.bam_chrM:q} --bai-chrm {input.bai_chrM:q} \
-                --bam-shifted-chrm {input.bam_shifted_chrM:q} --bai-shifted-chrm {input.bai_shifted_chrM:q} \
-                --bam-numts {input.bam_NUMTs:q} --bai-numts {input.bai_NUMTs:q} \
-                --bam-shifted-numts {input.bam_shifted_NUMTs:q} --bai-shifted-numts {input.bai_shifted_NUMTs:q} \
-                --original-reference {params.mt_ref:q} \
-                --shifted-reference {params.mt_ref_shift:q} \
-                --chain {params.chain:q} \
-                --sample {wildcards.sample:q} \
-                --output-chrm-gvcf {output.chrM:q} --output-chrm-tbi {output.chrM_tbi:q} \
-                --output-numt-gvcf {output.numt:q} --output-numt-tbi {output.numt_tbi:q} \
-                --metrics {log.io_profile:q} \
-                --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
-                --shared-scratch-base {resources.tmpdir:q} \
-                2> {log.runner:q}
-            """
-
-    ruleorder: chrm_mutect_tail_fused > mutect_bp_resolution_both
 
 
 rule estimate_mtdna_copy_number_wes:

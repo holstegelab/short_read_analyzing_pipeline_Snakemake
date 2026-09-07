@@ -11,18 +11,6 @@ import read_samples
 import datetime
 
 
-def _stat_config_bool(value, name):
-    if isinstance(value, bool):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized in {'1', 'true', 'yes', 'on'}:
-        return True
-    if normalized in {'0', 'false', 'no', 'off', ''}:
-        return False
-    raise ValueError(f"{name} must be a boolean, got {value!r}")
-
-
-FUSE_BAM_QC = _stat_config_bool(config.get('fuse_bam_qc', True), 'fuse_bam_qc')
 BAM_QC_LEASE_MODE = str(config.get('bam_qc_lease_mode', 'required')).strip().lower()
 if BAM_QC_LEASE_MODE not in {'required', 'optional', 'disabled'}:
     raise ValueError("bam_qc_lease_mode must be required, optional, or disabled")
@@ -127,32 +115,6 @@ rule tar_stats_per_sample:
     shell: """
             tar -czvf {output.tar} {input.error_summary} {input.mosdepth_dist} {input.ancestry} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} {input.sex_y} {input.rg_logs} {input.chrM} {input.numt} {input.phase}
             """
-
-rule coverage:
-    """Estimates coverage using the mosdepth tool"""
-    input:
-        bam=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-    output:
-        pj(STAT,'cov','{sample}.regions.bed.gz'),
-        pj(STAT,'cov','{sample}.regions.bed.gz.csi'),
-        pj(STAT,'cov','{sample}.mosdepth.global.dist.txt'),
-        pj(STAT,'cov','{sample}.mosdepth.summary.txt'),
-        pj(STAT,'cov','{sample}.mosdepth.region.dist.txt')
-    priority: 27
-    params:
-        bed=WINDOWS,
-        prefix=pj(STAT,'cov','{sample}')
-    resources:
-        time = get_time('coverage'),
-        mem_mb=2200,
-        n="1.5"
-    conda: CONDA_MOSDEPTH
-    shell:
-        """
-            mkdir -p `dirname {output[0]}`
-            mosdepth  --threads 2 -b {params.bed} --no-per-base {params.prefix} {input.bam}
-        """
 
 rule chrM_and_numt_read_stats:
     input:
@@ -588,31 +550,6 @@ def get_svd(wildcards):  #{{{
     sinfo = SAMPLEINFO[wildcards['sample']]
     return VERIFYBAMID_WGS if 'wgs' in sinfo['sample_type'] else VERIFYBAMID_EXOME  #}}}
 
-rule verifybamid:
-    """Estimates contamination in a sample using the verifybamid2 tool"""
-    input:
-        bam=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        validated_sex=pj(KMER,"{sample}.result.yaml"),
-    output:
-        VBID_stat=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM'),
-        VBID_ancestry=pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry')
-    # end of this file hardcoded in Haplotypecaller and read_contam_w
-    priority: 27
-    params:
-        ref=get_ref_by_validated_sex,
-        #minimum Base Quality for a base to contribute cov (default=20)
-        VBID_prefix=pj(STAT,'contam/{sample}.verifybamid.pca2'),
-        SVD=get_svd
-    resources:
-        time = get_time('verifybamid'),
-        mem_mb=300,
-        n="1.4"
-    conda: CONDA_VERIFYBAMID
-    shell:
-        """verifybamid2 --BamFile {input.bam} --SVDPrefix {params.SVD} --Reference {params.ref} --DisableSanityCheck --NumThread 2 --Output {params.VBID_prefix}"""
-
-
 def get_capture_kit_interval_list(wildcards):  #{{{
     """Returns the capture kit interval list file for the sample type of the sample"""
     if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type']:
@@ -623,79 +560,6 @@ def get_capture_kit_interval_list(wildcards):  #{{{
         else: 
             capture_kit = pj(INTERVALS_DIR,SAMPLEINFO[wildcards['sample']]['capture_kit'] + '.interval_list')
     return capture_kit  #}}}
-
-rule hs_stats:
-    """Collects HS metrics for a sample using the gatk CollectHsMetrics tool"""
-    input:
-        bam=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        interval=ancient(MERGED_CAPTURE_KIT_IVL),
-        validated_sex=pj(KMER,"{sample}.result.yaml"),
-        targets=ancient(TARGETS_IVL),
-    output:
-        HS_metrics=(pj(STAT,"{sample}.hs_metrics"))
-    priority: 99
-    params:
-        ref=get_ref_by_validated_sex,
-        #minimum Base Quality for a base to contribute cov (default=20)
-        Q=10,
-        #minimum Mapping Quality for a read to contribute cov(default=20)
-        MQ=10
-    resources: mem_mb=lambda wildcards, attempt: attempt * 2000,
-        time = get_time('hs_stats'),
-        tmpdir=tmpdir,
-        n="1.0",
-        ssd_use="possible",
-        ssd_gb=2
-    conda: CONDA_VCF
-    shell:
-        """
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
-            gatk  --java-options "-Xmx{resources.mem_mb}M  {DEFAULT_JAVA_OPTIONS}" CollectHsMetrics  --TMP_DIR "$TMPDIR_USE" \
-                -I {input.bam} -R {params.ref} -BI {input.interval} -TI {input.targets} \
-                -Q {params.Q} -MQ {params.MQ} \
-                -O stats/{wildcards.sample}.hs_metrics
-        """
-
-
-rule artifacts_and_oxog_metrics:
-    input:
-        bam=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        interval=get_capture_kit_interval_list,
-        validated_sex=pj(KMER,"{sample}.result.yaml")
-    output:
-        Bait_bias = pj(STAT, '{sample}.bait_bias_summary_metrics'),
-        Pre_adapter = ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'),non_empty=True),
-        Bait_bias_det = ensure(pj(STAT,'{sample}.bait_bias_detail_metrics'),non_empty=True),
-        Pre_adapter_det = ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'),non_empty=True),
-        Error_summary = ensure(pj(STAT, '{sample}.error_summary_metrics'),non_empty=True),
-        OXOG=pj(STAT,"{sample}.OXOG")
-    priority: 99
-    log: pj(LOG,"Stats","Artifact_OXOG_stats_{sample}.log")
-    params:
-        ref=get_ref_by_validated_sex,
-        out=pj(STAT,"{sample}")
-    resources:
-        time = get_time('artifacts_and_oxog_metrics'),
-        mem_mb=lambda wildcards, attempt: attempt * 2600,
-        tmpdir=tmpdir,
-        n="1.0",
-        ssd_use="possible",
-        ssd_gb=2
-    conda: CONDA_VCF
-    shell:
-        """
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
-            gatk --java-options "-Xmx{resources.mem_mb}M {DEFAULT_JAVA_OPTIONS}" CollectSequencingArtifactMetrics  --TMP_DIR "$TMPDIR_USE" -I {input.bam} -O {params.out} \
-                    -R {params.ref} --DB_SNP {DBSNP} --INTERVALS {input.interval} 2> {log}
-            gatk  --java-options "-Xmx{resources.mem_mb}M {DEFAULT_JAVA_OPTIONS}" CollectOxoGMetrics -I {input.bam} -O {output.OXOG} -R {params.ref} \
-              --INTERVALS {input.interval} 2>> {log}
-        """
 
 # extract info about capture kit from SAMPLEFILE
 # assume that all kits bed and interval_list files are existing and download to res folder
@@ -709,144 +573,93 @@ def get_capture_kit_bed(wildcards):  #{{{
 
     return pj(INTERVALS_DIR,capture_kit)  #}}}
 
-rule samtools_stats:
+rule bam_qc_fused:
+    """Stage markdup BAM once and run six independent QC consumers on SSD."""
     input:
         bam=pj(BAM, "{sample}.markdup.bam"),
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
-        validated_sex=pj(KMER,"{sample}.result.yaml")
+        validated_sex=pj(KMER, "{sample}.result.yaml"),
+        hs_interval=ancient(MERGED_CAPTURE_KIT_IVL),
+        targets=ancient(TARGETS_IVL),
+        artifact_interval=get_capture_kit_interval_list,
+        dbsnp=ancient(DBSNP),
+        capture_bed=get_capture_kit_bed,
+        windows=ancient(WINDOWS)
     output:
-        genome=ensure(pj(STAT,"{sample}.samtools.stat"),non_empty=True),
-        exome=ensure(pj(STAT,"{sample}.samtools.exome.stat"),non_empty=True)
-    priority: 99
-    log: pj(LOG,"Stats","samtools_{sample}.log")
-    resources:
-        time = get_time('samtools_stats'),
-        mem_mb=130,
-        n=1
-    conda: CONDA_MAIN
+        selfsm=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM'),
+        ancestry=pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry'),
+        hs=pj(STAT, "{sample}.hs_metrics"),
+        bait_summary=pj(STAT, '{sample}.bait_bias_summary_metrics'),
+        pre_summary=ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'), non_empty=True),
+        bait_detail=ensure(pj(STAT, '{sample}.bait_bias_detail_metrics'), non_empty=True),
+        pre_detail=ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'), non_empty=True),
+        error_summary=ensure(pj(STAT, '{sample}.error_summary_metrics'), non_empty=True),
+        oxog=pj(STAT, "{sample}.OXOG"),
+        samtools_genome=ensure(pj(STAT, "{sample}.samtools.stat"), non_empty=True),
+        samtools_exome=ensure(pj(STAT, "{sample}.samtools.exome.stat"), non_empty=True),
+        bam_all=ensure(pj(STAT, '{sample}.bam_all.tsv'), non_empty=True),
+        bam_exome=ensure(pj(STAT, '{sample}.bam_exome.tsv'), non_empty=True),
+        coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz'),
+        coverage_csi=pj(STAT, 'cov', '{sample}.regions.bed.gz.csi'),
+        coverage_global=pj(STAT, 'cov', '{sample}.mosdepth.global.dist.txt'),
+        coverage_summary=pj(STAT, 'cov', '{sample}.mosdepth.summary.txt'),
+        coverage_region=pj(STAT, 'cov', '{sample}.mosdepth.region.dist.txt')
     params:
+        runner=srcdir('scripts/run_fused_bam_qc.py'),
         ref=get_ref_by_validated_sex,
-        bed_interval=get_capture_kit_bed
-    shell:
-        """
-        samtools stat -@ {resources.n} -r {params.ref} -d -p {input.bam} > {output.genome}
-        samtools stat -@ {resources.n} -t {params.bed_interval} -d -p -r {params.ref} {input.bam} > {output.exome}
-        """
-
-
-    
-
-rule bamstats_all_and_exome:
-    input:
-        bam=pj(BAM, "{sample}.markdup.bam"),
-        bai=pj(BAM, "{sample}.markdup.bam.bai"),
-    output:
-        all=ensure(pj(STAT,'{sample}.bam_all.tsv'),non_empty=True),
-        exome=ensure(pj(STAT,'{sample}.bam_exome.tsv'),non_empty=True)
+        svd=get_svd,
+        bamstats=srcdir(BAMSTATS),
+        lease_mode=BAM_QC_LEASE_MODE,
+        lease_command=zslurm_lease_command(config)
+    log:
+        runner=pj(LOG, 'Stats', '{sample}.bam_qc_fused.log'),
+        io_profile=pj(LOG, 'Stats', '{sample}.bam_qc_fused.io.json')
+    conda: CONDA_QC_FUSED
+    priority: 99
     resources:
-        time = get_time('bamstats_all_and_exome'),
-        mem_mb=250,
-        n=1
-    params:
-        py_stats=srcdir(BAMSTATS),
-        bed_interval=get_capture_kit_bed,
-    conda: CONDA_PYPY
+        time=get_time('bam_qc_fused'),
+        # ZSlurm reservations deliberately follow observed median usage;
+        # they are packing estimates rather than hard cgroup limits.
+        n=6,
+        mem_mb=7500,
+        ssd_use="required",
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.bam,
+            factor=1.15,
+            overhead_gb=8,
+            minimum_gb=32,
+        )
     shell:
         """
-        samtools view -s 0.05 -h {input.bam} --threads {resources.n}  | pypy {params.py_stats} stats > {output.all}
-        samtools view -s 0.05 -h {input.bam} --threads {resources.n} -L {params.bed_interval} | pypy {params.py_stats} stats > {output.exome}
+        python {params.runner:q} \
+            --bam {input.bam:q} --bai {input.bai:q} --sample {wildcards.sample:q} \
+            --reference {params.ref:q} --svd-prefix {params.svd:q} \
+            --hs-interval {input.hs_interval:q} --targets-interval {input.targets:q} \
+            --artifact-interval {input.artifact_interval:q} --dbsnp {input.dbsnp:q} \
+            --capture-bed {input.capture_bed:q} --windows-bed {input.windows:q} \
+            --bamstats-script {params.bamstats:q} \
+            --output-selfsm {output.selfsm:q} --output-ancestry {output.ancestry:q} \
+            --output-hs-metrics {output.hs:q} \
+            --output-bait-summary {output.bait_summary:q} \
+            --output-pre-adapter-summary {output.pre_summary:q} \
+            --output-bait-detail {output.bait_detail:q} \
+            --output-pre-adapter-detail {output.pre_detail:q} \
+            --output-error-summary {output.error_summary:q} --output-oxog {output.oxog:q} \
+            --output-samtools-genome {output.samtools_genome:q} \
+            --output-samtools-exome {output.samtools_exome:q} \
+            --output-bamstats-all {output.bam_all:q} --output-bamstats-exome {output.bam_exome:q} \
+            --output-coverage-regions {output.coverage_regions:q} \
+            --output-coverage-csi {output.coverage_csi:q} \
+            --output-coverage-global-dist {output.coverage_global:q} \
+            --output-coverage-summary {output.coverage_summary:q} \
+            --output-coverage-region-dist {output.coverage_region:q} \
+            --metrics {log.io_profile:q} --cores {resources.n} \
+            --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
+            --lease-mode {params.lease_mode:q} \
+            --lease-command {params.lease_command:q} \
+            2> {log.runner:q}
         """
 
-
-if FUSE_BAM_QC:
-    rule bam_qc_fused:
-        """Stage markdup BAM once and run six independent QC consumers on SSD."""
-        input:
-            bam=pj(BAM, "{sample}.markdup.bam"),
-            bai=pj(BAM, "{sample}.markdup.bam.bai"),
-            validated_sex=pj(KMER, "{sample}.result.yaml"),
-            hs_interval=ancient(MERGED_CAPTURE_KIT_IVL),
-            targets=ancient(TARGETS_IVL),
-            artifact_interval=get_capture_kit_interval_list,
-            dbsnp=ancient(DBSNP),
-            capture_bed=get_capture_kit_bed,
-            windows=ancient(WINDOWS)
-        output:
-            selfsm=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM'),
-            ancestry=pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry'),
-            hs=pj(STAT, "{sample}.hs_metrics"),
-            bait_summary=pj(STAT, '{sample}.bait_bias_summary_metrics'),
-            pre_summary=ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'), non_empty=True),
-            bait_detail=ensure(pj(STAT, '{sample}.bait_bias_detail_metrics'), non_empty=True),
-            pre_detail=ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'), non_empty=True),
-            error_summary=ensure(pj(STAT, '{sample}.error_summary_metrics'), non_empty=True),
-            oxog=pj(STAT, "{sample}.OXOG"),
-            samtools_genome=ensure(pj(STAT, "{sample}.samtools.stat"), non_empty=True),
-            samtools_exome=ensure(pj(STAT, "{sample}.samtools.exome.stat"), non_empty=True),
-            bam_all=ensure(pj(STAT, '{sample}.bam_all.tsv'), non_empty=True),
-            bam_exome=ensure(pj(STAT, '{sample}.bam_exome.tsv'), non_empty=True),
-            coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz'),
-            coverage_csi=pj(STAT, 'cov', '{sample}.regions.bed.gz.csi'),
-            coverage_global=pj(STAT, 'cov', '{sample}.mosdepth.global.dist.txt'),
-            coverage_summary=pj(STAT, 'cov', '{sample}.mosdepth.summary.txt'),
-            coverage_region=pj(STAT, 'cov', '{sample}.mosdepth.region.dist.txt')
-        params:
-            runner=srcdir('scripts/run_fused_bam_qc.py'),
-            ref=get_ref_by_validated_sex,
-            svd=get_svd,
-            bamstats=srcdir(BAMSTATS),
-            lease_mode=BAM_QC_LEASE_MODE,
-            lease_command=zslurm_lease_command(config)
-        log:
-            runner=pj(LOG, 'Stats', '{sample}.bam_qc_fused.log'),
-            io_profile=pj(LOG, 'Stats', '{sample}.bam_qc_fused.io.json')
-        conda: CONDA_QC_FUSED
-        priority: 99
-        resources:
-            time=get_time('bam_qc_fused'),
-            # ZSlurm reservations deliberately follow observed median usage;
-            # they are packing estimates rather than hard cgroup limits.
-            n=6,
-            mem_mb=7500,
-            ssd_use="required",
-            ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
-                input.bam,
-                factor=1.15,
-                overhead_gb=8,
-                minimum_gb=32,
-            )
-        shell:
-            """
-            python {params.runner:q} \
-                --bam {input.bam:q} --bai {input.bai:q} --sample {wildcards.sample:q} \
-                --reference {params.ref:q} --svd-prefix {params.svd:q} \
-                --hs-interval {input.hs_interval:q} --targets-interval {input.targets:q} \
-                --artifact-interval {input.artifact_interval:q} --dbsnp {input.dbsnp:q} \
-                --capture-bed {input.capture_bed:q} --windows-bed {input.windows:q} \
-                --bamstats-script {params.bamstats:q} \
-                --output-selfsm {output.selfsm:q} --output-ancestry {output.ancestry:q} \
-                --output-hs-metrics {output.hs:q} \
-                --output-bait-summary {output.bait_summary:q} \
-                --output-pre-adapter-summary {output.pre_summary:q} \
-                --output-bait-detail {output.bait_detail:q} \
-                --output-pre-adapter-detail {output.pre_detail:q} \
-                --output-error-summary {output.error_summary:q} --output-oxog {output.oxog:q} \
-                --output-samtools-genome {output.samtools_genome:q} \
-                --output-samtools-exome {output.samtools_exome:q} \
-                --output-bamstats-all {output.bam_all:q} --output-bamstats-exome {output.bam_exome:q} \
-                --output-coverage-regions {output.coverage_regions:q} \
-                --output-coverage-csi {output.coverage_csi:q} \
-                --output-coverage-global-dist {output.coverage_global:q} \
-                --output-coverage-summary {output.coverage_summary:q} \
-                --output-coverage-region-dist {output.coverage_region:q} \
-                --metrics {log.io_profile:q} --cores {resources.n} \
-                --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
-                --lease-mode {params.lease_mode:q} \
-                --lease-command {params.lease_command:q} \
-                2> {log.runner:q}
-            """
-
-    ruleorder: bam_qc_fused > verifybamid > hs_stats > artifacts_and_oxog_metrics > samtools_stats > bamstats_all_and_exome > coverage
 
 def get_quality_stats(wildcards):  #{{{
     sampleinfo = SAMPLEFILE_TO_SAMPLES[os.path.basename(wildcards['samplefile'])]
@@ -1278,7 +1091,6 @@ rule gathersexstats:
 
         header, data = read_stats.combine_sex_stats(samples,kmer_stats,sex_reported)
         read_stats.write_tsv(str(output),header,data)
-
 
 
 rule mospeth_mergedCK:

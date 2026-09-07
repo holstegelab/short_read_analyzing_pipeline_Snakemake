@@ -18,7 +18,6 @@ TARGETS: 'gencode_43_cds'
 CRAMREFS: 'cram_refs'
 
 #conda env's paths
-CONDA_VERIFYBAMID: 'envs/verifybamid.yaml'
 CONDA_MAIN: 'envs/preprocess.yaml'
 
 #OUTPUT FOLDERS

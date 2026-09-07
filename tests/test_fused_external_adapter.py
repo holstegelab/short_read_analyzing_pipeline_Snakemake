@@ -29,8 +29,9 @@ def test_adapter_identification_and_trimming_share_one_five_core_lease():
 
     assert runner.count("shrink_lease(") == 1
     assert "cores=args.adapter_cores" in runner
-    assert "--identify-adapters" in runner
-    assert runner.count("--threads 4") == 2
+    shared = (REPO / "scripts" / "adapter_processing.py").read_text()
+    assert "--identify-adapters" in shared
+    assert shared.count("--threads 4") == 2
 
 
 def test_runtime_cram_reference_selection_rewrites_existing_command(

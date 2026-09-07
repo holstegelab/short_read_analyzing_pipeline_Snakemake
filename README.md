@@ -65,10 +65,13 @@ Important defaults in the main `Snakefile`:
 
 ## DeepVariant without Apptainer
 
-The production `deepvariant` rule runs DeepVariant 1.9.0 from an extracted
-official image, using the dynamic loader and libraries from that image. It
-writes the existing `deepvariant/` outputs consumed by downstream phasing and
-does not create a container or user namespace at run time.
+The default production `deepvariant_phasing_fused` rule runs DeepVariant 1.9.0
+from an extracted official image, using its dynamic loader and libraries,
+then performs phasing and publication in the same job. It does not create a
+container or user namespace at run time. The optional comparison rules live
+in `Deepvariant_apptainer.smk`; enabling Apptainer in the execution profile
+does not switch the production caller to them. GLnexus joint calling still
+uses its own container.
 
 The shared Snellius runtime is installed at
 `/gpfs/work3/0/qtholstg/hg38_res_v2/software/deepvariant-1.9.0-native`. To
@@ -140,80 +143,41 @@ eight-core default; no running workflow needs to be cancelled for deployment.
     > directional dCache resources. Change its Conda/Apptainer prefixes when
     > running under a different account.
 
-   The per-read-group alignment/merge/dechimer/sort fusion is enabled by
-   default. To disable it for a compatibility run:
+### Supported processing stages
 
-   ```text
-   --config fuse_alignment_phases=false
-   ```
+The pipeline uses one implementation per production stage. The former
+`fuse_*` switches and predecessor rule chains have been retired. Input/output
+paths, tool arguments, resource reservations and fused rule names are retained.
 
-   The default `alignment_lease_mode=required` performs a lease preflight
-   before DRAGMAP. `optional` retains the maximum reservation when leases are
-   unavailable; `disabled` is intended only for local tests.
+| Stage | Implementation | Environment |
+|---|---|---|
+| Native paired FASTQ adapters | `adapter_removal` → shared `adapter_processing.py` | `preprocess.yaml` |
+| BAM/CRAM extraction + adapters | `external_adapter_fused` → same adapter implementation | `preprocess.yaml` |
+| Alignment + merge/check/dechimer + sort | `align_reads_fused` | `align_fused.yaml` |
+| KMC + sex | `kmer_sex_fused` | `kmc.yaml` |
+| DeepVariant + phasing | `deepvariant_phasing_fused` | `vcf_handling.yaml` + native runtime |
+| Parallel BAM QC | `bam_qc_fused` | `qc_fused.yaml` |
+| chrM/NUMT extraction + realignment | `chrm_extract_align_fused` | `preprocess.yaml` |
+| chrM calling/filtering/annotation | `chrm_mutect_tail_fused` | `vcf_handling.yaml` |
 
-   The sample-level KMC/sex fusion is also enabled by default and can be
-   disabled independently:
+The native FASTQ and alignment-input rules have disjoint sample constraints.
+Both retain simultaneous adapter identification/trimming and the five-core
+reservation. Only the alignment-input route extracts raw FASTQs and changes
+its memory lease. Shared scratch/publication/lease helpers live in
+`scripts/pipeline_runtime.py`, independently of alignment.
 
-   ```text
-   --config fuse_kmer_sex=false
-   ```
+The five `*_lease_mode` settings still accept `required` (default), `optional`
+and `disabled`. These are not fusion switches. `optional` retains the initial
+reservation if lease service is unavailable; `disabled` is for local testing.
+Keep scheduler reservations separate from tool threads; live values are in
+the rules, and this cleanup does not retune them.
 
-   It keeps the temporary KMC database on assigned node SSD and shrinks from
-   2 cores/36 GB to 0.5 core/3 GB before the sex-statistics phase.
-
-   Regional DeepVariant plus Whatshap/merge is enabled by default and can be
-   disabled independently:
-
-   ```text
-   --config fuse_deepvariant_phasing=false
-   ```
-
-   Raw regional VCF/gVCF files remain on assigned node SSD; the job shrinks
-   from 8 cores/10 GB to 1 core/9 GB before phasing and publication.
-
-   BAM/CRAM read-group extraction plus adapter removal is enabled by default;
-   native FASTQ samples remain on the legacy adapter rule. To disable it:
-
-   ```text
-   --config fuse_external_adapter=false
-   ```
-
-   The fused job publishes the legacy temporary raw FASTQ outputs because the
-   BAM-tag merge still consumes them, but extraction and adapter processing
-   happen only once and adapter processing reads the SSD-local copy.
-
-   chrM/NUMT extraction plus the four realignments is enabled by default:
-
-   ```text
-   --config fuse_chrm_extract_align=false
-   ```
-
-   The four intermediate paired FASTQs and alignment scratch files stay on
-   the assigned node SSD. The eight legacy BAM/index paths remain unchanged.
-
-   The downstream chrM/NUMT Mutect, merge/filter, and BP-resolution tail is a
-   separate fusion, also enabled by default:
-
-   ```text
-   --config fuse_chrm_mutect_tail=false
-   ```
-
-   It stages the four realigned BAMs once and publishes only both final
-   annotated gVCFs and their indexes; all VCF intermediates stay on node SSD.
-
-   The BAM-reading QC fan-out is enabled by default and can be disabled
-   independently:
-
-   ```text
-   --config fuse_bam_qc=false
-   ```
-
-   VerifyBamID, HS metrics, artifact/OxoG metrics, samtools stats, sampled BAM
-   stats, and mosdepth then share one staged markdup BAM and run in parallel on
-   node SSD while retaining every legacy QC output path. Each of the six task
-   groups atomically releases its relative CPU/memory share when it finishes,
-   including on task failure. Use `disabled` only for local tests; `optional`
-   retains unreleased capacity when the active chief lacks lease support.
+Split, sample-level merge/markdup, CRAM creation/encryption, source handling,
+Kraken, cohort statistics and supported alternative callers remain separate
+stages. See [RESTARTING.md](RESTARTING.md) before restarting completed samples,
+and [the dependency inventory and Spider migration plan](PORTABILITY_PLAN.md)
+before deploying on another system. Clone + resource copy is not yet a
+complete installation procedure.
 
 4. If you want to run just several steps (for example only Alignment step) -
 choose suitable **smk** file as **--snakefile** or use `END_POINT`
