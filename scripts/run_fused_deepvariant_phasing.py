@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run regional DeepVariant and its Whatshap/merge tail in one SSD job."""
+"""Run regional DeepVariant and its Whatshap/merge tail in one scratch job."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from pathlib import Path
 
 from io_profile import run_profiled
 from run_fused_alignment import (
-    _atomic_copy,
     _atomic_json,
+    _atomic_publish,
     assigned_scratch,
     executable,
     lease_preflight,
@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--initial-cores", type=float, required=True)
     parser.add_argument("--initial-memory-mb", type=float, required=True)
     parser.add_argument("--low-cores", type=float, default=1.0)
-    parser.add_argument("--low-memory-mb", type=float, default=3200)
+    parser.add_argument("--low-memory-mb", type=float, default=4000)
     parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument(
         "--lease-mode",
@@ -78,6 +78,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lease-command", default="zslurm_lease")
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
+    parser.add_argument(
+        "--shared-scratch-base",
+        help="Workflow-local shared fallback when this job has no assigned SSD",
+    )
     parser.add_argument("--poll-interval", type=float, default=5.0)
     return parser.parse_args()
 
@@ -153,7 +157,10 @@ def main() -> int:
     bgzip = executable(args.bgzip)
     tabix = executable(args.tabix)
 
-    scratch = assigned_scratch(args.scratch_base)
+    scratch = assigned_scratch(
+        args.scratch_base,
+        shared_fallback=args.shared_scratch_base,
+    )
     parent = scratch / "deepvariant_phasing_fused"
     parent.mkdir(parents=True, exist_ok=True)
     job_tmp = Path(
@@ -332,7 +339,7 @@ def main() -> int:
             (exome_gvcf_tbi, Path(args.output_exome_gvcf_tbi)),
             (exome_gvcf, Path(args.output_exome_gvcf)),
         ):
-            _atomic_copy(source, destination)
+            _atomic_publish(source, destination)
         success = True
         return 0
     finally:

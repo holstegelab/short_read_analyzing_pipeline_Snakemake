@@ -122,8 +122,8 @@ rule tar_stats_per_sample:
         tar=pj(STAT,"{sample}.stats.tar.gz")
     resources:
         time = get_time('tar_stats_per_sample'),
-        n="1",
-        mem_mb=100
+        n="0.55",
+        mem_mb=200
     shell: """
             tar -czvf {output.tar} {input.error_summary} {input.mosdepth_dist} {input.ancestry} {input.markdup} {input.hs} {input.samtools} {input.exome} {input.contam} {input.bam_all} {input.bam_exome} {input.pread} {input.biat_bias} {input.pread_det} {input.biat_bias_det} {input.cov} {input.sex_y} {input.rg_logs} {input.chrM} {input.numt} {input.phase}
             """
@@ -167,12 +167,13 @@ rule chrM_and_numt_read_stats:
         script=srcdir('scripts/region_read_stats.py')
     resources:
         time = get_time('chrM_and_numt_read_stats'),
-        n=1,
+        n="0.6",
+        use_threads=1,
         mem_mb=200
     conda: CONDA_MAIN
     run:
         script = str(params.script)
-        n = resources.n
+        n = resources.use_threads
         shell(f"python {quote(script)} --bam {quote(str(input.chrm_bam))} --threads {n} --exclude-flags 1024 --output {quote(str(output.chrM))}")
         shell(f"python {quote(script)} --bam {quote(str(input.numt_bam))} --threads {n} --exclude-flags 1024 --output {quote(str(output.numt))}")
 
@@ -198,7 +199,7 @@ rule whatsHap_phase_stats:
         script=srcdir('scripts/whatsHap_phase_stats.py')
     resources:
         time = get_time('whatsHap_phase_stats'),
-        n=1,
+        n="0.5",
         mem_mb=200
     conda: CONDA_MAIN
     run:
@@ -450,8 +451,8 @@ rule tar_badmap_fastqs:
         tar=temp(pj(FQ_BADMAP, "{sample}.badmap.fastqs.tar.gz"))
     resources:
         time = get_time('tar_badmap_fastqs'),
-        mem_mb=500,
-        n="0.5"
+        mem_mb=384,
+        n="0.65"
     run:
         out_path = str(output.tar)
         out_dir = os.path.dirname(out_path)
@@ -486,8 +487,8 @@ rule copy_badmap_to_dcache:
         ada_script=srcdir(ADA)
     resources:
         time = get_time('copy_badmap_to_dcache'),
-        mem_mb=2000,
-        n="0.1",
+        mem_mb=512,
+        n="0.5",
         dcache_upload_slots=1,
         dcache_use_add=config.get('dcache_use_add', 0),
         dcache_use_remove=config.get('dcache_use_remove', 0)
@@ -644,7 +645,7 @@ rule hs_stats:
         time = get_time('hs_stats'),
         tmpdir=tmpdir,
         n="1.0",
-        ssd_use="required",
+        ssd_use="possible",
         ssd_gb=2
     conda: CONDA_VCF
     shell:
@@ -682,7 +683,7 @@ rule artifacts_and_oxog_metrics:
         mem_mb=lambda wildcards, attempt: attempt * 2600,
         tmpdir=tmpdir,
         n="1.0",
-        ssd_use="required",
+        ssd_use="possible",
         ssd_gb=2
     conda: CONDA_VCF
     shell:

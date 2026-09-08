@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the chrM/NUMT Mutect, filter, and BP-resolution tail on assigned SSD."""
+"""Run the chrM/NUMT Mutect, filter, and BP-resolution tail in job scratch."""
 
 from __future__ import annotations
 
@@ -12,7 +12,12 @@ import time
 from pathlib import Path
 
 from io_profile import run_profiled
-from run_fused_alignment import _atomic_copy, _atomic_json, assigned_scratch, executable
+from run_fused_alignment import (
+    _atomic_json,
+    _atomic_publish,
+    assigned_scratch,
+    executable,
+)
 
 
 def q(value: object) -> str:
@@ -41,9 +46,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gatk", default="gatk")
     parser.add_argument("--bcftools", default="bcftools")
     parser.add_argument("--tabix", default="tabix")
-    parser.add_argument("--memory-mb", type=int, default=5000)
+    parser.add_argument("--memory-mb", type=int, default=2500)
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
+    parser.add_argument(
+        "--shared-scratch-base",
+        help="Workflow-local shared fallback when this job has no assigned SSD",
+    )
     parser.add_argument("--poll-interval", type=float, default=5.0)
     return parser.parse_args()
 
@@ -88,7 +97,10 @@ def main() -> int:
     gatk = executable(args.gatk)
     bcftools = executable(args.bcftools)
     tabix = executable(args.tabix)
-    scratch = assigned_scratch(args.scratch_base)
+    scratch = assigned_scratch(
+        args.scratch_base,
+        shared_fallback=args.shared_scratch_base,
+    )
     parent = scratch / "chrm_tail_fused"
     parent.mkdir(parents=True, exist_ok=True)
     job_tmp = Path(tempfile.mkdtemp(prefix=f"{args.sample}.", dir=parent))
@@ -307,7 +319,7 @@ def main() -> int:
         for source, destination in zip(final_local, destinations):
             if not source.is_file() or source.stat().st_size <= 0:
                 raise RuntimeError(f"required final output is absent or empty: {source}")
-            _atomic_copy(source, destination)
+            _atomic_publish(source, destination)
         success = True
         return 0
     finally:

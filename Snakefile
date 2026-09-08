@@ -154,8 +154,8 @@ if end_point == "gVCF":
             resources:
                 time = get_time('finished_sample'),
                 active_use_remove=active_release_finished,
-                mem_mb=50,
-                n="1"
+                mem_mb=200,
+                n="0.5"
             shell: """
                 touch {output}
                 """
@@ -183,8 +183,8 @@ if end_point == "gVCF":
             resources:
                 time = get_time('finished_sample'),
                 active_use_remove=active_release_finished,
-                mem_mb=50,
-                n="1"
+                mem_mb=200,
+                n="0.5"
             shell: """
                 touch {output}
                 """
@@ -212,8 +212,8 @@ if end_point == "gVCF":
             resources:
                 time = get_time('finished_sample'),
                 active_use_remove=active_release_finished,
-                mem_mb=50,
-                n="1"
+                mem_mb=200,
+                n="0.5"
             shell: """
                 touch {output}
             """

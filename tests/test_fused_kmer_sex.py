@@ -59,8 +59,8 @@ args = sys.argv[1:]
 command = args[1]
 with Path(os.environ['FAKE_LEASE_LOG']).open('a') as handle:
     handle.write(command + '\\n')
-cores = 2 if command == 'status' else float(args[args.index('--cores') + 1])
-memory = 36000 if command == 'status' else float(args[args.index('--mem-mb') + 1])
+cores = 1.6 if command == 'status' else float(args[args.index('--cores') + 1])
+memory = 34200 if command == 'status' else float(args[args.index('--mem-mb') + 1])
 print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
 """,
     )
@@ -113,9 +113,13 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
         "--kmc-tools",
         str(kmc_tools),
         "--initial-cores",
-        "2",
+        "1.6",
         "--initial-memory-mb",
-        "36000",
+        "34200",
+        "--kmc-threads",
+        "2",
+        "--low-cores",
+        "1.0",
         "--lease-command",
         str(lease),
         "--ssd-gb",
@@ -140,6 +144,9 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     assert lease_log.read_text().splitlines() == ["status", "set"]
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is True
+    assert metrics["requested"]["initial_cores"] == 1.6
+    assert metrics["requested"]["kmc_threads"] == 2
+    assert metrics["requested"]["low_cores"] == 1.0
     assert [phase["label"] for phase in metrics["phases"]] == [
         "kmer_sex_fused.kmc",
         "kmer_sex_fused.sex",

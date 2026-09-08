@@ -245,7 +245,7 @@ checkpoint get_readgroups:
         pj(SAMPLEINFODIR,"{sample}.dat")
     resources:
         time = get_time('get_readgroups'),
-        n="1",
+        n="0.5",
         mem_mb=256
     params:
         sample=lambda wildcards: SAMPLEINFO[wildcards['sample']],
@@ -566,7 +566,10 @@ def _start_sample_partition(wildcards):
 
 
 def _start_sample_cores(wildcards):
-    return {'active': 0.1, 'archive': 0.6, 'dcache': 1.0, 's3': '0.2'}[
+    # Snakemake rounds float resources to integers during expansion. Keep
+    # fractional ZSlurm core reservations as strings so the native executor
+    # receives their exact values.
+    return {'active': '0.1', 'archive': '0.6', 'dcache': '1.0', 's3': '0.5'}[
         _start_sample_route(wildcards)
     ]
 
@@ -773,8 +776,8 @@ rule start_sample_s3:
         active_use_add=_start_sample_active_add,
         arch_use_remove=0,
         dcache_use_remove=0,
-        # The executor supplies a dCache-download fallback until the running
-        # manager supports the independent S3 pool.
+        # S3 transfers use their own manager-wide concurrency pool and do not
+        # consume dCache download capacity.
         s3_download_slots=1,
         mem_mb=_start_sample_mem_mb,
         n=_start_sample_cores
@@ -1548,9 +1551,15 @@ if FUSE_KMER_SEX:
         priority: 15
         resources:
             time=get_time('kmer_sex_fused'),
-            n=str(KMC_RESERVED_CORES),
+            # This is an average scheduler reservation; the patched KMC
+            # invocation itself is unchanged.
+            n="1.6",
+            use_threads=KMC_RESERVED_CORES,
+            # Estimated standalone peak RSS is about 33.8 GiB. Reserve ten
+            # percent less than the former 38-GB baseline; retries retain the
+            # existing 50% step-up.
             mem_mb=lambda wildcards, attempt: (
-                (attempt - 1) * 0.5 * 38000 + 38000
+                (attempt - 1) * 0.5 * 34200 + 34200
             ),
             ssd_use="required",
             ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
@@ -1574,7 +1583,8 @@ if FUSE_KMER_SEX:
                 --metrics {log.io_profile:q} \
                 --initial-cores {resources.n} \
                 --initial-memory-mb {resources.mem_mb} \
-                --low-cores 0.5 \
+                --kmc-threads {resources.use_threads} \
+                --low-cores 1.0 \
                 --low-memory-mb 3000 \
                 --lease-mode {params.lease_mode:q} \
                 --lease-command {params.lease_command:q} \
@@ -1613,11 +1623,9 @@ if ALIGNMENT_LEASE_MODE not in {'required', 'optional', 'disabled'}:
 
 
 def _fused_low_memory_mb(wildcards):
-    # A 179-GB production readgroup made bam_merge reach about 15.3 GB RSS;
-    # coordinate sort has also peaked around 13.5 GB. A 15-GB scheduling
-    # target tracks that observed tail peak while keeping the lease monotonic,
-    # so the job never needs to reacquire memory after the 40-GB alignment.
-    return 15000
+    # Phase-level PSS/RSS reconstruction puts the alignment-tail P95 near
+    # 13.5 GB. Reserve ten percent below the former 15-GB target.
+    return 13500
 
 
 def _fused_ignore_qual_flag(wildcards):
@@ -1806,8 +1814,10 @@ if FUSE_ALIGNMENT_PHASES:
             time=get_time('align_reads_fused'),
             n="22.75",
             use_threads=24,
+            # Initial alignment peak RSS is about 37 GiB. Start five percent
+            # below the former 40-GB baseline while retaining retry scaling.
             mem_mb=lambda wildcards, attempt: (
-                (attempt - 1) * 0.25 * 40000 + 40000
+                (attempt - 1) * 0.25 * 38000 + 38000
             ),
             ssd_use="required",
             # First estimate: the sort tail adds input, output, and spill data
@@ -1847,7 +1857,7 @@ if FUSE_ALIGNMENT_PHASES:
                 --align-threads {resources.use_threads} \
                 --initial-cores {resources.n} \
                 --initial-memory-mb {resources.mem_mb} \
-                --low-cores 6 \
+                --low-cores 2 \
                 --low-memory-mb {params.low_memory_mb} \
                 --sort-threads 2 \
                 --sort-memory-mb 6000 \
@@ -1956,13 +1966,15 @@ rule merge_rgs:
     log: pj(LOG,"Aligner","{sample}.mergereadgroups.log")
     resources:
         time = get_time('merge_rgs'),
-        n="1",
-        mem_mb=750
+        # Real-data sweep: 2.20 cores average and 2.23x speedup at samtools -@ 3.
+        n="2.3",
+        use_threads=3,
+        mem_mb=384
     priority: 19
     conda: CONDA_MAIN
     run:
         if len(input.bam) > 1:
-            cmd = "samtools merge -@ {resources.n} {output} {input.bam} 2> {log}"
+            cmd = "samtools merge -@ {resources.use_threads} {output} {input.bam} 2> {log}"
             shell(cmd)
         else:
             #switching to copy as hard link updates also time of input.bam
@@ -1993,8 +2005,8 @@ rule merge_rgs_badmap:
     conda: CONDA_MAIN
     resources:
         time = get_time('merge_rgs_badmap'),
-        n="1",
-        mem_mb=150
+        n="0.7",
+        mem_mb=200
     shell:
         """
         zcat {input.fastq} | bgzip > {output.fastq} 
@@ -2005,7 +2017,7 @@ def get_mem_mb_markdup(wildcards, attempt):  #{{{
     # Intentionally size for representative use rather than the long tail.
     # zslurm_chief keeps node-level memory headroom, while a rare failure can
     # use Snakemake's attempt-based escalation below.
-    res = 1500 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 150
+    res = 3000 if 'wgs' in SAMPLEINFO[wildcards['sample']]['sample_type'] else 150
     #large range of memory usage for markdup
     return (attempt - 1) * res * 3 + res
 
@@ -2039,14 +2051,20 @@ rule markdup:
         samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log")
     resources:
         time = get_time('markdup'),
-        n="1",
+        # CPU use is input-size independent (avg 0.93 core over 3,415 WGS
+        # jobs); reserve representative throughput rather than a full core.
+        n="0.95",
         mem_mb=get_mem_mb_markdup,
         # fastqs + intermediate bams are gone once markdup runs -> hand that share of
         # the start_sample reservation back now (see active_release_markdup).
         active_use_remove=active_release_markdup,
         temp_loc=lambda wildcards: pj(f"markdup_temporary_{wildcards.sample}"),
         ssd_use="required",
-        ssd_gb=4
+        # Two WGS observations used 1.726x and 1.749x compressed input size in
+        # the deleted-open markdup tempfile.  Input/output BAMs stay on GPFS.
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.bam, factor=1.9, overhead_gb=4, minimum_gb=8
+        )
     conda: CONDA_MAIN
     #write index is buggy in samtools 1.17, 2/110 invalid index, probably race condition due to multithreading.
     #switching to single thread
@@ -2103,7 +2121,10 @@ rule mCRAM:
         crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
     resources:
         time = get_time('mCRAM'),
-        n="2",
+        # Scheduling reservation follows observed average CPU (1.85 cores),
+        # while samtools keeps its two worker threads below.
+        n="1.85",
+        use_threads=2,
         # Full-depth Knight WGS CRAM conversion was observed at about 1.44 GB,
         # leaving virtually no headroom with the previous 1.5 GB request.
         mem_mb=1800
@@ -2112,4 +2133,4 @@ rule mCRAM:
     log:
         pj(LOG,"Aligner","{sample}.mCRAM.log")
     shell:
-        "samtools view --output-fmt cram,version=3.1,archive --reference {REF} -@ {resources.n} --write-index -o {output.cram}##idx##{output.crai} {input.bam} 2> {log}"
+        "samtools view --output-fmt cram,version=3.1,archive --reference {REF} -@ {resources.use_threads} --write-index -o {output.cram}##idx##{output.crai} {input.bam} 2> {log}"

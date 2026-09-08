@@ -124,7 +124,7 @@ rule extract_chrM_reads:
         time = get_time('extract_chrM_reads'),
         mem_mb=1000,
         tmpdir=tmpdir,
-        ssd_use="required",
+        ssd_use="possible",
         ssd_gb=6
     params:
         threads=2
@@ -160,7 +160,7 @@ rule extract_NUMTs_reads:
         time = get_time('extract_NUMTs_reads'),
         mem_mb=1000,
         tmpdir=tmpdir,
-        ssd_use="required",
+        ssd_use="possible",
         ssd_gb=8
     shell:
         """
@@ -213,7 +213,7 @@ rule align_chrM_and_NUMTs:
         n="3",
         mem_mb=750,
         tmpdir=tmpdir,
-        ssd_use="required",
+        ssd_use="possible",
         ssd_gb=4
     shell:
         """
@@ -245,7 +245,7 @@ rule align_chrM_and_NUMTs:
 
 if FUSE_CHRM_EXTRACT_ALIGN:
     rule chrm_extract_align_fused:
-        """Extract chrM/NUMT reads and make four alignments on assigned SSD."""
+        """Extract chrM/NUMT reads and make four alignments in job scratch."""
         input:
             bam=pj(BAM, '{sample}.markdup.bam'),
             bai=pj(BAM, '{sample}.markdup.bam.bai')
@@ -271,9 +271,12 @@ if FUSE_CHRM_EXTRACT_ALIGN:
         priority: 21
         resources:
             time=get_time('chrm_extract_align_fused'),
-            n=4,
-            mem_mb=4000,
-            ssd_use="required",
+            # Scheduling follows observed average CPU; samtools/bwa retain
+            # two tool threads via params.threads_per_tool.
+            n="2.0",
+            mem_mb=2000,
+            tmpdir=tmpdir,
+            ssd_use="possible",
             ssd_gb=20
         shell:
             """
@@ -295,6 +298,7 @@ if FUSE_CHRM_EXTRACT_ALIGN:
                 --threads {params.threads_per_tool} \
                 --memory-mb {resources.mem_mb} \
                 --ssd-gb {resources.ssd_gb} \
+                --shared-scratch-base {resources.tmpdir:q} \
                 2> {log.runner:q}
             """
 
@@ -481,7 +485,7 @@ rule mutect_bp_resolution_both:
 
 if FUSE_CHRM_MUTECT_TAIL:
     rule chrm_mutect_tail_fused:
-        """Run Mutect, merge/filter, and BP resolution with SSD intermediates."""
+        """Run Mutect, merge/filter, and BP resolution with scratch intermediates."""
         input:
             bam_chrM=pj(chrM, '{sample}_chrM_orig.reads.bam'),
             bai_chrM=pj(chrM, '{sample}_chrM_orig.reads.bai'),
@@ -508,9 +512,11 @@ if FUSE_CHRM_MUTECT_TAIL:
         priority: 22
         resources:
             time=get_time('chrm_mutect_tail_fused'),
-            n=4,
-            mem_mb=2000,
-            ssd_use="required",
+            # GATK's explicit ActiveProcessorCount settings remain unchanged.
+            n="1.1",
+            mem_mb=2500,
+            tmpdir=tmpdir,
+            ssd_use="possible",
             ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
                 [input.bam_chrM, input.bam_shifted_chrM, input.bam_NUMTs, input.bam_shifted_NUMTs],
                 factor=2.0,
@@ -532,6 +538,7 @@ if FUSE_CHRM_MUTECT_TAIL:
                 --output-numt-gvcf {output.numt:q} --output-numt-tbi {output.numt_tbi:q} \
                 --metrics {log.io_profile:q} \
                 --memory-mb {resources.mem_mb} --ssd-gb {resources.ssd_gb} \
+                --shared-scratch-base {resources.tmpdir:q} \
                 2> {log.runner:q}
             """
 

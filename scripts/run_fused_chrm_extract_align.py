@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract chrM/NUMT reads and create four realigned BAMs on assigned SSD."""
+"""Extract chrM/NUMT reads and create four realigned BAMs in job scratch."""
 
 from __future__ import annotations
 
@@ -12,7 +12,12 @@ import time
 from pathlib import Path
 
 from io_profile import run_profiled
-from run_fused_alignment import _atomic_copy, _atomic_json, assigned_scratch, executable
+from run_fused_alignment import (
+    _atomic_json,
+    _atomic_publish,
+    assigned_scratch,
+    executable,
+)
 
 
 def q(value: object) -> str:
@@ -38,9 +43,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samtools", default="samtools")
     parser.add_argument("--bwa", default="bwa")
     parser.add_argument("--threads", type=int, default=2)
-    parser.add_argument("--memory-mb", type=int, default=4000)
+    parser.add_argument("--memory-mb", type=int, default=2000)
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
+    parser.add_argument(
+        "--shared-scratch-base",
+        help="Workflow-local shared fallback when this job has no assigned SSD",
+    )
     parser.add_argument("--poll-interval", type=float, default=5.0)
     return parser.parse_args()
 
@@ -71,7 +80,10 @@ def main() -> int:
 
     samtools = executable(args.samtools)
     bwa = executable(args.bwa)
-    scratch = assigned_scratch(args.scratch_base)
+    scratch = assigned_scratch(
+        args.scratch_base,
+        shared_fallback=args.shared_scratch_base,
+    )
     parent = scratch / "chrm_extract_align_fused"
     parent.mkdir(parents=True, exist_ok=True)
     job_tmp = Path(tempfile.mkdtemp(prefix=f"{args.sample}.", dir=parent))
@@ -186,7 +198,7 @@ def main() -> int:
         for key, source in local_outputs.items():
             if not source.is_file() or source.stat().st_size <= 0:
                 raise RuntimeError(f"required alignment output is absent or empty: {source}")
-            _atomic_copy(source, Path(destinations[key]))
+            _atomic_publish(source, Path(destinations[key]))
         success = True
         return 0
     finally:

@@ -78,7 +78,7 @@ else:
     command.extend(
         (
             "--metrics", str(outputs / "metrics.json"), "--samtools", str(samtools),
-            "--bwa", str(bwa), "--threads", "2", "--memory-mb", "4000",
+            "--bwa", str(bwa), "--threads", "2", "--memory-mb", "2000",
             "--ssd-gb", "20", "--scratch-base", str(scratch),
             "--poll-interval", "0.05",
         )

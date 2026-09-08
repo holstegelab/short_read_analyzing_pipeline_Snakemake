@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kmc-tools", default="kmc_tools")
     parser.add_argument("--initial-cores", type=float, required=True)
     parser.add_argument("--initial-memory-mb", type=float, required=True)
+    parser.add_argument("--kmc-threads", type=int, default=2)
     parser.add_argument("--low-cores", type=float, default=0.5)
     parser.add_argument("--low-memory-mb", type=float, default=3000)
     parser.add_argument(
@@ -133,7 +134,7 @@ def main() -> int:
             input_paths=args.fastq,
             output_paths=[Path(str(database) + ".kmc_pre"), Path(str(database) + ".kmc_suf")],
             requested_ssd_gb=args.ssd_gb,
-            threads=int(args.initial_cores),
+            threads=args.kmc_threads,
             memory_mb=int(args.initial_memory_mb),
             poll_interval=args.poll_interval,
         )
@@ -211,6 +212,7 @@ def main() -> int:
                 "requested": {
                     "initial_cores": args.initial_cores,
                     "initial_memory_mb": args.initial_memory_mb,
+                    "kmc_threads": args.kmc_threads,
                     "low_cores": args.low_cores,
                     "low_memory_mb": args.low_memory_mb,
                     "ssd_gb": args.ssd_gb,

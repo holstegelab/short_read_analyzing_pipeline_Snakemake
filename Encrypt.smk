@@ -137,7 +137,9 @@ rule Encrypt_crams:
     resources:
         time = get_time('Encrypt_crams'),
         mem_mb=200,
-        n="0.3"
+        # Input size has little relation to CPU use; reserve the observed
+        # representative average (0.43 core) with minimal headroom.
+        n="0.45"
     shell:
         """
         python -m crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
@@ -150,8 +152,8 @@ rule copy_to_dcache:
         delivery=cram_delivery_marker
     resources:
         time = get_time('copy_to_dcache'),
-        mem_mb=1500,
-        n="0.2",
+        mem_mb=512,
+        n="0.35",
         dcache_upload_slots=1,
         # cram is uploaded here -> give back its share of the start_sample reservation
         # (see active_release_upload in common.py). The remainder frees at finished.

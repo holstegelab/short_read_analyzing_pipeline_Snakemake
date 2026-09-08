@@ -6,6 +6,13 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 
 
+def rule_block(text: str, rule_name: str) -> str:
+    marker = f"rule {rule_name}:"
+    start = text.index(marker)
+    next_rule = text.find("\nrule ", start + len(marker))
+    return text[start : next_rule if next_rule >= 0 else None]
+
+
 def conda_dependencies(filename: str) -> set[str]:
     document = yaml.safe_load((REPO / "envs" / filename).read_text())
     dependencies = set()
@@ -46,7 +53,14 @@ def test_kmc_reserves_average_cpu_without_reducing_tool_parallelism():
     runner = (REPO / "scripts" / "run_fused_kmer_sex.py").read_text()
 
     assert "KMC_RESERVED_CORES = 2" in aligner
-    assert aligner.count("n=str(KMC_RESERVED_CORES)") == 2
+    assert aligner.count("n=str(KMC_RESERVED_CORES)") == 1
+    assert 'n="1.6"' in rule_block(aligner, "kmer_sex_fused")
+    assert "use_threads=KMC_RESERVED_CORES" in rule_block(
+        aligner, "kmer_sex_fused"
+    )
+    assert "--kmc-threads {resources.use_threads}" in rule_block(
+        aligner, "kmer_sex_fused"
+    )
     for option in ('"-sf12"', '"-sp12"', '"-sr1"'):
         assert option in runner
 

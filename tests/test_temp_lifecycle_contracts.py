@@ -53,3 +53,12 @@ def test_raw_intermediates_are_temporary_but_completed_results_are_durable():
     assert 'os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz")' in snakefile
     assert 'os.path.join(STAT, "cov", se + ".*")' not in snakefile
     assert 'os.path.join(STAT, "*.stats_bundle.tar.gz")' in snakefile
+
+
+def test_markdup_ssd_reservation_scales_with_measured_tempfile_ratio():
+    aligner = (REPO / "Aligner.smk").read_text()
+    block = rule_body(aligner, "markdup")
+
+    assert 'ssd_use="required"' in block
+    assert "ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(" in block
+    assert "input.bam, factor=1.9, overhead_gb=4, minimum_gb=8" in block

@@ -86,7 +86,7 @@ with gzip.open(output, 'wt') as handle:
         "--output-numt-tbi", str(outputs / "numt.g.vcf.gz.tbi"),
         "--metrics", str(outputs / "metrics.json"),
         "--gatk", str(gatk), "--tabix", str(tabix), "--bcftools", str(bcftools),
-        "--memory-mb", "5000", "--ssd-gb", "20",
+        "--memory-mb", "2500", "--ssd-gb", "20",
         "--scratch-base", str(scratch), "--poll-interval", "0.05",
     ]
     subprocess.run(command, check=True, env=os.environ.copy())

@@ -317,7 +317,7 @@ rule deepvariant_apptainer:
         deepvariant_container_slots=1,
         mem_mb=get_mem_mb_deepvariant,
         time = get_time('deepvariant'),
-        ssd_use="required",
+        ssd_use="possible",
         # Live WGS region jobs use 0.9--1.4 GiB. Keep room for a larger
         # interval, TFRecords and transient post-processing files.
         ssd_gb=4
@@ -399,7 +399,7 @@ rule deepvariant:
         nshards=8,
         mem_mb=get_mem_mb_deepvariant,
         time=get_time('deepvariant'),
-        ssd_use="required",
+        ssd_use="possible",
         ssd_gb=4
     shell:
         """
@@ -605,12 +605,14 @@ if FUSE_DEEPVARIANT_PHASING:
             lease_command=zslurm_lease_command(config)
         conda: CONDA_VCF
         resources:
-            n="8",
+            # Reserve observed average CPU; DeepVariant still runs 8 shards.
+            n="7.5",
             nshards=8,
             mem_mb=get_mem_mb_deepvariant,
             attempt=lambda wildcards, attempt: attempt,
             time=get_time('deepvariant_phasing_fused'),
-            ssd_use="required",
+            tmpdir=tmpdir,
+            ssd_use="possible",
             ssd_gb=16
         shell:
             """
@@ -654,11 +656,12 @@ if FUSE_DEEPVARIANT_PHASING:
                 --initial-cores {resources.n} \
                 --initial-memory-mb {resources.mem_mb} \
                 --low-cores 1 \
-                --low-memory-mb 3200 \
+                --low-memory-mb 4000 \
                 --attempt {resources.attempt} \
                 --lease-mode {params.lease_mode:q} \
                 --lease-command {params.lease_command:q} \
                 --ssd-gb {resources.ssd_gb} \
+                --shared-scratch-base {resources.tmpdir:q} \
                 2>> {log.runner:q}
             status=$?
             set -e
