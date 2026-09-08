@@ -1,4 +1,5 @@
 import gzip
+import importlib.util
 import json
 import os
 import subprocess
@@ -8,12 +9,64 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_external_adapter.py"
+sys.path.insert(0, str(REPO / "scripts"))
+import select_cram_reference as REFERENCE_SELECTOR
+
+SPEC = importlib.util.spec_from_file_location("run_fused_external_adapter", RUNNER)
+MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(MODULE)
 
 
 def _script(path, body):
     path.write_text("#!/usr/bin/env python3\n" + body)
     path.chmod(0o755)
     return path
+
+
+def test_adapter_identification_and_trimming_share_one_five_core_lease():
+    runner = RUNNER.read_text()
+
+    assert runner.count("shrink_lease(") == 1
+    assert "cores=args.adapter_cores" in runner
+    assert "--identify-adapters" in runner
+    assert runner.count("--threads 4") == 2
+
+
+def test_runtime_cram_reference_selection_rewrites_existing_command(
+    tmp_path, monkeypatch
+):
+    configured = tmp_path / "hg19.fa"
+    hg19_b37_chry = tmp_path / "hg19_b37chrY.fa"
+    hg38 = tmp_path / "hg38.fa"
+    for reference in (configured, hg19_b37_chry, hg38):
+        reference.write_text(">chr1\nA\n")
+    alignment = tmp_path / "input.cram"
+    alignment.write_bytes(b"CRAM")
+    header = (
+        f"@SQ\tSN:chr1\tLN:1\tM5:{REFERENCE_SELECTOR.HG19_CHR1_M5}\n"
+        f"@SQ\tSN:chrY\tLN:1\tM5:{REFERENCE_SELECTOR.HG19_B37_CHRY_M5}\n"
+    )
+    monkeypatch.setattr(MODULE, "read_cram_header", lambda cram, samtools: header)
+
+    tokens, selection = MODULE.resolve_cram_options(
+        alignment,
+        f"--reference {configured} --input-fmt-option required_fields=0x0fff",
+        samtools="samtools",
+        hg19_reference=str(configured),
+        hg19_b37_chry_reference=str(hg19_b37_chry),
+        hg38_reference=str(hg38),
+    )
+
+    assert tokens[:2] == ["--reference", str(hg19_b37_chry)]
+    assert tokens[2:] == ["--input-fmt-option", "required_fields=0x0fff"]
+    assert selection == {
+        "is_cram": True,
+        "configured_reference": str(configured),
+        "selected_reference": str(hg19_b37_chry),
+        "reason": "hg19+b37-chrY M5 signature",
+        "changed": True,
+    }
 
 
 def test_external_adapter_fusion_extracts_once_and_publishes_legacy_contract(tmp_path):
@@ -143,6 +196,11 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     assert lease_log.read_text().splitlines() == ["status", "set"]
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is True
+    assert metrics["requested"]["adapter_cores"] == 5.0
+    assert [
+        adjustment["response"]["held_cores"]
+        for adjustment in metrics["lease"]["adjustments"]
+    ] == [5.0]
     assert [phase["label"] for phase in metrics["phases"]] == [
         "external_adapter_fused.extract",
         "external_adapter_fused.adapter_removal",

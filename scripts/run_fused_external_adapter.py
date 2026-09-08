@@ -25,6 +25,17 @@ from run_fused_alignment import (
     lease_preflight,
     shrink_lease,
 )
+from select_cram_reference import choose_reference, read_cram_header
+
+
+DEFAULT_HG19_REFERENCE = "/gpfs/work3/0/qtholstg/hg38_res_v2/cram_refs/hg19.fa"
+DEFAULT_HG19_B37_CHRY_REFERENCE = (
+    "/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa"
+)
+DEFAULT_HG38_REFERENCE = (
+    "/gpfs/work3/0/qtholstg/hg38_res_v2/cram_refs/"
+    "GRCh38_full_analysis_set_plus_decoy_hla.fa"
+)
 
 
 def q(value: object) -> str:
@@ -35,6 +46,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-alignment", required=True)
     parser.add_argument("--cram-options", default="")
+    # Defaults keep already-queued commands from a running Snakemake process
+    # compatible. New workflow parses pass these paths explicitly.
+    parser.add_argument("--hg19-reference", default=DEFAULT_HG19_REFERENCE)
+    parser.add_argument(
+        "--hg19-b37-chry-reference",
+        default=DEFAULT_HG19_B37_CHRY_REFERENCE,
+    )
+    parser.add_argument("--hg38-reference", default=DEFAULT_HG38_REFERENCE)
     parser.add_argument("--sample", required=True)
     parser.add_argument("--readgroup", required=True)
     parser.add_argument("--adapter-list", required=True)
@@ -70,6 +89,87 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
     parser.add_argument("--poll-interval", type=float, default=5.0)
     return parser.parse_args()
+
+
+def _configured_reference(tokens: list[str]) -> str | None:
+    for index, token in enumerate(tokens):
+        if token in {"--reference", "-T"}:
+            if index + 1 >= len(tokens):
+                raise ValueError(f"missing value after CRAM option {token}")
+            return tokens[index + 1]
+        if token.startswith("--reference="):
+            return token.partition("=")[2]
+        if token.startswith("-T") and token != "-T":
+            return token[2:]
+    return None
+
+
+def _replace_reference(tokens: list[str], selected: str) -> list[str]:
+    result = list(tokens)
+    for index, token in enumerate(result):
+        if token in {"--reference", "-T"}:
+            if index + 1 >= len(result):
+                raise ValueError(f"missing value after CRAM option {token}")
+            result[index + 1] = selected
+            return result
+        if token.startswith("--reference="):
+            result[index] = f"--reference={selected}"
+            return result
+        if token.startswith("-T") and token != "-T":
+            result[index] = f"-T{selected}"
+            return result
+    result.extend(("--reference", selected))
+    return result
+
+
+def resolve_cram_options(
+    alignment: Path,
+    raw_options: str,
+    *,
+    samtools: str,
+    hg19_reference: str,
+    hg19_b37_chry_reference: str,
+    hg38_reference: str,
+) -> tuple[list[str], dict]:
+    """Select the decode FASTA from a CRAM's M5 dictionary.
+
+    The input/output contract stays unchanged. Only the reference argument used
+    by the extraction subprocess can be corrected.
+    """
+    tokens = shlex.split(raw_options)
+    configured = _configured_reference(tokens)
+    selection = {
+        "is_cram": alignment.suffix.lower() == ".cram",
+        "configured_reference": configured,
+        "selected_reference": configured,
+        "reason": "not a CRAM; keeping configured options",
+        "changed": False,
+    }
+    if not selection["is_cram"]:
+        return tokens, selection
+    if configured is None:
+        raise ValueError("CRAM input has no configured --reference option")
+
+    header = read_cram_header(str(alignment), samtools)
+    selected, reason = choose_reference(
+        header,
+        primary_reference=configured,
+        hg19_reference=hg19_reference,
+        hg19_b37_chry_reference=hg19_b37_chry_reference,
+        hg38_reference=hg38_reference,
+    )
+    if not Path(selected).is_file():
+        raise FileNotFoundError(
+            f"selected CRAM reference does not exist ({reason}): {selected}"
+        )
+    selection.update(
+        {
+            "selected_reference": selected,
+            "reason": reason,
+            "changed": selected != configured,
+        }
+    )
+    return _replace_reference(tokens, selected), selection
 
 
 def quality_base(path: Path, max_records: int = 1000) -> tuple[int, int]:
@@ -152,6 +252,7 @@ def main() -> int:
     )
     phase_paths: list[Path] = []
     lease: dict = {}
+    reference_selection: dict = {}
     success = False
     started = time.time()
     raw1 = job_tmp / "raw_R1.fastq.gz"
@@ -165,7 +266,22 @@ def main() -> int:
             initial_cores=args.initial_cores,
             initial_memory_mb=args.initial_memory_mb,
         )
-        cram_tokens = " ".join(q(token) for token in shlex.split(args.cram_options))
+        cram_options, reference_selection = resolve_cram_options(
+            alignment,
+            args.cram_options,
+            samtools=samtools,
+            hg19_reference=args.hg19_reference,
+            hg19_b37_chry_reference=args.hg19_b37_chry_reference,
+            hg38_reference=args.hg38_reference,
+        )
+        print(
+            "[external adapter reference] "
+            f"{reference_selection['reason']}; "
+            f"configured={reference_selection['configured_reference']}; "
+            f"selected={reference_selection['selected_reference']}",
+            file=sys.stderr,
+        )
+        cram_tokens = " ".join(q(token) for token in cram_options)
         if cram_tokens:
             cram_tokens += " "
         extract_script = job_tmp / "extract.sh"
@@ -299,6 +415,7 @@ def main() -> int:
                     "r2_base": base2 if 'base2' in locals() else None,
                     "r2_max": max2 if 'max2' in locals() else None,
                 },
+                "reference_selection": reference_selection,
                 "lease": lease,
                 "phases": phases,
                 "scratch_job_directory": str(job_tmp),

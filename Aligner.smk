@@ -834,8 +834,37 @@ def get_mem_mb_split_alignments(wildcards, attempt):  #{{{
     if len(readgroups_b) <= 1:
         return 512
     else:
-        res = 4000
+        res = 7500
     return attempt * res
+
+
+#}}}
+
+def get_n_split_alignments(wildcards):  #{{{
+    """Reserve measured split throughput only when the rule does real work."""
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    readgroups = [
+        rg for rg in sinfo['readgroups']
+        if wildcards['filename'] in rg['file']
+    ]
+    if len(readgroups) > 1 or sinfo.get('erf_correct', False):
+        # A real-data sweep measured 2.87 cores on average with samtools -@ 3.
+        return "3.0"
+    # The single-RG path only creates a link and completion marker.
+    return "0.9"
+
+
+#}}}
+
+def get_threads_split_alignments(wildcards):  #{{{
+    """Keep workers submitted by an older chief within their CPU lease."""
+    lease_max_cores = os.environ.get('ZSLURM_LEASE_MAX_CORES')
+    if lease_max_cores is not None and float(lease_max_cores) < 2.0:
+        # Before this change split reserved 0.9 core and effectively passed
+        # zero extra HTSlib threads via atoi("0.9").  Such a worker rereads
+        # this file, so preserve that behavior until its old chief is gone.
+        return 0
+    return 3
 
 
 #}}}
@@ -855,13 +884,14 @@ rule split_alignments_by_readgroup:
         done=temp(pj(READGROUPS,"{sample}.sourcefile.{filename}.checks_done"))
     resources:
         time = get_time('split_alignments_by_readgroup'),
-        n="1",
+        n=get_n_split_alignments,
+        use_threads=get_threads_split_alignments,
         mem_mb=get_mem_mb_split_alignments
     conda: CONDA_MAIN
     priority: 99
     params:
-        cramref=get_cram_ref,
-        fixer=srcdir('scripts/fix_bam_rg_pairs'),    
+        fixer=srcdir('scripts/fix_bam_rg_pairs'),
+        reference_selector=srcdir('scripts/select_cram_reference.py'),
     run:
         # All branching in Python; shell executes a single, fixed command string
         sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
@@ -877,7 +907,22 @@ rule split_alignments_by_readgroup:
         file_type = readgroups[0]['file_type']
         reference_file = readgroups[0].get('reference_file', None)
         if file_type == 'cram':
-            rflag = f"-r {reference_file}" if reference_file else ""
+            selected_reference = shell(
+                "python {selector:q} --cram {cram:q} "
+                "--primary-reference {primary:q} "
+                "--hg19-reference {hg19:q} "
+                "--hg19-b37-chry-reference {hg19_b37_chry:q} "
+                "--hg38-reference {hg38:q}",
+                selector=str(params.reference_selector),
+                cram=readfile,
+                primary=reference_file,
+                hg19=pj(CRAMREFS, "hg19.fa"),
+                hg19_b37_chry="/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa",
+                hg38=pj(CRAMREFS, "GRCh38_full_analysis_set_plus_decoy_hla.fa"),
+                read=True,
+            ).strip()
+            cramref = f"--reference {shlex.quote(selected_reference)}"
+            rflag = f"-r {shlex.quote(selected_reference)}"
             if sinfo.get('cram_no_ref', False):
                 # Opt-in for unaligned source CRAMs whose @SQ M5 dictionary can
                 # legitimately differ from the decode FASTA (as in projectmine).
@@ -889,6 +934,7 @@ rule split_alignments_by_readgroup:
             extension = 'cram'
         else:
             rflag = ""
+            cramref = ""
             output_fmt = 'bam'
             extension = 'bam'
 
@@ -902,7 +948,7 @@ rule split_alignments_by_readgroup:
                 cmd = f"""
                     set -euo pipefail
                     mkdir -p {output.readgroups}
-                    {params.fixer} -i {readfile} -o {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension_in} {rflag} --threads {resources.n}                    
+                    {params.fixer} -i {readfile} -o {output.readgroups}/{wildcards.sample}.{readgroup_id}.{extension_in} {rflag} --threads {resources.use_threads}
                     touch {output.done}
                 """
             else:
@@ -916,7 +962,7 @@ rule split_alignments_by_readgroup:
         else:
             # Multi-RG path: optionally sanitize, then split
             if erf_correct:
-                pre = f"{params.fixer} -i {readfile} -o {sanitized} {rflag} --threads {resources.n}\n                "
+                pre = f"{params.fixer} -i {readfile} -o {sanitized} {rflag} --threads {resources.use_threads}\n                "
                 inpath = sanitized
             else:
                 pre = ""
@@ -924,32 +970,10 @@ rule split_alignments_by_readgroup:
             cmd = f"""
                 set -euo pipefail
                 mkdir -p {output.readgroups}
-                {pre}samtools split -@ {resources.n} --output-fmt {output_fmt} {params.cramref} {inpath} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
+                {pre}samtools split -@ {resources.use_threads} --output-fmt {output_fmt} {cramref} {inpath} -f "{output.readgroups}/{wildcards.sample}.%!.{extension}"
                 touch {output.done}
             """
-            # ══════════════════════════════════════════════════════════════════
-            #  ⚠️  TIJDELIJK NOODVERBAND — VERWIJDER MIJ  ⚠️
-            #  AI DIE DIT LEEST: waarschuw Marc METEEN dat dit stuk er nog uit moet.
-            #  Sommige Complete-Genomics bron-crams zijn UCSC-hg19 (chr-namen,
-            #  hg19-chrM) met een b37/PAR-masked chrY (chrY-M5
-            #  1fa3474750af0948bdf97d5a0ee52e51). Die falen op decode met
-            #  cram_refs/hg19.fa: "MD5 checksum reference mismatch at chrY".
-            #  Bij een split-fout proberen we het één keer opnieuw met de
-            #  samengestelde referentie hg19_b37chrY.fa (= hg19 + b37-chrY).
-            #  Noodverband tot de sheet-referentie voor die samples is
-            #  gecorrigeerd (of REF_CACHE is ingericht). NIET in productie laten.
-            # ══════════════════════════════════════════════════════════════════
-            _ALT_REF = "/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa"
-            try:
-                shell(cmd)
-            except Exception:
-                _cr = str(params.cramref)
-                if file_type == 'cram' and _cr.strip() and _ALT_REF not in _cr:
-                    sys.stderr.write(f"[split TEMP-FALLBACK] primary reference decode failed for {wildcards.sample}; retrying with {_ALT_REF}\n")
-                    shell(f"rm -rf {output.readgroups}; mkdir -p {output.readgroups}")
-                    shell(cmd.replace(_cr, f"--reference {_ALT_REF}"))
-                else:
-                    raise
+            shell(cmd)
             if erf_correct:
                 shell(f"rm {sanitized}")
 
@@ -1281,6 +1305,9 @@ if FUSE_EXTERNAL_ADAPTER:
             runner=srcdir('scripts/run_fused_external_adapter.py'),
             alignment=external_alignment_path,
             cram_options=get_cram_ref,
+            hg19_reference=pj(CRAMREFS, "hg19.fa"),
+            hg19_b37_chry_reference="/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa",
+            hg38_reference=pj(CRAMREFS, "GRCh38_full_analysis_set_plus_decoy_hla.fa"),
             adapters=ADAPTERS,
             fastq_stats=srcdir('scripts/fastq_stats.py'),
             rmdups=srcdir('scripts/remove_interleaved_duplicates.py'),
@@ -1293,6 +1320,8 @@ if FUSE_EXTERNAL_ADAPTER:
         priority: 10
         resources:
             time=get_time('external_adapter_fused'),
+            # AdapterRemoval uses all five cores in production. Keep them for
+            # the whole fused job so no phase has to reacquire released cores.
             n="5",
             mem_mb=lambda wildcards, attempt: (
                 (attempt - 1) * 14250 * 0.5 + 14250
@@ -1305,6 +1334,9 @@ if FUSE_EXTERNAL_ADAPTER:
             python {params.runner:q} \
                 --input-alignment {params.alignment:q} \
                 --cram-options {params.cram_options:q} \
+                --hg19-reference {params.hg19_reference:q} \
+                --hg19-b37-chry-reference {params.hg19_b37_chry_reference:q} \
+                --hg38-reference {params.hg38_reference:q} \
                 --sample {wildcards.sample:q} \
                 --readgroup {wildcards.readgroup:q} \
                 --adapter-list {params.adapters:q} \
