@@ -205,6 +205,24 @@ def test_stage_submits_pin_before_accepting_online_batch(tmp_path):
     assert calls[0][0:2] == ("--stage", "--from-file")
 
 
+def test_dcache_get_stage_timeout_tracks_attempt_runtime():
+    aligner = (REPO / "Aligner.smk").read_text(encoding="utf-8")
+    start = aligner.index("def _dcache_stage_timeout_seconds")
+    end = aligner.index("rule dcache_get", start)
+    helper = aligner[start:end]
+    namespace = {"config": {}}
+    exec(helper, namespace)
+    timeout = namespace["_dcache_stage_timeout_seconds"]
+
+    assert timeout(90_000) == 89_400
+    assert timeout(135_000) == 134_400
+    assert timeout(180_000) == 179_400
+
+    namespace["config"]["dcache_stage_timeout"] = "12345"
+    assert timeout(180_000) == 12_345
+    assert "_dcache_stage_timeout_seconds(" in aligner
+
+
 def test_download_uses_literal_list_and_shared_slot(monkeypatch, tmp_path):
     client = DirectDCache.__new__(DirectDCache)
     client.remote = "mine"

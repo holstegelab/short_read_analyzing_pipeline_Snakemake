@@ -398,6 +398,15 @@ def _dcache_local_destination(sample, filename, destination_root):
     return os.path.join(str(destination_root), relative)
 
 
+def _dcache_stage_timeout_seconds(resource_time_seconds):
+    """Keep tape-stage polling inside this attempt's ZSlurm time budget."""
+
+    configured_timeout = config.get('dcache_stage_timeout')
+    if configured_timeout is not None:
+        return int(configured_timeout)
+    return max(60, int(resource_time_seconds) - 600)
+
+
 rule dcache_get:
     """Stage one stable sample batch directly from Snellius."""
     output:
@@ -457,6 +466,14 @@ rule dcache_get:
                     handle.write(remote_path + '\n')
 
             if remote_paths:
+                stage_timeout_seconds = _dcache_stage_timeout_seconds(
+                    resources.time
+                )
+                print(
+                    f"[dcache_get] Stage timeout {stage_timeout_seconds}s "
+                    f"within {int(resources.time)}s job budget",
+                    flush=True,
+                )
                 subprocess.run(
                     [
                         sys.executable,
@@ -473,7 +490,7 @@ rule dcache_get:
                         '--poll-seconds',
                         str(config.get('dcache_stage_poll_seconds', 60)),
                         '--stage-timeout',
-                        str(config.get('dcache_stage_timeout', 86400)),
+                        str(stage_timeout_seconds),
                     ],
                     check=True,
                 )
