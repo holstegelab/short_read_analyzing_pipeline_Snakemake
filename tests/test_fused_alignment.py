@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_alignment.py"
@@ -16,6 +18,56 @@ def _script(path, body):
     path.write_text("#!/usr/bin/env python3\n" + body)
     path.chmod(0o755)
     return path
+
+
+def test_assigned_scratch_uses_shared_fallback_only_when_supplied(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("USER", "zslurm-no-such-test-user")
+    monkeypatch.setenv("SLURM_JOB_ID", "999999999")
+    monkeypatch.delenv("SLURM_TMPDIR", raising=False)
+
+    with pytest.raises(RuntimeError, match="ssd_use=required"):
+        fused_alignment.assigned_scratch()
+
+    fallback = tmp_path / "shared" / "scratch"
+    assert fused_alignment.assigned_scratch(
+        shared_fallback=str(fallback)
+    ) == fallback.resolve()
+    assert fallback.is_dir()
+
+
+def test_atomic_publish_moves_a_shared_filesystem_output(tmp_path):
+    source = tmp_path / "shared-scratch" / "result"
+    source.parent.mkdir()
+    source.write_bytes(b"complete")
+    destination = tmp_path / "outputs" / "result"
+
+    fused_alignment._atomic_publish(source, destination)
+
+    assert destination.read_bytes() == b"complete"
+    assert not source.exists()
+
+
+def test_lease_request_preserves_structured_nonzero_response(monkeypatch):
+    response = {
+        "ok": False,
+        "code": 4,
+        "status": "timeout",
+        "message": "capacity did not become available",
+    }
+    process = subprocess.CompletedProcess(
+        args=["/lease"], returncode=4, stdout=json.dumps(response), stderr=""
+    )
+    monkeypatch.setattr(
+        fused_alignment.subprocess, "run", lambda *args, **kwargs: process
+    )
+
+    with pytest.raises(fused_alignment.LeaseError) as error:
+        fused_alignment._lease_request("/lease", ["set"])
+
+    assert error.value.returncode == 4
+    assert error.value.response == response
 
 
 def test_shrink_lease_retries_a_temporary_memory_safety_floor(monkeypatch):
@@ -40,7 +92,8 @@ def test_shrink_lease_retries_a_temporary_memory_safety_floor(monkeypatch):
     )
 
     assert len(calls) == 2
-    assert all(call[1][-2:] == ["--phase", "alignment_tail"] for call in calls)
+    assert calls[0][1][-2:] == ["--phase", "alignment_tail"]
+    assert "--phase" not in calls[1][1]
     assert result["shrink"]["performed"] is True
     assert result["shrink"]["target_reached"] is True
     assert result["shrink"]["attempts"] == 2
@@ -61,6 +114,146 @@ def test_shrink_lease_records_a_persistent_safety_floor(monkeypatch):
     assert result["shrink"]["target_reached"] is False
     assert result["shrink"]["attempts"] == 11
     assert "safety floor" in result["shrink"]["reason"]
+
+
+def test_required_lease_rejects_an_underfilled_growth_target(monkeypatch):
+    response = {"ok": True, "held_cores": 2.5, "held_mem_mb": 768}
+    monkeypatch.setattr(
+        fused_alignment, "_lease_request", lambda _command, _arguments: response
+    )
+    monkeypatch.setattr(fused_alignment.time, "sleep", lambda _seconds: None)
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    with pytest.raises(fused_alignment.LeaseError, match="could not grow"):
+        fused_alignment.shrink_lease(
+            lease,
+            cores=5,
+            memory_mb=768,
+            phase="adapter_removal",
+        )
+
+
+def test_acquire_lease_waits_for_and_confirms_growth(monkeypatch):
+    calls = []
+
+    def fake_request(command, arguments):
+        calls.append((command, arguments))
+        return {"ok": True, "held_cores": 5, "held_mem_mb": 2048}
+
+    monkeypatch.setattr(fused_alignment, "_lease_request", fake_request)
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    result = fused_alignment.acquire_lease(
+        lease,
+        cores=5,
+        memory_mb=768,
+        phase="adapter_removal",
+        wait_seconds=123,
+    )
+
+    assert calls == [
+        (
+            "/lease",
+            [
+                "set", "--cores", "5", "--mem-mb", "768", "--wait", "123",
+                "--phase", "adapter_removal",
+            ],
+        )
+    ]
+    assert result["acquire"]["acquired"] is True
+    # More memory than requested is a safe memory-floor result.
+    assert result["acquire"]["response"]["held_mem_mb"] == 2048
+
+
+def test_acquire_lease_capacity_timeout_is_nonfatal(monkeypatch):
+    calls = []
+
+    def fake_request(_command, arguments):
+        calls.append(arguments)
+        if arguments == ["status"]:
+            return {"ok": True, "held_cores": 3, "held_mem_mb": 768}
+        raise fused_alignment.LeaseError(
+            "timed out",
+            response={
+                "ok": False,
+                "code": 4,
+                "status": "timeout",
+                "message": "capacity did not become available",
+            },
+            returncode=4,
+        )
+
+    monkeypatch.setattr(fused_alignment, "_lease_request", fake_request)
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    result = fused_alignment.acquire_lease(
+        lease, cores=5, memory_mb=768, wait_seconds=60
+    )
+
+    assert calls[-1] == ["status"]
+    assert result["acquire"]["acquired"] is False
+    assert result["acquire"]["timed_out"] is True
+    assert result["acquire"]["attempts"] == 1
+    assert result["acquire"]["response"]["held_cores"] == 3
+
+
+def test_acquire_lease_verifies_growth_after_a_lost_reply(monkeypatch):
+    calls = []
+
+    def fake_request(_command, arguments):
+        calls.append(arguments)
+        if arguments == ["status"]:
+            return {"ok": True, "held_cores": 5, "held_mem_mb": 768}
+        raise fused_alignment.LeaseError("connection closed after request")
+
+    monkeypatch.setattr(fused_alignment, "_lease_request", fake_request)
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    result = fused_alignment.acquire_lease(
+        lease, cores=5, memory_mb=768, wait_seconds=60
+    )
+
+    assert calls[-1] == ["status"]
+    assert result["acquire"]["acquired"] is True
+    assert result["acquire"]["verified_after_lost_reply"] is True
+    assert result["acquire"]["attempts"] == 1
+
+
+def test_acquire_lease_retries_a_transient_manager_error(monkeypatch):
+    set_attempts = 0
+    sleeps = []
+
+    def fake_request(_command, arguments):
+        nonlocal set_attempts
+        if arguments == ["status"]:
+            return {"ok": True, "held_cores": 3, "held_mem_mb": 768}
+        set_attempts += 1
+        if set_attempts == 1:
+            raise fused_alignment.LeaseError(
+                "temporary manager error",
+                response={"ok": False, "code": 5, "status": "manager-error"},
+                returncode=5,
+            )
+        return {"ok": True, "held_cores": 5, "held_mem_mb": 768}
+
+    monkeypatch.setattr(fused_alignment, "_lease_request", fake_request)
+    monkeypatch.setattr(
+        fused_alignment.time, "sleep", lambda seconds: sleeps.append(seconds)
+    )
+    lease = {"available": True, "mode": "required", "command": "/lease"}
+
+    result = fused_alignment.acquire_lease(
+        lease,
+        cores=5,
+        memory_mb=768,
+        attempts=2,
+        retry_delay_seconds=2,
+    )
+
+    assert set_attempts == 2
+    assert sleeps == [2]
+    assert result["acquire"]["acquired"] is True
+    assert result["acquire"]["attempts"] == 2
 
 
 def test_fused_runner_shrinks_lease_and_keeps_intermediate_local(tmp_path):
@@ -130,13 +323,13 @@ command = args[1]
 with Path(os.environ['FAKE_LEASE_LOG']).open('a') as handle:
     handle.write(command + '\\n')
 if command == 'status':
-    held_cores, held_mem = 22.75, 40000
+    held_cores, held_mem = 22.75, 38000
 else:
     held_cores = float(args[args.index('--cores') + 1])
     held_mem = float(args[args.index('--mem-mb') + 1])
 print(json.dumps({'ok': True, 'code': 0, 'status': 'granted',
                   'held_cores': held_cores, 'held_mem_mb': held_mem,
-                  'max_cores': 22.75, 'max_mem_mb': 40000, 'epoch': 1}))
+                  'max_cores': 22.75, 'max_mem_mb': 38000, 'epoch': 1}))
 """,
     )
 
@@ -174,8 +367,8 @@ print(json.dumps({'ok': True, 'code': 0, 'status': 'granted',
         "--dragen", str(dragen), "--samtools", str(samtools),
         "--bam-merge", str(bam_merge), "--dechimer", str(dechimer),
         "--bam-stats", str(checker), "--initial-cores", "22.75",
-        "--initial-memory-mb", "40000", "--low-cores", "6",
-        "--low-memory-mb", "15000", "--lease-mode", "required",
+        "--initial-memory-mb", "38000", "--low-cores", "2",
+        "--low-memory-mb", "13500", "--lease-mode", "required",
         "--lease-command", str(lease), "--ssd-gb", "16",
         "--scratch-base", str(scratch), "--poll-interval", "0.05",
     ]
@@ -193,7 +386,7 @@ print(json.dumps({'ok': True, 'code': 0, 'status': 'granted',
     assert lease_log.read_text().splitlines() == ["status", "set"]
     metrics = json.loads((outputs / "fused.io.json").read_text())
     assert metrics["success"] is True
-    assert metrics["lease"]["shrink"]["response"]["held_cores"] == 6
+    assert metrics["lease"]["shrink"]["response"]["held_cores"] == 2
     assert [phase["label"] for phase in metrics["phases"]] == [
         "align_reads_fused.alignment", "align_reads_fused.merge_check",
         "align_reads_fused.dechimer_check", "align_reads_fused.sort",

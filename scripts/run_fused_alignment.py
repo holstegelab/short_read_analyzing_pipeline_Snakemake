@@ -26,11 +26,29 @@ LEASE_ENV = (
 
 
 class LeaseError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        response: dict[str, Any] | None = None,
+        returncode: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.response = response
+        self.returncode = returncode
 
 
-def assigned_scratch(explicit: str | None = None) -> Path:
-    """Resolve this job's scratch root; never borrow another job's directory."""
+def assigned_scratch(
+    explicit: str | None = None,
+    *,
+    shared_fallback: str | None = None,
+) -> Path:
+    """Resolve this job's scratch root; never borrow another job's directory.
+
+    Required-SSD callers omit ``shared_fallback`` and retain the strict
+    ``/scratch-node`` contract.  Rules with ``ssd_use=possible`` explicitly
+    supply a workflow-local shared directory for normal compute nodes.
+    """
     candidate: Path | None = Path(explicit) if explicit else None
     if candidate is None:
         user = os.environ.get("USER")
@@ -43,6 +61,15 @@ def assigned_scratch(explicit: str | None = None) -> Path:
                 resolved = Path(slurm_tmp).resolve()
                 if resolved.is_relative_to(Path("/scratch-node")):
                     candidate = resolved
+    if candidate is not None and candidate.is_dir() and os.access(candidate, os.W_OK):
+        return candidate.resolve()
+
+    if shared_fallback:
+        fallback = Path(shared_fallback)
+        fallback.mkdir(parents=True, exist_ok=True)
+        if fallback.is_dir() and os.access(fallback, os.W_OK):
+            return fallback.resolve()
+
     if candidate is None or not candidate.is_dir() or not os.access(candidate, os.W_OK):
         raise RuntimeError(
             "ssd_use=required but this job has no writable assigned "
@@ -89,6 +116,29 @@ def _atomic_copy(source: Path, destination: Path) -> None:
             pass
 
 
+def _atomic_publish(source: Path, destination: Path) -> None:
+    """Publish a final output atomically, moving it when both paths share a FS."""
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_raw = tempfile.mkstemp(
+        prefix=f".{destination.name}.", dir=destination.parent
+    )
+    os.close(fd)
+    temporary = Path(temporary_raw)
+    try:
+        if source.stat().st_dev == destination.parent.stat().st_dev:
+            os.replace(source, temporary)
+        else:
+            shutil.copyfile(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _lease_request(command: str, arguments: Sequence[str]) -> dict[str, Any]:
     process = subprocess.run(
         [command, "--json", *arguments],
@@ -96,19 +146,28 @@ def _lease_request(command: str, arguments: Sequence[str]) -> dict[str, Any]:
         capture_output=True,
         text=True,
     )
+    response: dict[str, Any] | None = None
+    if process.stdout.strip():
+        try:
+            parsed = json.loads(process.stdout)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            response = parsed
     if process.returncode:
         detail = (process.stderr or process.stdout).strip()
         raise LeaseError(
-            f"{' '.join(arguments)} failed with exit {process.returncode}: {detail}"
+            f"{' '.join(arguments)} failed with exit {process.returncode}: {detail}",
+            response=response,
+            returncode=process.returncode,
         )
-    try:
-        response = json.loads(process.stdout)
-    except json.JSONDecodeError as exc:
-        raise LeaseError(f"lease command returned invalid JSON: {process.stdout!r}") from exc
+    if response is None:
+        raise LeaseError(f"lease command returned invalid JSON: {process.stdout!r}")
     if not response.get("ok"):
         raise LeaseError(
             f"lease request was rejected: {response.get('status')}: "
-            f"{response.get('message')}"
+            f"{response.get('message')}",
+            response=response,
         )
     return response
 
@@ -163,16 +222,15 @@ def lease_preflight(
 
 
 def shrink_lease(
-    lease: dict[str, Any], *, cores: float, memory_mb: float, phase: str | None = None
+    lease: dict[str, Any],
+    *,
+    cores: float,
+    memory_mb: float,
+    phase: str | None = None,
 ) -> dict[str, Any]:
     if not lease.get("available"):
         lease["shrink"] = {"performed": False, "reason": "lease unavailable"}
         return lease
-    arguments = [
-        "set", "--cores", str(cores), "--mem-mb", str(memory_mb), "--wait", "0",
-    ]
-    if phase is not None:
-        arguments.extend(["--phase", phase])
     last_error: Exception | None = None
     last_response: dict[str, Any] | None = None
     # zslurm_chief samples live PSS every five seconds by default. Cover at
@@ -180,20 +238,35 @@ def shrink_lease(
     # the job at its maximum reservation for the entire low-memory tail.
     attempts = 11
     for attempt in range(1, attempts + 1):
+        arguments = [
+            "set",
+            "--cores",
+            str(cores),
+            "--mem-mb",
+            str(memory_mb),
+            "--wait",
+            "0",
+        ]
+        # One logical phase starts on the first request. Safety-floor retries
+        # must not fragment reporting into a series of duplicate phases.
+        if phase is not None and attempt == 1:
+            arguments.extend(["--phase", phase])
         try:
             response = _lease_request(str(lease["command"]), arguments)
             last_response = response
             target_reached = (
-                float(response["held_cores"]) <= float(cores) + 1e-6
-                and float(response["held_mem_mb"]) <= float(memory_mb) + 1e-6
+                abs(float(response["held_cores"]) - float(cores)) <= 1e-6
+                and abs(float(response["held_mem_mb"]) - float(memory_mb)) <= 1e-6
             )
             if target_reached:
-                lease["shrink"] = {
+                adjustment = {
                     "performed": True,
                     "target_reached": True,
                     "attempts": attempt,
                     "response": response,
                 }
+                lease["shrink"] = adjustment
+                lease.setdefault("adjustments", []).append(adjustment)
                 return lease
             last_error = LeaseError(
                 "lease safety floor retained "
@@ -207,37 +280,214 @@ def shrink_lease(
             # target after that observation has had time to settle.
             time.sleep(1.0)
     if last_response is not None:
-        lease["shrink"] = {
+        adjustment = {
             "performed": True,
             "target_reached": False,
             "attempts": attempts,
             "response": last_response,
             "reason": str(last_error),
         }
+        lease["shrink"] = adjustment
+        lease.setdefault("adjustments", []).append(adjustment)
+        # Retaining more than requested after a shrink is safe (and expected
+        # while the live-usage safety floor catches up). Failing to reacquire
+        # requested capacity is not safe for a required lease.
+        if lease["mode"] == "required" and (
+            float(last_response["held_cores"]) + 1e-6 < float(cores)
+            or float(last_response["held_mem_mb"]) + 1e-6 < float(memory_mb)
+        ):
+            raise LeaseError(f"could not grow required lease: {last_error}")
         return lease
     try:
         status = _lease_request(str(lease["command"]), ["status"])
     except Exception:
         status = None
     if status is not None and (
-        float(status["held_cores"]) <= float(cores) + 1e-6
-        and float(status["held_mem_mb"]) <= float(memory_mb) + 1e-6
+        abs(float(status["held_cores"]) - float(cores)) <= 1e-6
+        and abs(float(status["held_mem_mb"]) - float(memory_mb)) <= 1e-6
     ):
-        lease["shrink"] = {
+        adjustment = {
             "performed": True,
             "target_reached": True,
             "attempts": attempts,
             "response": status,
             "verified_after_lost_reply": True,
         }
+        lease["shrink"] = adjustment
+        lease.setdefault("adjustments", []).append(adjustment)
         return lease
     if lease["mode"] == "required":
-        raise LeaseError(f"could not shrink required lease: {last_error}")
+        raise LeaseError(f"could not set required lease: {last_error}")
     print(
-        f"[fused-alignment] lease shrink failed; retaining maximum: {last_error}",
+        f"[fused-alignment] lease adjustment failed: {last_error}",
         file=sys.stderr,
     )
     lease["shrink"] = {"performed": False, "reason": str(last_error)}
+    return lease
+
+
+def _lease_holds_at_least(
+    response: dict[str, Any], *, cores: float, memory_mb: float
+) -> bool:
+    """Return whether a response confirms all capacity required by a phase."""
+
+    try:
+        return (
+            float(response["held_cores"]) + 1e-6 >= float(cores)
+            and float(response["held_mem_mb"]) + 1e-6 >= float(memory_mb)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def acquire_lease(
+    lease: dict[str, Any],
+    *,
+    cores: float,
+    memory_mb: float,
+    phase: str | None = None,
+    wait_seconds: float = 3600.0,
+    attempts: int = 3,
+    retry_delay_seconds: float = 1.0,
+) -> dict[str, Any]:
+    """Safely acquire a larger phase lease without making capacity fatal.
+
+    ZSlurm keeps the previous lease while a FIFO growth request waits. A
+    capacity timeout therefore means the caller must use its lower-resource
+    fallback; it is not a reason to fail otherwise-valid work. Transient
+    transport/manager errors are retried after checking ``status`` because an
+    absolute request may have committed even when its reply was lost.
+
+    Callers must inspect ``lease["acquire"]["acquired"]`` before starting the
+    higher-resource phase.
+    """
+
+    if attempts < 1:
+        raise ValueError("lease acquire attempts must be at least one")
+    if wait_seconds < 0:
+        raise ValueError("lease acquire wait_seconds cannot be negative")
+    if retry_delay_seconds < 0:
+        raise ValueError("lease acquire retry_delay_seconds cannot be negative")
+
+    if not lease.get("available"):
+        adjustment = {
+            "kind": "acquire",
+            "performed": False,
+            "target_reached": False,
+            "acquired": False,
+            "attempts": 0,
+            "requested_cores": float(cores),
+            "requested_mem_mb": float(memory_mb),
+            "wait_seconds": float(wait_seconds),
+            "reason": "lease unavailable",
+        }
+        lease["acquire"] = adjustment
+        lease.setdefault("adjustments", []).append(adjustment)
+        return lease
+
+    command = str(lease["command"])
+    last_error: Exception | None = None
+    last_response: dict[str, Any] | None = None
+    attempts_used = 0
+    timed_out = False
+
+    def record_success(
+        response: dict[str, Any], *, verified_after_lost_reply: bool = False
+    ) -> dict[str, Any]:
+        adjustment = {
+            "kind": "acquire",
+            "performed": True,
+            "target_reached": True,
+            "acquired": True,
+            "attempts": attempts_used,
+            "requested_cores": float(cores),
+            "requested_mem_mb": float(memory_mb),
+            "wait_seconds": float(wait_seconds),
+            "response": response,
+        }
+        if verified_after_lost_reply:
+            adjustment["verified_after_lost_reply"] = True
+        lease["acquire"] = adjustment
+        lease.setdefault("adjustments", []).append(adjustment)
+        return lease
+
+    for attempt in range(1, attempts + 1):
+        attempts_used = attempt
+        arguments = [
+            "set",
+            "--cores",
+            str(cores),
+            "--mem-mb",
+            str(memory_mb),
+            "--wait",
+            str(wait_seconds),
+        ]
+        if phase is not None:
+            arguments.extend(["--phase", phase])
+
+        error_response: dict[str, Any] | None = None
+        try:
+            response = _lease_request(command, arguments)
+            last_response = response
+            if _lease_holds_at_least(response, cores=cores, memory_mb=memory_mb):
+                return record_success(response)
+            last_error = LeaseError(
+                "lease response did not confirm requested capacity",
+                response=response,
+            )
+            error_response = response
+        except Exception as exc:
+            last_error = exc
+            if isinstance(exc, LeaseError):
+                error_response = exc.response
+                if error_response is not None:
+                    last_response = error_response
+
+        # A set request is absolute and may have committed even if the response
+        # was lost. Verify before retrying and before selecting a fallback.
+        try:
+            status = _lease_request(command, ["status"])
+        except Exception:
+            status = None
+        if status is not None:
+            last_response = status
+            if _lease_holds_at_least(status, cores=cores, memory_mb=memory_mb):
+                return record_success(status, verified_after_lost_reply=True)
+
+        response_status = (
+            str(error_response.get("status", "")) if error_response else ""
+        )
+        response_code = error_response.get("code") if error_response else None
+        if response_status == "timeout" or response_code == 4:
+            timed_out = True
+            break
+        # Invalid/denied requests cannot improve through an unchanged retry.
+        if response_code in {2, 3}:
+            break
+        if attempt < attempts:
+            time.sleep(retry_delay_seconds)
+
+    adjustment = {
+        "kind": "acquire",
+        "performed": True,
+        "target_reached": False,
+        "acquired": False,
+        "attempts": attempts_used,
+        "requested_cores": float(cores),
+        "requested_mem_mb": float(memory_mb),
+        "wait_seconds": float(wait_seconds),
+        "timed_out": timed_out,
+        "reason": str(last_error),
+    }
+    if last_response is not None:
+        adjustment["response"] = last_response
+    lease["acquire"] = adjustment
+    lease.setdefault("adjustments", []).append(adjustment)
+    print(
+        "[fused-alignment] lease acquire unavailable; caller must use its "
+        f"lower-resource fallback: {last_error}",
+        file=sys.stderr,
+    )
     return lease
 
 
