@@ -8,7 +8,7 @@ from common import *
 onsuccess: shell("rm -fr logs/chrM/*")
 
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
 
 
 
@@ -81,8 +81,8 @@ rule copy_chrM_gvcfs_to_dcache:
     input:
         tar=pj(chrM, "tar", "chrM_gvcfs.tar.gz")
     output:
-        copied=temp(pj(chrM, "tar", "chrM_gvcfs.tar.copied")),
-        checksum=temp(pj(chrM, "tar", "chrM_gvcfs.tar.ADLER32"))
+        copied=pj(chrM, "tar", "chrM_gvcfs.tar.copied"),
+        checksum=pj(chrM, "tar", "chrM_gvcfs.tar.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -429,8 +429,8 @@ rule mutect_bp_resolution_both:
         tbi_shift_back_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_shifted_backshifted_BP.g.vcf.gz.tbi')), non_empty=True),
         merged_vcf_BP_chrM=ensure(temp(pj(chrM,'variants', 'gvcf','{sample}.chrM_merged_BP.g.vcf.gz')), non_empty=True),
         merged_tbi_BP_chrM=ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_BP_with_anno_chrM=ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz')), non_empty=True),
-        merged_vcf_BP_with_anno_tbi_chrM=ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi')), non_empty=True),
+        merged_vcf_BP_with_anno_chrM=ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz'), non_empty=True),
+        merged_vcf_BP_with_anno_tbi_chrM=ensure(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi'), non_empty=True),
         merged_vcf_BP_norm_chrM=ensure(temp(pj(chrM,'variants','gvcf','{sample}.chrM_merged_BP_norm.g.vcf.gz')), non_empty=True),
         vcf_BP_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_orig_BP_res.g.vcf.gz')), non_empty=True),
         tbi_BP_NUMT=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_orig_BP_res.g.vcf.gz.tbi')), non_empty=True),
@@ -442,8 +442,8 @@ rule mutect_bp_resolution_both:
         tbi_shift_back_BP_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_shifted_backshifted_BP_res.g.vcf.gz.tbi')), non_empty=True),
         merged_vcf_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz')), non_empty=True),
         merged_tbi_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged.g.vcf.gz.tbi')), non_empty=True),
-        merged_vcf_with_anno_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz')), non_empty=True),
-        merged_vcf_with_anno_tbi_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi')), non_empty=True),
+        merged_vcf_with_anno_NUMT=ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'), non_empty=True),
+        merged_vcf_with_anno_tbi_NUMT=ensure(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi'), non_empty=True),
         merged_vcf_norm_NUMT=ensure(temp(pj(chrM,'variants','NUMTs','gVCF','{sample}.chrM_NUMT_merged_norm.g.vcf.gz')), non_empty=True)
     conda: CONDA_VCF
     params:
@@ -492,10 +492,10 @@ if FUSE_CHRM_MUTECT_TAIL:
             bam_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bam'),
             bai_shifted_NUMTs=pj(chrM, 'NUMTs', '{sample}_NUMTs_shifted.reads.bai')
         output:
-            chrM=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz')), non_empty=True),
-            chrM_tbi=ensure(temp(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi')), non_empty=True),
-            numt=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz')), non_empty=True),
-            numt_tbi=ensure(temp(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi')), non_empty=True)
+            chrM=ensure(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz'), non_empty=True),
+            chrM_tbi=ensure(pj(chrM, 'variants', 'gvcf', '{sample}.chrM_merged_BP_annotated.g.vcf.gz.tbi'), non_empty=True),
+            numt=ensure(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz'), non_empty=True),
+            numt_tbi=ensure(pj(chrM, 'variants', 'NUMTs', 'gVCF', '{sample}.chrM_NUMT_merged_with_anno.g.vcf.gz.tbi'), non_empty=True)
         params:
             runner=srcdir('scripts/run_fused_chrm_tail.py'),
             mt_ref=ORIG_MT_fa,

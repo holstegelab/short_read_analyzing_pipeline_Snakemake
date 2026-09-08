@@ -141,7 +141,7 @@ def failure_logger(rule_name):
 onsuccess: shell("rm -fr logs/Aligner/*")
 
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
     extension=r'sam|bam|cram',
     filetype=r'fq|fastq',
     batchnr=r'[\d]+',
@@ -242,7 +242,7 @@ checkpoint get_readgroups:
         get_source_files,
         ancient(pj(SOURCEDIR,"{sample}.started"))
     output:
-        temp(pj(SAMPLEINFODIR,"{sample}.dat"))
+        pj(SAMPLEINFODIR,"{sample}.dat")
     resources:
         time = get_time('get_readgroups'),
         n="1",
@@ -491,6 +491,10 @@ rule dcache_get:
 def retrieve_batch(wildcards):  #{{{
     """Return the batch-stage marker needed before routed materialization."""
 
+    if wildcards['sample'] in REUSED_SAMPLES:
+        # Keep stable batch numbering, but no graph edge from an adopted
+        # completed sample back to a shared (possibly missing) stage receipt.
+        return []
     sample = SAMPLEINFO[wildcards['sample']]
     route = _start_sample_route(wildcards)
     if route in ('active', 's3'):
@@ -557,6 +561,12 @@ def _start_sample_mem_mb(wildcards):
 
 
 def _start_sample_active_add(wildcards):
+    if wildcards['sample'] in REBUILD_SAMPLES and os.path.exists(
+        pj(SOURCEDIR, wildcards['sample'] + '.finished')
+    ):
+        # Only a completed lifecycle needs a fresh reservation on rebuild.
+        # Selecting an unfinished sample must not double its existing budget.
+        return active_use_gb(wildcards)
     started = pj(SOURCEDIR, wildcards['sample'] + '.started')
     route_ready = pj(SOURCEDIR, wildcards['sample'] + '.route_ready')
     if os.path.exists(started) and not os.path.exists(route_ready):
@@ -592,7 +602,8 @@ def _start_sample_pattern(*routes):
     samples = sorted(
         re.escape(sample)
         for sample in SAMPLEINFO
-        if _start_sample_route({'sample': sample}) in routes
+        if sample not in REUSED_SAMPLES
+        and _start_sample_route({'sample': sample}) in routes
     )
     return '(?:' + '|'.join(samples) + ')' if samples else r'(?!)'
 
@@ -1239,7 +1250,8 @@ def external_alignment_path(wildcards):
 EXTERNAL_ALIGNMENT_SAMPLE_PATTERN = '(?:' + '|'.join(
     re.escape(sample)
     for sample, sinfo in SAMPLEINFO.items()
-    if sinfo.get('file_type') not in {'fastq', 'fastq_paired'}
+    if sample not in REUSED_SAMPLES
+    and sinfo.get('file_type') not in {'fastq', 'fastq_paired'}
 ) + ')'
 if EXTERNAL_ALIGNMENT_SAMPLE_PATTERN == '(?:)':
     EXTERNAL_ALIGNMENT_SAMPLE_PATTERN = r'(?!)'
@@ -1417,7 +1429,7 @@ rule get_validated_sex:
         out1=pj(KMER,"{sample}.kmc_pre"),
         out2=pj(KMER,"{sample}.kmc_suf")
     output:
-        yaml=temp(pj(KMER,"{sample}.result.yaml")),
+        yaml=pj(KMER,"{sample}.result.yaml"),
         chry=temp(pj(KMER,"{sample}.chry.tsv")),
         chrx=temp(pj(KMER,"{sample}.chrx.tsv")),
         chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
@@ -1466,7 +1478,7 @@ if FUSE_KMER_SEX:
         input:
             fastq=get_all_prepared_fastq
         output:
-            yaml=temp(pj(KMER,"{sample}.result.yaml")),
+            yaml=pj(KMER,"{sample}.result.yaml"),
             chry=temp(pj(KMER,"{sample}.chry.tsv")),
             chrx=temp(pj(KMER,"{sample}.chrx.tsv")),
             chrm=temp(pj(KMER,"{sample}.chrm.tsv")),
@@ -1967,7 +1979,7 @@ rule markdup:
     output:
         mdbams=temp(pj(BAM,"{sample}.markdup.bam")),
         mdbams_bai=temp(pj(BAM,"{sample}.markdup.bam.bai")),
-        MD_stat=temp(pj(STAT,"{sample}.markdup.stat"))
+        MD_stat=pj(STAT,"{sample}.markdup.stat")
     priority: 20
     params:
         machine=2500,
@@ -2025,7 +2037,7 @@ rule release_materialized_source:
         ),
         bam=pj(BAM, "{sample}.markdup.bam")
     output:
-        marker=temp(touch(pj(SOURCEDIR, "{sample}.materialized_consumed")))
+        marker=touch(pj(SOURCEDIR, "{sample}.materialized_consumed"))
     wildcard_constraints:
         sample=START_SAMPLE_EXTERNAL_PATTERN
     shell:

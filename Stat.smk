@@ -30,7 +30,7 @@ if BAM_QC_LEASE_MODE not in {'required', 'optional', 'disabled'}:
 onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+"
+    sample=PROCESSING_SAMPLE_PATTERN
 
 module Aligner:
     snakefile: 'Aligner.smk'
@@ -119,7 +119,7 @@ rule tar_stats_per_sample:
         numt=pj(STAT,'{sample}.numt_read_stats.tsv'),
         phase=pj(STAT,'{sample}.phase_stats.tsv'),
     output:
-        tar=temp(pj(STAT,"{sample}.stats.tar.gz"))
+        tar=pj(STAT,"{sample}.stats.tar.gz")
     resources:
         time = get_time('tar_stats_per_sample'),
         n="1",
@@ -134,11 +134,11 @@ rule coverage:
         bam=pj(BAM, "{sample}.markdup.bam"),
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
     output:
-        temp(pj(STAT,'cov','{sample}.regions.bed.gz')),
-        temp(pj(STAT,'cov','{sample}.regions.bed.gz.csi')),
-        temp(pj(STAT,'cov','{sample}.mosdepth.global.dist.txt')),
-        temp(pj(STAT,'cov','{sample}.mosdepth.summary.txt')),
-        temp(pj(STAT,'cov','{sample}.mosdepth.region.dist.txt'))
+        pj(STAT,'cov','{sample}.regions.bed.gz'),
+        pj(STAT,'cov','{sample}.regions.bed.gz.csi'),
+        pj(STAT,'cov','{sample}.mosdepth.global.dist.txt'),
+        pj(STAT,'cov','{sample}.mosdepth.summary.txt'),
+        pj(STAT,'cov','{sample}.mosdepth.region.dist.txt')
     priority: 27
     params:
         bed=WINDOWS,
@@ -161,8 +161,8 @@ rule chrM_and_numt_read_stats:
         numt_bam=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bam'),
         numt_bai=pj(chrM, 'NUMTs', '{sample}_NUMTs.realign.bai')
     output:
-        chrM=ensure(temp(pj(STAT, '{sample}.chrM_read_stats.tsv')), non_empty=True),
-        numt=ensure(temp(pj(STAT, '{sample}.numt_read_stats.tsv')), non_empty=True)
+        chrM=ensure(pj(STAT, '{sample}.chrM_read_stats.tsv'), non_empty=True),
+        numt=ensure(pj(STAT, '{sample}.numt_read_stats.tsv'), non_empty=True)
     params:
         script=srcdir('scripts/region_read_stats.py')
     resources:
@@ -193,7 +193,7 @@ rule whatsHap_phase_stats:
         validated_sex=pj(KMER,"{sample}.result.yaml"),
         wstats=get_whatsHap_stats_inputs
     output:
-        ensure(temp(pj(STAT,'{sample}.phase_stats.tsv')), non_empty=True)
+        ensure(pj(STAT,'{sample}.phase_stats.tsv'), non_empty=True)
     params:
         script=srcdir('scripts/whatsHap_phase_stats.py')
     resources:
@@ -212,8 +212,8 @@ rule copy_stats_tar_to_dcache:
     input:
         tar=pj(STAT, "{samplefile}.stats_bundle.tar.gz")
     output:
-        copied=temp(pj(STAT, "{samplefile}.stats_bundle.tar.copied")),
-        checksum=temp(pj(STAT, "{samplefile}.stats_bundle.tar.ADLER32"))
+        copied=pj(STAT, "{samplefile}.stats_bundle.tar.copied"),
+        checksum=pj(STAT, "{samplefile}.stats_bundle.tar.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -234,8 +234,8 @@ rule copy_excluded_to_dcache:
         samplefile=lambda wildcards: _samplefile_local_path(wildcards.samplefile),
         stats_tabs_copied=pj(STAT, "{samplefile}.stats_tabs.copied") #not used, but needed to wait for copy_samplefile_stats_to_dcache
     output:
-        copied=temp(pj(STAT, "{samplefile}.excluded.copied")),
-        checksums=temp(pj(STAT, "{samplefile}.excluded.ADLER32"))
+        copied=pj(STAT, "{samplefile}.excluded.copied"),
+        checksums=pj(STAT, "{samplefile}.excluded.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -391,8 +391,8 @@ rule copy_samplefile_stats_to_dcache:
         deepvariant=pj("{samplefile}.deepvariant_bcftools.tab"),
         samplefile=lambda wildcards: _samplefile_local_path(wildcards.samplefile)
     output:
-        copied=temp(pj(STAT, "{samplefile}.stats_tabs.copied")),
-        checksums=temp(pj(STAT, "{samplefile}.stats_tabs.ADLER32"))
+        copied=pj(STAT, "{samplefile}.stats_tabs.copied"),
+        checksums=pj(STAT, "{samplefile}.stats_tabs.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -441,6 +441,8 @@ rule copy_samplefile_stats_to_dcache:
         shell(f"touch {quote(str(output.copied))}")
 
 rule tar_badmap_fastqs:
+    wildcard_constraints:
+        sample=ALL_SAMPLE_PATTERN
     input:
         fastq1=pj(FQ_BADMAP, "{sample}.badmap.R1.fastq.gz"),
         fastq2=pj(FQ_BADMAP, "{sample}.badmap.R2.fastq.gz")
@@ -473,11 +475,13 @@ rule tar_badmap_fastqs:
                 pass
 
 rule copy_badmap_to_dcache:
+    wildcard_constraints:
+        sample=ALL_SAMPLE_PATTERN
     input:
         tar=pj(FQ_BADMAP, "{sample}.badmap.fastqs.tar.gz")
     output:
-        copied=temp(pj(FQ_BADMAP, "{sample}.badmap.tar.copied")),
-        checksum=temp(pj(FQ_BADMAP, "{sample}.badmap.tar.ADLER32"))
+        copied=pj(FQ_BADMAP, "{sample}.badmap.tar.copied"),
+        checksum=pj(FQ_BADMAP, "{sample}.badmap.tar.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -590,8 +594,8 @@ rule verifybamid:
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
         validated_sex=pj(KMER,"{sample}.result.yaml"),
     output:
-        VBID_stat=temp(pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM')),
-        VBID_ancestry=temp(pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry'))
+        VBID_stat=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM'),
+        VBID_ancestry=pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry')
     # end of this file hardcoded in Haplotypecaller and read_contam_w
     priority: 27
     params:
@@ -662,12 +666,12 @@ rule artifacts_and_oxog_metrics:
         interval=get_capture_kit_interval_list,
         validated_sex=pj(KMER,"{sample}.result.yaml")
     output:
-        Bait_bias = temp(pj(STAT, '{sample}.bait_bias_summary_metrics')),
-        Pre_adapter = temp(ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'),non_empty=True)),
-        Bait_bias_det = temp(ensure(pj(STAT,'{sample}.bait_bias_detail_metrics'),non_empty=True)),
-        Pre_adapter_det = temp(ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'),non_empty=True)),
-        Error_summary = temp(ensure(pj(STAT, '{sample}.error_summary_metrics'),non_empty=True)),
-        OXOG=temp(pj(STAT,"{sample}.OXOG"))
+        Bait_bias = pj(STAT, '{sample}.bait_bias_summary_metrics'),
+        Pre_adapter = ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'),non_empty=True),
+        Bait_bias_det = ensure(pj(STAT,'{sample}.bait_bias_detail_metrics'),non_empty=True),
+        Pre_adapter_det = ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'),non_empty=True),
+        Error_summary = ensure(pj(STAT, '{sample}.error_summary_metrics'),non_empty=True),
+        OXOG=pj(STAT,"{sample}.OXOG")
     priority: 99
     log: pj(LOG,"Stats","Artifact_OXOG_stats_{sample}.log")
     params:
@@ -710,8 +714,8 @@ rule samtools_stats:
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
         validated_sex=pj(KMER,"{sample}.result.yaml")
     output:
-        genome=temp(ensure(pj(STAT,"{sample}.samtools.stat"),non_empty=True)),
-        exome=temp(ensure(pj(STAT,"{sample}.samtools.exome.stat"),non_empty=True))
+        genome=ensure(pj(STAT,"{sample}.samtools.stat"),non_empty=True),
+        exome=ensure(pj(STAT,"{sample}.samtools.exome.stat"),non_empty=True)
     priority: 99
     log: pj(LOG,"Stats","samtools_{sample}.log")
     resources:
@@ -736,8 +740,8 @@ rule bamstats_all_and_exome:
         bam=pj(BAM, "{sample}.markdup.bam"),
         bai=pj(BAM, "{sample}.markdup.bam.bai"),
     output:
-        all=temp(ensure(pj(STAT,'{sample}.bam_all.tsv'),non_empty=True)),
-        exome=temp(ensure(pj(STAT,'{sample}.bam_exome.tsv'),non_empty=True))
+        all=ensure(pj(STAT,'{sample}.bam_all.tsv'),non_empty=True),
+        exome=ensure(pj(STAT,'{sample}.bam_exome.tsv'),non_empty=True)
     resources:
         time = get_time('bamstats_all_and_exome'),
         mem_mb=250,
@@ -767,24 +771,24 @@ if FUSE_BAM_QC:
             capture_bed=get_capture_kit_bed,
             windows=ancient(WINDOWS)
         output:
-            selfsm=temp(pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM')),
-            ancestry=temp(pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry')),
+            selfsm=pj(STAT, 'contam/{sample}.verifybamid.pca2.selfSM'),
+            ancestry=pj(STAT, 'contam/{sample}.verifybamid.pca2.Ancestry'),
             hs=pj(STAT, "{sample}.hs_metrics"),
-            bait_summary=temp(pj(STAT, '{sample}.bait_bias_summary_metrics')),
-            pre_summary=temp(ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'), non_empty=True)),
-            bait_detail=temp(ensure(pj(STAT, '{sample}.bait_bias_detail_metrics'), non_empty=True)),
-            pre_detail=temp(ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'), non_empty=True)),
-            error_summary=temp(ensure(pj(STAT, '{sample}.error_summary_metrics'), non_empty=True)),
-            oxog=temp(pj(STAT, "{sample}.OXOG")),
-            samtools_genome=temp(ensure(pj(STAT, "{sample}.samtools.stat"), non_empty=True)),
-            samtools_exome=temp(ensure(pj(STAT, "{sample}.samtools.exome.stat"), non_empty=True)),
-            bam_all=temp(ensure(pj(STAT, '{sample}.bam_all.tsv'), non_empty=True)),
-            bam_exome=temp(ensure(pj(STAT, '{sample}.bam_exome.tsv'), non_empty=True)),
-            coverage_regions=temp(pj(STAT, 'cov', '{sample}.regions.bed.gz')),
-            coverage_csi=temp(pj(STAT, 'cov', '{sample}.regions.bed.gz.csi')),
-            coverage_global=temp(pj(STAT, 'cov', '{sample}.mosdepth.global.dist.txt')),
-            coverage_summary=temp(pj(STAT, 'cov', '{sample}.mosdepth.summary.txt')),
-            coverage_region=temp(pj(STAT, 'cov', '{sample}.mosdepth.region.dist.txt'))
+            bait_summary=pj(STAT, '{sample}.bait_bias_summary_metrics'),
+            pre_summary=ensure(pj(STAT, '{sample}.pre_adapter_summary_metrics'), non_empty=True),
+            bait_detail=ensure(pj(STAT, '{sample}.bait_bias_detail_metrics'), non_empty=True),
+            pre_detail=ensure(pj(STAT, '{sample}.pre_adapter_detail_metrics'), non_empty=True),
+            error_summary=ensure(pj(STAT, '{sample}.error_summary_metrics'), non_empty=True),
+            oxog=pj(STAT, "{sample}.OXOG"),
+            samtools_genome=ensure(pj(STAT, "{sample}.samtools.stat"), non_empty=True),
+            samtools_exome=ensure(pj(STAT, "{sample}.samtools.exome.stat"), non_empty=True),
+            bam_all=ensure(pj(STAT, '{sample}.bam_all.tsv'), non_empty=True),
+            bam_exome=ensure(pj(STAT, '{sample}.bam_exome.tsv'), non_empty=True),
+            coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz'),
+            coverage_csi=pj(STAT, 'cov', '{sample}.regions.bed.gz.csi'),
+            coverage_global=pj(STAT, 'cov', '{sample}.mosdepth.global.dist.txt'),
+            coverage_summary=pj(STAT, 'cov', '{sample}.mosdepth.summary.txt'),
+            coverage_region=pj(STAT, 'cov', '{sample}.mosdepth.region.dist.txt')
         params:
             runner=srcdir('scripts/run_fused_bam_qc.py'),
             ref=get_ref_by_validated_sex,
@@ -1283,8 +1287,8 @@ rule mospeth_mergedCK:
         interval=MERGED_CAPTURE_KIT_BED
     output:         pj(STAT,'cov','{sample}_MERGED_CK.regions.bed.gz'),
         pj(STAT,'cov','{sample}_MERGED_CK.regions.bed.gz.csi'),
-        temp(pj(STAT,'cov','{sample}_MERGED_CK.mosdepth.global.dist.txt')),
-        temp(pj(STAT,'cov','{sample}_MERGED_CK.mosdepth.summary.txt'))
+        pj(STAT,'cov','{sample}_MERGED_CK.mosdepth.global.dist.txt'),
+        pj(STAT,'cov','{sample}_MERGED_CK.mosdepth.summary.txt')
     params:
         prefix=pj(STAT,'cov','{sample}_MERGED_CK')
     resources:

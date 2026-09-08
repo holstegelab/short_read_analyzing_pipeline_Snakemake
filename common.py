@@ -537,6 +537,13 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
+# Set once by the root Snakefile before importing its rule modules. Workers
+# obtain the same selection from the inherited restart manifest.
+REUSED_SAMPLES = frozenset()
+REBUILD_SAMPLES = frozenset()
+PROCESSING_SAMPLE_PATTERN = r"[\w\d_\-@]+"
+ALL_SAMPLE_PATTERN = r"[\w\d_\-@]+"
+
 
 def external_data_dir(sample, sinfo=None):
     """Return the protocol-specific active-storage directory for a sample."""

@@ -37,7 +37,7 @@ def test_external_start_routes_publish_tracked_temp_directories():
     assert 'f"{wildcards.sample}.materialized_consumed"' in snakefile
 
 
-def test_large_aggregate_inputs_are_temporary():
+def test_raw_intermediates_are_temporary_but_completed_results_are_durable():
     aligner = (REPO / "Aligner.smk").read_text()
     snakefile = (REPO / "Snakefile").read_text()
     stats = (REPO / "Stat.smk").read_text()
@@ -48,8 +48,8 @@ def test_large_aggregate_inputs_are_temporary():
     assert aligner.count(
         'badmap_fastq2=temp(pj(FQ_BADMAP,"{sample}.{readgroup}.badmap_R2.fastq.gz"))'
     ) == 2
-    assert 'tar=temp(pj(STAT,"{sample}.stats.tar.gz"))' in stats
-    assert "coverage_regions=temp(pj(STAT, 'cov', '{sample}.regions.bed.gz'))" in stats
+    assert 'tar=pj(STAT,"{sample}.stats.tar.gz")' in stats
+    assert "coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz')" in stats
     assert 'os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz")' in snakefile
-    assert 'os.path.join(STAT, "cov", se + ".*")' in snakefile
+    assert 'os.path.join(STAT, "cov", se + ".*")' not in snakefile
     assert 'os.path.join(STAT, "*.stats_bundle.tar.gz")' in snakefile

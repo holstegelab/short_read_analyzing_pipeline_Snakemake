@@ -2,7 +2,7 @@ from common import *
 onsuccess: shell("rm -fr logs/gVCF/*")
 
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
 
 module Tools:
     snakefile:
@@ -292,5 +292,3 @@ rule extract_exomes_gvcf:
                     cp {input.gvcf} {output.gvcf_exome}
                     cp {input.tbi} {output.tbi}
                 """)
-
-

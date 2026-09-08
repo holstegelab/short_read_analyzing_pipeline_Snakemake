@@ -5,7 +5,7 @@ import utils
 from shlex import quote
 onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
     extension=r'sam|bam|cram',
     filetype = r'fq|fastq',
     batchnr=r'[\d]+',
@@ -83,8 +83,8 @@ rule copy_kraken_reports_to_dcache:
     input:
         tar=pj(KRAKEN, "{samplefile}.kraken_reports.tar.gz")
     output:
-        copied=temp(pj(KRAKEN, "{samplefile}.kraken_reports.tar.copied")),
-        checksum=temp(pj(KRAKEN, "{samplefile}.kraken_reports.tar.ADLER32"))
+        copied=pj(KRAKEN, "{samplefile}.kraken_reports.tar.copied"),
+        checksum=pj(KRAKEN, "{samplefile}.kraken_reports.tar.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -104,8 +104,8 @@ rule copy_kraken_read_classification_to_dcache:
     input:
         tar=pj(KRAKEN, "{samplefile}.kraken_read_classification.tar.gz")
     output:
-        copied=temp(pj(KRAKEN, "{samplefile}.kraken_read_classification.tar.copied")),
-        checksum=temp(pj(KRAKEN, "{samplefile}.kraken_read_classification.tar.ADLER32"))
+        copied=pj(KRAKEN, "{samplefile}.kraken_read_classification.tar.copied"),
+        checksum=pj(KRAKEN, "{samplefile}.kraken_read_classification.tar.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -170,8 +170,8 @@ rule kraken:
         fastq1=pj(FQ_BADMAP,"{sample}.badmap.R1.fastq.gz"),
         fastq2=pj(FQ_BADMAP,"{sample}.badmap.R2.fastq.gz")
     output:
-        report=temp(pj(KRAKEN, "{sample}.report.tsv")),
-        read_cls=temp(pj(KRAKEN, "{sample}.read_classification.tsv.gz"))
+        report=pj(KRAKEN, "{sample}.report.tsv"),
+        read_cls=pj(KRAKEN, "{sample}.read_classification.tsv.gz")
     conda: CONDA_KRAKEN
     resources:
         time = get_time('kraken'),
@@ -187,8 +187,8 @@ rule bracken:
         report = rules.kraken.output.report
         # report=pj(KRAKEN, "{sample}.report.tsv")
     output:
-        report=temp(pj(KRAKEN, "{sample}.bracken_report.tsv")),
-        species_report=temp(pj(KRAKEN, "{sample}.report_bracken_species.tsv"))
+        report=pj(KRAKEN, "{sample}.bracken_report.tsv"),
+        species_report=pj(KRAKEN, "{sample}.report_bracken_species.tsv")
     resources:
         time = get_time('bracken'),
         n="0.5",
@@ -207,7 +207,7 @@ rule kraken_summary:
         bracken=rules.bracken.output.report,
         merge_stats=get_merge_stats_inputs
     output:
-        summary=temp(pj(KRAKEN, "{sample}.kraken_summary.tsv"))
+        summary=pj(KRAKEN, "{sample}.kraken_summary.tsv")
     conda: CONDA_KRAKEN
     resources:
         time = get_time('kraken_summary'),

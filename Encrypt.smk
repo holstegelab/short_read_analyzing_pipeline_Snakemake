@@ -1,6 +1,6 @@
 from common import *
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
     # readgroup="[\w\d_\-@]+"
 
 module Aligner:

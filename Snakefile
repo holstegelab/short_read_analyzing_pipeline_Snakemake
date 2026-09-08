@@ -2,11 +2,24 @@ import pandas as pd
 import read_stats
 import itertools
 import os
+import common as _common
+from restart_state import configure as _configure_restart, refresh_retrieval
+from common import *
 
+(_common.REUSED_SAMPLES, _common.REBUILD_SAMPLES,
+ _common.PROCESSING_SAMPLE_PATTERN) = _configure_restart(
+    config, SAMPLEINFO, (level0_regions, level1_regions),
+    is_main_process=workflow.is_main_process,
+)
+from common import *
+refresh_retrieval(SAMPLEINFO, SAMPLEFILE_TO_BATCHES, REUSED_SAMPLES, REBUILD_SAMPLES)
 
+if os.environ.get("SHORT_READ_RESTART_MANIFEST"):
+    envvars:
+        "SHORT_READ_RESTART_MANIFEST"
 
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
 # readgroup="[\w\d_\-@]+"
 
 from common import *
@@ -470,6 +483,9 @@ rule all:
 sample_names = SAMPLEINFO.keys()
 sample_pattern = "|".join(sample_names)
 
+from restart_state import verify_rule_filters
+verify_rule_filters(workflow.rules, REUSED_SAMPLES)
+
 onstart:
     # Reclaim temp files that Snakemake's temp() GC leaves behind across a RESTART.
     # A consuming job that already ran in a prior invocation is skipped on rerun, so
@@ -513,12 +529,10 @@ onstart:
                 se = glob.escape(s)
                 paths = [os.path.join(SOURCEDIR, s + ".data"),
                          os.path.join(SOURCEDIR, s + ".dcache_data"),
-                         os.path.join(FQ_BADMAP, s + ".badmap.fastqs.tar.gz"),
-                         os.path.join(STAT, s + ".stats.tar.gz")]
+                         os.path.join(FQ_BADMAP, s + ".badmap.fastqs.tar.gz")]
                 for pat in (os.path.join(FQ, se + ".*.fq.gz"),
                             os.path.join(FQ_BADMAP, se + ".badmap.*.fastq.gz"),
                             os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz"),
-                            os.path.join(STAT, "cov", se + ".*"),
                             os.path.join(BAM, se + ".*.bam"),
                             os.path.join(BAM, se + ".*.bam.bai")):
                     paths.extend(glob.glob(pat))
@@ -537,6 +551,8 @@ onstart:
             ):
                 aggregate_temp.extend(glob.glob(pat))
             n += _rm_all(aggregate_temp)
+            # Retain the per-sample QC bundle and coverage: the reuse preflight
+            # and cohort consumers need these even after a later restart.
         elif finished:
             print("[onstart] preserving intermediates for %d finished sample(s): "
                   "pipeline.done is absent" % len(finished))

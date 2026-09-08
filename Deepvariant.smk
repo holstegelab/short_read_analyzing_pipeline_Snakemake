@@ -1,5 +1,7 @@
+from common import *
+
 wildcard_constraints:
-    sample=r"[\w\d_\-@]+",
+    sample=PROCESSING_SAMPLE_PATTERN,
     region = r"[\w\d]+",
     # readgroup="[\w\d_\-@]+"
 onsuccess: shell("rm -fr logs/Deepvariant/*")
@@ -193,8 +195,8 @@ rule copy_deepvariant_wgs_region_to_dcache:
     input:
         tar=pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar")
     output:
-        copied=temp(pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar.copied")),
-        checksum=temp(pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar.ADLER32"))
+        copied=pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar.copied"),
+        checksum=pj(GVCF_TAR, "deepvariant_level2_wgs", "{samplefile}.{region}.dv.wgs.gvcf.tar.ADLER32")
     params:
         ada_script=srcdir(ADA)
     resources:
@@ -261,7 +263,7 @@ rule deepvariant_sample_done:
     input:
         get_deepvariant_files
     output:
-        done=temp(touch(pj(DEEPVARIANT, "{sample}.done")))
+        done=touch(pj(DEEPVARIANT, "{sample}.done"))
     resources:
         mem_mb = 100,
         n = "1.0"
@@ -458,12 +460,12 @@ rule DVWhatshapPhasingMerge:
         wstats = pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
         mwstats = pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
         bcftools_stats = temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
-        bcftools_summary = ensure(temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv")), non_empty=True),
+        bcftools_summary = ensure(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv"), non_empty=True),
         tmp_gvcf= temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
-        gvcf= temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz")),
-        gvcf_tbi = temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi")),
-        gvcf_exome = ensure(temp(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz")), non_empty = True),
-        gvcf_exome_tbi = ensure(temp(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi")), non_empty = True),
+        gvcf= pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
+        gvcf_tbi = pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+        gvcf_exome = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty = True),
+        gvcf_exome_tbi = ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty = True),
     params:
         merge_script=srcdir(MERGEPHASEDIRECT),
         stats_parser=srcdir("scripts/deepvariant_bcftools_stats_parser.py"),
@@ -580,12 +582,12 @@ if FUSE_DEEPVARIANT_PHASING:
             wstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.stats"),
             mwstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
             bcftools_stats=temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
-            bcftools_summary=ensure(temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv")), non_empty=True),
+            bcftools_summary=ensure(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv"), non_empty=True),
             tmp_gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
-            gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz")),
-            gvcf_tbi=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi")),
-            gvcf_exome=ensure(temp(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz")), non_empty=True),
-            gvcf_exome_tbi=ensure(temp(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi")), non_empty=True)
+            gvcf=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
+            gvcf_tbi=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
+            gvcf_exome=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
+            gvcf_exome_tbi=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz.tbi"), non_empty=True)
         log:
             runner=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.log"),
             io_profile=pj(LOG, "Deepvariant", "{sample}.{region}.deepvariant_phasing_fused.io.json")
