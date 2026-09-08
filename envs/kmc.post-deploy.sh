@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-
-
-mkdir -p ${CONDA_PREFIX}/software
+: "${CONDA_PREFIX:?CONDA_PREFIX is required by the KMC post-deploy script}"
 
 KMC_COMMIT=751ef36a3c1ccc6dda664f529ad218dc51d76f55
-KMC_BUILD_JOBS=${KMC_BUILD_JOBS:-32}
-git clone --recurse-submodules https://github.com/refresh-bio/KMC ${CONDA_PREFIX}/software/kmc
-cd ${CONDA_PREFIX}/software/kmc
-git checkout --detach ${KMC_COMMIT}
+KMC_BUILD_JOBS=${KMC_BUILD_JOBS:-8}
+
+# Build outside of CONDA_PREFIX. Snakemake considers an environment incomplete
+# until this script finishes, so another Snakemake invocation can remove and
+# recreate that shared prefix concurrently. Building inside it made active
+# compilers lose their source/output directories. A unique local build tree also
+# avoids putting the compilation's metadata load on GPFS.
+KMC_BUILD_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/kmc-build.XXXXXX")
+trap 'rm -rf -- "$KMC_BUILD_ROOT"' EXIT
+KMC_SOURCE_DIR=${KMC_BUILD_ROOT}/kmc
+
+git clone --recurse-submodules https://github.com/refresh-bio/KMC "$KMC_SOURCE_DIR"
+cd "$KMC_SOURCE_DIR"
+git checkout --detach "$KMC_COMMIT"
 git submodule update --init --recursive
 
 echo '--- Makefile
@@ -125,7 +133,6 @@ echo '--- kmc_core/binary_reader.h
 
 
 patch --batch --ignore-whitespace -p0 < kmc_make.patch
-make -j${KMC_BUILD_JOBS}
-make
+make -j"${KMC_BUILD_JOBS}"
 
-cp ${CONDA_PREFIX}/software/kmc/bin/* ${CONDA_PREFIX}/bin
+cp bin/* "${CONDA_PREFIX}/bin/"
