@@ -107,6 +107,25 @@ retain the existing job-specific shared fallback. The resolved directories are
 recorded in the runner log and metrics; existing running processes and old
 shared temporary files are not migrated.
 
+## Parallel DeepVariant level-2 packaging
+
+The WGS and WES `extract_and_tar_deepvariant_level2` rules extract/index eight
+samples concurrently by default. Set `--config deepvariant_level2_workers=4`
+to use four. Snakemake threads and the ZSlurm `n` reservation agree; memory
+remains 4000 MB. Each worker uses the unchanged single-process bcftools commands.
+After extraction, the job attempts a CPU-only lease shrink to one core for
+tar creation/publication; if unavailable, it safely retains its reservation.
+
+Input/output paths and tar member order are unchanged. Each invocation still
+performs extraction: an existing tar is not used as a reuse shortcut. A failure
+waits for the bounded set of active workers before cleaning scratch and does
+not publish a partial archive. Progress is logged during extraction and packing.
+
+Already-running jobs retain their copied script. Existing controllers/queued
+jobs can still hold the old 1.5-core reservation: the script caps its pool to
+the granted lease, so those jobs stay serial. New workflow starts pick up the
+eight-core default; no running workflow needs to be cancelled for deployment.
+
 # HOW TO USE
 1. clone this repo on server
 2. *If you want use Zslurm*

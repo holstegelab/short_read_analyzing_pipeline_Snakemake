@@ -122,6 +122,11 @@ def deepvariant_level2_samples(wildcards):
     return list(SAMPLEFILE_TO_SAMPLES[wildcards.samplefile].keys())
 
 
+DEEPVARIANT_LEVEL2_WORKERS = int(config.get("deepvariant_level2_workers", 8))
+if DEEPVARIANT_LEVEL2_WORKERS < 1:
+    raise ValueError("deepvariant_level2_workers must be at least 1")
+
+
 rule extract_and_tar_deepvariant_level2_wgs:
     input:
         gvcfs=deepvariant_level2_inputs_wgs
@@ -132,13 +137,15 @@ rule extract_and_tar_deepvariant_level2_wgs:
         region=lambda wc: wc.region,
         samplefile=lambda wc: wc.samplefile,
         interval=lambda wc: level2_interval(wc.region, wgs=True),
-        dataset="wgs"
+        dataset="wgs",
+        lease_command=srcdir("scripts/zslurm_lease_client.py")
+    threads: DEEPVARIANT_LEVEL2_WORKERS
     conda:
         CONDA_VCF
     resources:
         time = get_time('extract_and_tar_deepvariant_level2_wgs'),
         mem_mb=4000,
-        n="1.5"
+        n=lambda wildcards, threads: str(threads)
     script:
         "scripts/extract_and_tar_deepvariant_level2.py"
 
@@ -153,13 +160,15 @@ rule extract_and_tar_deepvariant_level2_wes:
         region=lambda wc: wc.region,
         samplefile=lambda wc: wc.samplefile,
         interval=lambda wc: level2_interval(wc.region, wgs=False),
-        dataset="wes"
+        dataset="wes",
+        lease_command=srcdir("scripts/zslurm_lease_client.py")
+    threads: DEEPVARIANT_LEVEL2_WORKERS
     conda:
         CONDA_VCF
     resources:
         time = get_time('extract_and_tar_deepvariant_level2_wes'),
         mem_mb=4000,
-        n="1.5"
+        n=lambda wildcards, threads: str(threads)
     script:
         "scripts/extract_and_tar_deepvariant_level2.py"
 
