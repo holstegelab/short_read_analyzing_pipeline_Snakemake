@@ -175,8 +175,31 @@ def main() -> int:
     raw_gvcf = job_tmp / "raw.g.vcf.gz"
     raw_vcf_tbi = Path(str(raw_vcf) + ".tbi")
     raw_gvcf_tbi = Path(str(raw_gvcf) + ".tbi")
+    temp_dir = job_tmp / "tmp"
+    cache_dir = job_tmp / "cache"
 
     try:
+        # Snakemake's tmpdir resource can still point at shared storage, even
+        # when assigned_scratch selected SSD. Native Bazel launchers and
+        # TensorFlow AutoGraph use the environment, not --intermediate_results_dir.
+        # Keep their unpacked runfiles/bytecode inside our cleanup boundary.
+        temp_dir.mkdir()
+        cache_dir.mkdir()
+        phase_preamble = (
+            "set -euo pipefail\n"
+            + "".join(
+                f"export {name}={q(temp_dir)}\n"
+                for name in ("TMPDIR", "TMP", "TEMP", "TEMPDIR")
+            )
+            + f"export XDG_CACHE_HOME={q(cache_dir)}\n"
+            + f"export PYTHONPYCACHEPREFIX={q(cache_dir / 'python')}\n"
+        )
+        print(
+            f"[deepvariant_phasing_fused] scratch={job_tmp} "
+            f"TMPDIR={temp_dir} cache={cache_dir}",
+            file=sys.stderr,
+            flush=True,
+        )
         lease = lease_preflight(
             args.lease_mode,
             args.lease_command,
@@ -188,7 +211,7 @@ def main() -> int:
         dv_script = job_tmp / "run-deepvariant.sh"
         if args.skip_sex:
             dv_body = (
-                "set -euo pipefail\n"
+                phase_preamble
                 + empty_vcf_commands(bgzip, tabix, raw_vcf)
                 + empty_vcf_commands(bgzip, tabix, raw_gvcf)
             )
@@ -198,12 +221,11 @@ def main() -> int:
                 f"{args.num_shards} intra_op_parallelism_threads: {args.num_shards} "
                 f"device_count: {{ key: 'CPU' value: {args.num_shards} }}"
             )
+            # DeepVariant 1.9 logs its complete child environment. The lease
+            # credentials are only needed by this parent runner afterwards.
             dv_body = (
-                "set -euo pipefail\n"
-                # DeepVariant 1.9 logs its complete child environment.  The
-                # lease credentials are only needed by this parent runner,
-                # after DeepVariant exits, so do not expose them in that log.
-                "unset ZSLURM_LEASE_TOKEN ZSLURM_LEASE_SOCKET\n"
+                phase_preamble
+                + "unset ZSLURM_LEASE_TOKEN ZSLURM_LEASE_SOCKET\n"
                 "export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1\n"
                 f"export TF_NUM_INTRAOP_THREADS={args.num_shards} TF_NUM_INTEROP_THREADS={args.num_shards}\n"
                 f"{q(deepvariant)} "
@@ -255,7 +277,7 @@ def main() -> int:
         exome_gvcf_tbi = Path(str(exome_gvcf) + ".tbi")
 
         phase_script = job_tmp / "run-phasing.sh"
-        body = "set -euo pipefail\n"
+        body = phase_preamble
         if args.ploidy == 2 and not args.skip_sex:
             body += (
                 f"{q(whatshap)} phase --ignore-read-groups --reference {q(args.reference)} {q(raw_vcf)} {q(args.bam)} -o {q(phased)}\n"
@@ -366,6 +388,8 @@ def main() -> int:
                 "lease": lease,
                 "phases": phases,
                 "scratch_job_directory": str(job_tmp),
+                "temporary_directory": str(temp_dir),
+                "cache_directory": str(cache_dir),
                 "scratch_removed": not job_tmp.exists(),
             },
         )

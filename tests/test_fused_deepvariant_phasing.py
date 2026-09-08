@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_deepvariant_phasing.py"
@@ -15,18 +17,37 @@ def _script(path, body):
     return path
 
 
-def test_fused_deepvariant_phasing_keeps_raw_calls_local(tmp_path):
+@pytest.mark.parametrize("shared_fallback", [False, True])
+@pytest.mark.parametrize("mode", ["success", "deepvariant_failure", "phasing_failure", "skip_sex"])
+def test_fused_deepvariant_phasing_keeps_raw_calls_local(tmp_path, shared_fallback, mode):
     tools = tmp_path / "tools"
     tools.mkdir()
     deepvariant = _script(
         tools / "run_deepvariant",
-        """import os
+        """import importlib.util
+import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 Path(os.environ['FAKE_DV_ENV_LOG']).write_text(
     os.environ.get('ZSLURM_LEASE_TOKEN', '') + '|' +
     os.environ.get('ZSLURM_LEASE_SOCKET', '')
 )
+temporary = Path(tempfile.mkdtemp(prefix='Bazel.runfiles_'))
+source = temporary / '__autograph_generated_file_test.py'
+source.write_text('VALUE = 42')
+spec = importlib.util.spec_from_file_location('auto_test', source)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert module.VALUE == 42
+assert Path(module.__cached__).is_file()
+Path(os.environ['FAKE_TEMP_LOG']).write_text(json.dumps({
+    'env': {key: os.environ.get(key) for key in ('TMPDIR', 'TMP', 'TEMP', 'TEMPDIR', 'XDG_CACHE_HOME', 'PYTHONPYCACHEPREFIX')},
+    'tempfile': str(temporary), 'bytecode': module.__cached__,
+}))
+if os.environ['FAKE_MODE'] == 'deepvariant_failure':
+    raise SystemExit(7)
 values = {a.split('=', 1)[0]: a.split('=', 1)[1] for a in sys.argv[1:] if '=' in a}
 for key in ('--output_vcf', '--output_gvcf'):
     out = Path(values[key])
@@ -36,9 +57,14 @@ for key in ('--output_vcf', '--output_gvcf'):
     )
     whatshap = _script(
         tools / "whatshap",
-        """import shutil
+        """import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
+Path(os.environ['FAKE_PHASE_TEMP_LOG']).write_text(tempfile.mkdtemp(prefix='phasing_'))
+if os.environ['FAKE_MODE'] == 'phasing_failure':
+    raise SystemExit(8)
 args = sys.argv[1:]
 if args[0] == 'phase':
     shutil.copyfile(args[args.index('--reference') + 2], args[args.index('-o') + 1])
@@ -111,7 +137,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
         named[name] = inputs / name
         named[name].write_text("data\n")
     outputs = tmp_path / "outputs"
-    scratch = tmp_path / "scratch"
+    scratch = tmp_path / "scratch with 'quotes'"
     scratch.mkdir()
     lease_log = tmp_path / "lease.log"
     dv_env_log = tmp_path / "deepvariant.env"
@@ -136,7 +162,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
         "--validated-sex", str(named["sex"]), "--reference", str(named["ref"]),
         "--deepvariant-reference", str(named["dvref"]),
         "--deepvariant-runner", str(deepvariant), "--model-type", "WGS",
-        "--haploid-contigs", "chrNONE", "--ploidy", "2", "--skip-sex", "0",
+        "--haploid-contigs", "chrNONE", "--ploidy", "2", "--skip-sex", str(int(mode == "skip_sex")),
         "--interval-bed", str(named["bed"]),
         "--capture-auto-bed", str(named["auto"]),
         "--capture-x-bed", str(named["x"]), "--capture-y-bed", str(named["y"]),
@@ -156,6 +182,12 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
         ]
     )
     environment = os.environ.copy()
+    inherited_tmp = tmp_path / "inherited shared tmp"
+    inherited_tmp.mkdir()
+    inherited_cache = tmp_path / "inherited shared cache"
+    if shared_fallback:
+        command[command.index("--scratch-base") + 1] = str(tmp_path / "absent SSD")
+        command.extend(["--shared-scratch-base", str(scratch)])
     environment.update(
         {
             "ZSLURM_LEASE_SOCKET": "fake.socket",
@@ -163,19 +195,53 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
             "ZSLURM_JOB_ID": "123",
             "FAKE_LEASE_LOG": str(lease_log),
             "FAKE_DV_ENV_LOG": str(dv_env_log),
+            "FAKE_MODE": mode,
+            "FAKE_TEMP_LOG": str(tmp_path / "temp.json"),
+            "FAKE_PHASE_TEMP_LOG": str(tmp_path / "phase-temp.txt"),
+            "TMPDIR": str(inherited_tmp),
+            "TMP": str(inherited_tmp),
+            "TEMP": str(inherited_tmp),
+            "TEMPDIR": str(inherited_tmp),
+            "XDG_CACHE_HOME": str(inherited_cache),
+            "PYTHONPYCACHEPREFIX": str(tmp_path / "inherited bytecode"),
         }
     )
-    subprocess.run(command, check=True, env=environment)
+    environment.pop("PYTHONDONTWRITEBYTECODE", None)
+    result = subprocess.run(command, check=False, env=environment, capture_output=True, text=True)
+    success = mode in ("success", "skip_sex")
+    assert (result.returncode == 0) == success, result.stderr
+    assert "[deepvariant_phasing_fused] scratch=" in result.stderr
 
-    assert all(path.exists() for path in output_args.values())
-    assert lease_log.read_text().splitlines() == ["status", "set"]
-    assert dv_env_log.read_text() == "|"
+    assert all(path.exists() == success for path in output_args.values())
+    assert lease_log.read_text().splitlines() == (["status"] if mode == "deepvariant_failure" else ["status", "set"])
+    if mode != "skip_sex":
+        assert dv_env_log.read_text() == "|"
     metrics = json.loads((outputs / "metrics.json").read_text())
-    assert metrics["success"] is True
+    assert metrics["success"] is success
     assert metrics["attempt"] == 3
-    assert [phase["label"] for phase in metrics["phases"]] == [
+    assert metrics["requested"]["low_memory_mb"] == 4000
+    expected_phases = [
         "deepvariant_phasing_fused.deepvariant",
         "deepvariant_phasing_fused.phasing_merge",
     ]
+    if mode == "deepvariant_failure":
+        expected_phases.pop()
+    assert [phase["label"] for phase in metrics["phases"]] == expected_phases
     assert metrics["scratch_removed"] is True
     assert list((scratch / "deepvariant_phasing_fused").iterdir()) == []
+    assert list(inherited_tmp.iterdir()) == []
+    assert not inherited_cache.exists()
+    job_tmp = Path(metrics["scratch_job_directory"])
+    assert job_tmp.is_relative_to(scratch)
+    assert metrics["temporary_directory"] == str(job_tmp / "tmp")
+    assert metrics["cache_directory"] == str(job_tmp / "cache")
+    if mode != "skip_sex":
+        observed = json.loads((tmp_path / "temp.json").read_text())
+        for name in ("TMPDIR", "TMP", "TEMP", "TEMPDIR"):
+            assert observed["env"][name] == str(job_tmp / "tmp")
+        assert observed["env"]["XDG_CACHE_HOME"] == str(job_tmp / "cache")
+        assert observed["env"]["PYTHONPYCACHEPREFIX"] == str(job_tmp / "cache" / "python")
+        assert Path(observed["tempfile"]).is_relative_to(job_tmp / "tmp")
+        assert Path(observed["bytecode"]).is_relative_to(job_tmp / "cache" / "python")
+    if mode in ("success", "phasing_failure"):
+        assert Path((tmp_path / "phase-temp.txt").read_text()).is_relative_to(job_tmp / "tmp")
