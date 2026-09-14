@@ -2,12 +2,13 @@ schema_version: 1
 created: 2026-09-14
 
 pipeline:
+  repository: https://github.com/holstegelab/short_read_analyzing_pipeline_Snakemake.git
   release_ref: codex-spider-portability-baseline-2026-09-14
   upstream_base: c386a7d9e29fb06216a256b15d37bca1d9ed05d9
   fused_cleanup_rebased_commit: 8720c46cd43e52a7a97833334c7a34d8bee85cb5
 
 snakemake:
-  repository: https://github.com/holstegelab/snakemake.git
+  repository: https://github.com/mhulsman/snakemake.git
   commit: 83c79c1d3d8dfd68bc42f4ac9ffa3dbb97d8c8ed
   reported_version: 9.13.8.dev16
 
