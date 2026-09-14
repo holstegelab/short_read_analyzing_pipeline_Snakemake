@@ -182,7 +182,7 @@ def _derive(configured: Mapping[str, Any], *, explicit: bool) -> dict[str, Any]:
     recipients = values["encryption_recipient_public_keys"]
     if not isinstance(recipients, list) or not recipients:
         raise SiteConfigError(
-            "encryption.encryption_recipient_public_keys must be a non-empty list"
+            "encryption.recipient_public_keys must be a non-empty list"
         )
     for key, value in list(values.items()):
         if key in _PATH_FIELDS:

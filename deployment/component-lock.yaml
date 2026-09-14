@@ -36,7 +36,7 @@ resources:
   hg19_b37_chry:
     file: short_read_pipeline_resources_hg19_b37_chry_c386a7d_20260914.tar.zst
     sha256: b7cdf21cd910002b6c434659ffc5bb2393b8c980552a7ad32fa5458521f94e8a
-    remote_adler32: 0774e6c3
+    remote_adler32: "0774e6c3"
     fasta_sha256: 2a7969970d86c62c8da43ae1b3f5fd971869dfa05fba2c7b39acdfefdc787ea8
     fai_sha256: fb5c324d7aaf029c4e11ec1c7684dbc6eb125ab33987ed6b09801d2770a4dbd4
 
