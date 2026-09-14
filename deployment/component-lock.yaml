@@ -1,0 +1,48 @@
+schema_version: 1
+created: 2026-09-14
+
+pipeline:
+  release_ref: codex-spider-portability-baseline-2026-09-14
+  upstream_base: c386a7d9e29fb06216a256b15d37bca1d9ed05d9
+  fused_cleanup_rebased_commit: 8720c46cd43e52a7a97833334c7a34d8bee85cb5
+
+snakemake:
+  repository: https://github.com/holstegelab/snakemake.git
+  commit: 83c79c1d3d8dfd68bc42f4ac9ffa3dbb97d8c8ed
+  reported_version: 9.13.8.dev16
+
+zslurm:
+  repository: https://github.com/holstegelab/zslurm.git
+  commit: 93a1d96c43209b1c44730b6cd9b74634690b263e
+
+snakemake_executor_plugin_zslurm:
+  repository: https://github.com/holstegelab/snakemake-executor-plugin-zslurm.git
+  commit: 9ed793e1b98e23ffe618ffec1948a9a614cb5250
+
+resources:
+  audited_pipeline_commit: c386a7d9e29fb06216a256b15d37bca1d9ed05d9
+  core:
+    file: short_read_pipeline_resources_core_c386a7d_20260914.tar.zst
+    sha256: 728f0bca21028bf47abc8facaf52137c49241277757768a8e2bc12541c745989
+  joint_annotation:
+    file: short_read_pipeline_resources_joint_annotation_c386a7d_20260914.tar.zst
+    sha256: 198c3e469af5877f12eb228a85cf2c225cbbaf8d0318e2e666c4b0b865e670cb
+  gcnv_optional:
+    file: short_read_pipeline_resources_gcnv_optional_c386a7d_20260914.tar.zst
+    sha256: 9f9a775fd804ce092dc8c3f1da0124a5d9ccc24278f253a0255515b85c1d1331
+  manifests:
+    file: short_read_pipeline_resources_manifests_c386a7d_20260914.tar.zst
+    sha256: 6456037bfa35d032ff01f1d9d7052bc2e5289e6923b3cb7cea18341b68e77497
+  hg19_b37_chry:
+    file: short_read_pipeline_resources_hg19_b37_chry_c386a7d_20260914.tar.zst
+    sha256: b7cdf21cd910002b6c434659ffc5bb2393b8c980552a7ad32fa5458521f94e8a
+    remote_adler32: 0774e6c3
+    fasta_sha256: 2a7969970d86c62c8da43ae1b3f5fd971869dfa05fba2c7b39acdfefdc787ea8
+    fai_sha256: fb5c324d7aaf029c4e11ec1c7684dbc6eb125ab33987ed6b09801d2770a4dbd4
+
+private_key_archive:
+  file: short_read_pipeline_c4gh_keys_c386a7d_20260914.tar.gpg
+  sha256: f635118d87fa42ffba2e726cf12eecefe32bfbfbcea1680e15adc5b758328eed
+  distribution: separate private endpoint; password delivered out of band
+
+site_config_schema: 1

@@ -129,6 +129,20 @@ jobs can still hold the old 1.5-core reservation: the script caps its pool to
 the granted lease, so those jobs stay serial. New workflow starts pick up the
 eight-core default; no running workflow needs to be cancelled for deployment.
 
+# Deployment and portability
+
+Use the pinned component baseline in [RELEASE_BASELINE.md](RELEASE_BASELINE.md)
+and the installation procedure in [DEPLOYMENT.md](DEPLOYMENT.md). Resource,
+software, transfer and key-file paths now come from one early-loaded site
+configuration; examples live under `config/sites/`. Tokens, private-key
+contents and passwords remain outside the repository and public resource
+archive.
+
+Spider path configuration is present, but Spider production remains blocked
+on the allocation-scratch changes listed in the deployment guide. The
+[portability plan](PORTABILITY_PLAN.md) retains the detailed design and test
+criteria for that next step.
+
 # HOW TO USE
 1. clone this repo on server
 2. *If you want use Zslurm*
@@ -140,8 +154,8 @@ eight-core default; no running workflow needs to be cancelled for deployment.
 
     > **NOTE ABOUT PROFILE**
     > `profiles/zslurm/config.yaml` uses the native Snakemake executor and the
-    > directional dCache resources. Change its Conda/Apptainer prefixes when
-    > running under a different account.
+    > directional dCache resources. Export `SHORT_READ_SITE_CONFIG` before
+    > launch and change the profile's Conda/Apptainer prefixes when needed.
 
 ### Supported processing stages
 

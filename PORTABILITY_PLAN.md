@@ -1,8 +1,9 @@
 # Dependency inventory and Spider/ZSlurm migration plan
 
-Date: 2026-09-07. Status: inspected and planned, **not implemented or tested on
-Spider**. Fused-only cleanup is being tested separately in this checkout;
-the running pipelines and scheduler are not being reconfigured.
+Date: 2026-09-07; implementation update: 2026-09-14. Steps 1 and 2 now have an
+isolated release implementation and documentation; they are not yet pushed or
+deployed. The workflow is still **not end-to-end tested on Spider**. The running
+pipelines and scheduler are not being reconfigured.
 
 ## Conclusions
 
@@ -29,7 +30,7 @@ the running pipelines and scheduler are not being reconfigured.
 | Workflow + restart handling | This repository, including `restart_state.py`, `scripts/prepare_restart.py`, runners and delivery templates | Clone the tested revision, including the cleanup/restart commits |
 | Controller/worker Snakemake | Current environment imports the local fork at `~/repos/snakemake`, reports `9.13.8.dev16`; checked HEAD `83c79c1d` | No; install a tested revision and retain any required local patches. Do not assume an arbitrary released version accepts the profile |
 | ZSlurm manager/chiefs | Separate `~/projects/cluster_manager`, checked HEAD `93a1d96`; own `env.yaml`/installation | No; install into the environment used by manager and pilots |
-| Native executor | Separate `~/repos/snakemake_executor`, package `snakemake-executor-plugin-zslurm`, version declaration 1.1.0, checked HEAD `de25565` | No; install into the Snakemake environment on controller and workers |
+| Native executor | Separate package `snakemake-executor-plugin-zslurm`; release fix commit `9ed793e` transports declared/resolved environment values to shell-free workers | No; install the pinned commit into the Snakemake environment on controller and workers |
 | Controller Python modules | `Snakefile`, `common.py`, `read_stats.py`: pandas, numpy, PyYAML, h5py, Snakemake and its plugins | No; a complete pinned controller environment is not supplied by this pipeline |
 | Rule environments | `envs/*.yaml` and **post-deploy scripts**; environments currently live outside resources under the user's `.snakemake` prefix | No; recreate at the final installation prefix, then smoke-test |
 | Custom native tools | `scripts/Makefile`: `bam_merge`, `bam_dechimer`, `fix_bam_rg_pairs`, `fastcheck` and `fastcheck_hts` extensions | No; binaries/extensions are Git-ignored. Build on target, against the Python ABI/htslib used there |
@@ -74,20 +75,20 @@ No credential contents were read for this inventory.
 
 ## Concrete portability gaps in pipeline code
 
-| Location | Current coupling | Planned change |
+| Location | Original coupling | Release status / remaining change |
 |---|---|---|
-| `constants.py: RESOURCES` | Hardcoded `/gpfs/work3/0/qtholstg/hg38_res_v2/`; most paths are derived at import time | One validated resource-root setting resolved **before** importing `common`/`constants` in controller and worker |
+| `constants.py: RESOURCES` | Hardcoded `/gpfs/work3/0/qtholstg/hg38_res_v2/`; most paths were derived at import time | **Implemented:** schema-1 `site_config.py` is selected before importing `common`/`constants`; its absolute filename is declared to workers |
 | `Snakefile.paths.yaml` | Historical/stale path file; not the general configuration source for the main pipeline. `GLnexus_to_iRODS.smk` reads some metadata from it | Replace/supersede with an actually loaded site configuration and consistent provenance; changing this YAML alone is insufficient |
-| `Aligner.smk` / external adapter defaults | Corrected hg19/b37 chrY reference is outside the bundle at `.../marc/genome/hg19_b37chrY.fa` | Package the approved reference + indexes, verify M5/checksums, provide a reference config key; retain header-driven reference selection |
-| `constants.py`, `precompute_capture_kits.py`, `decrypt_c4gh.py`, `GLnexus.smk` | Additional fixed resource/tool/preset paths; old user-specific token defaults | Resolve through shared configuration; inventory optional endpoints separately |
+| `Aligner.smk` / external adapter defaults | Corrected hg19/b37 chrY reference was outside the bundle at `.../marc/genome/hg19_b37chrY.fa` | **Implemented:** configured path plus checksum-pinned FASTA/FAI supplement; header-driven selection is retained |
+| `constants.py`, `precompute_capture_kits.py`, `decrypt_c4gh.py`, `GLnexus.smk` | Additional fixed resource/tool/preset paths; old user-specific token defaults | **Implemented for selected paths:** resource, preset, CRAM references, transfer executables/remotes and key filenames resolve through the shared site configuration |
 | `scripts/prepare_deepvariant_native.py` | Loader, Python, library and executable paths baked into launchers | Rebuild runtime at destination prefix; record source image digest and verify `--version` plus tiny WGS/WES jobs |
-| `profiles/zslurm/config.yaml` | User-specific Conda/Apptainer cache paths and `/scratch-node` bind | Separate site profile with target paths/binds. Keep logical `partition=compute`: it is a ZSlurm class, **not** the physical Slurm partition |
+| `profiles/zslurm/config.yaml` | User-specific Conda/Apptainer cache paths and `/scratch-node` bind | **Partly implemented:** `profiles/spider` has project prefixes and no false bind. Its correct allocation scratch bind/export remains step 3. Logical `partition=compute` stays unchanged |
 | `pipeline_runtime.assigned_scratch` | Accepts assigned `/scratch-node` location; `SLURM_TMPDIR` only if it resolves under `/scratch-node`; ignores Spider's `$TMPDIR` | Accept an engine-provided, validated scratch contract, independent of mount spelling |
 | `common.node_ssd_base`, markdup shell, `DBImport.smk`, `Deepvariant_apptainer.smk`, level-2 tar script | Multiple scratch-selection implementations; some scan other `/scratch-node/$USER.*` directories or use `/scratch-local` | Route through shared helper, remove foreign-job fallback, give every child job its own directory |
 | markdup cleanup shell | Cleanup targets the allocation-level `markdup/$SLURM_JOB_ID` subtree, not only its sample's directory | Narrow cleanup ownership before placing multiple jobs under one shared pilot scratch root; never clean another child job's files |
 | `constants.py` / `tmpdir` | Shared temporary directory is relative to run workdir; `/scratch-local` secondary fallback | Explicit durable shared-temp root on target project filesystem; node-temp paths only for data whose consumers are inside the same job |
 | Archive input route | `/opt/dacommands/bin/daget`/`dals` and Snellius archive paths | Do not enable unchanged on Spider. Select dCache/S3 input route or implement/test a genuine site archive backend |
-| Encryption / transfers | Private sender key fixed under resources; tokens/default remotes spread across modules | Explicit secret-file settings and capability checks for selected source/output endpoint |
+| Encryption / transfers | Private sender key fixed under resources; tokens/default remotes spread across modules | **Path separation implemented:** explicit protected filenames and tools/remotes. Endpoint capability checks remain part of the later preflight step |
 
 ### Environments are more than their YAML filenames
 
@@ -182,6 +183,12 @@ products needed by a later rule or a restarted workflow.
 
 ### 1. Freeze a distributable baseline
 
+Implementation status: **done in the isolated release branch**. See
+`RELEASE_BASELINE.md`, `deployment/component-lock.yaml` and
+`deployment/environment-inputs.sha256`. The executor environment fix is a
+separate tested commit. Solver-complete Conda locks remain desirable because
+some upstream YAML dependencies are not version-pinned.
+
 Finish/review the isolated fused-only cleanup; retain restart contracts.
 Record tested commits + any patches for pipeline, Snakemake, ZSlurm and plugin.
 Provide controller and rule environment locks, build instructions and a
@@ -191,6 +198,13 @@ Acceptance: a fresh clone builds all required custom tools and passes tests
 without borrowing Git-ignored binaries from another checkout.
 
 ### 2. Separate resources, software and secrets
+
+Implementation status: **implemented for the pipeline and release layout**.
+`site_config.py` loads one validated YAML before path derivation and passes its
+absolute filename to workers. Snellius and Spider examples are under
+`config/sites/`; `DEPLOYMENT.md` documents the public resource archives and
+separate private key provisioning. Destination installation and checksum
+verification are still site-operator actions.
 
 Generate an endpoint-specific resource manifest: logical name, relative path,
 size, checksum, indexes, symlink target, upstream/version/license. Include the
