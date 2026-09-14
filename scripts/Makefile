@@ -15,7 +15,7 @@ ENV_YAML ?= ../envs/preprocess.yaml
 all: build bam_merge bam_dechimer fix_bam_rg_pairs
 
 # Build both Python extensions and bam_merge
-all-hts: build build-hts bam_merge fix_bam_rg_pairs
+all-hts: build build-hts bam_merge bam_dechimer fix_bam_rg_pairs
 
 build:
 	$(PYTHON) setup.py build_ext --inplace

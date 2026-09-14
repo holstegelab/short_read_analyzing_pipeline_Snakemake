@@ -14,11 +14,8 @@ import sys
 
 import yaml
 
-pj = os.path.join
-RESOURCES = "/gpfs/work3/0/qtholstg/hg38_res_v2/"
-
 DEFAULT_CONFIG_PATH = "config.yaml"
-DEFAULT_PRIVATE_KEY = pj(RESOURCES, ".c4gh/recipient1")
+DEFAULT_PRIVATE_KEY = os.environ.get("C4GH_DECRYPTION_PRIVATE_KEY")
 DEFAULT_PASSPHRASE = None
 
 
@@ -77,6 +74,10 @@ def decrypt(args) -> None:
         "path_to_decryption_passphrase_file", config, DEFAULT_PASSPHRASE
     )
 
+    if not key_path:
+        raise ValueError(
+            "no private key configured; pass --sk or select a pipeline site configuration"
+        )
     validate_file(args.input, "encrypted CRAM")
     validate_file(key_path, "private key")
     if password_file:

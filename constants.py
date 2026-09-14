@@ -1,9 +1,12 @@
 import os
 import getpass
+from site_config import current as current_site
 
 #parameters
 pj = os.path.join
-RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res_v2/'
+SITE_CONFIG = current_site()
+SITE_NAME = SITE_CONFIG["site_name"]
+RESOURCES = SITE_CONFIG["resource_root"]
 
 #region files
 INTERVALS_DIR = pj(RESOURCES,'intervals')
@@ -75,8 +78,8 @@ GATK_gCNV = 'GATK_gCNV'
 
 
 #programs
-SOFTWARE = pj(RESOURCES, 'software')
-DEEPVARIANT_NATIVE_RUNTIME = pj(SOFTWARE, 'deepvariant-1.9.0-native')
+SOFTWARE = SITE_CONFIG["software_root"]
+DEEPVARIANT_NATIVE_RUNTIME = SITE_CONFIG["deepvariant_native_prefix"]
 gatk= 'gatk'
 samtools= 'samtools'
 bcftools= 'bcftools'
@@ -96,7 +99,7 @@ DECHIMER= 'scripts/bam_dechimer'
 DECHIMER_THRESHOLD= 0.005
 MERGEPHASE = 'scripts/merge_phasing.py'
 MERGEPHASEDIRECT = 'scripts/merge_phasing_direct.py'
-CHECKEMPTY = '/gpfs/work3/0/qtholstg/hg38_res_v2/scripts/check_empty.py'
+CHECKEMPTY = SITE_CONFIG["check_empty_script"]
 SLOPSCRIPT = 'scripts/slop_start_stop.py'
 CAPTURE_KIT_CHECKER = 'scripts/capture_kit_cheker.py'
 BED_PRECOMP = 'scripts/precompute_capture_kits.py'
@@ -170,13 +173,29 @@ ADAPTERS = pj(RESOURCES, 'databases/Adapters_illumina.txt')
 WINDOWS = pj(INTERVALS_DIR, 'windows/all.selected.sorted.3.bed')
 WINDOWS_ANNOTATED = pj(INTERVALS_DIR, 'windows/all.selected.sorted.bed')
 
-AGH_DCACHE_CONFIG =  pj(RESOURCES, ".agh/agh_processed.conf")
+AGH_DCACHE_CONFIG = SITE_CONFIG["dcache_processed_config"]
+DCACHE_READ_CONFIG = SITE_CONFIG["dcache_read_config"]
+DCACHE_READ_PREFIX = SITE_CONFIG["dcache_read_prefix"]
+GLNEXUS_PRESET = SITE_CONFIG["glnexus_preset"]
+HG19_REFERENCE = SITE_CONFIG["hg19_reference"]
+HG19_B37_CHRY_REFERENCE = SITE_CONFIG["hg19_b37_chry_reference"]
+HG38_CRAM_REFERENCE = SITE_CONFIG["hg38_cram_reference"]
+DAGET = SITE_CONFIG["daget"]
+DALS = SITE_CONFIG["dals"]
+DARELEASE = SITE_CONFIG["darelease"]
+RCLONE = SITE_CONFIG["rclone"]
+ENCRYPTION_SENDER_PRIVATE_KEY = SITE_CONFIG["encryption_sender_private_key"]
+ENCRYPTION_RECIPIENT_PUBLIC_KEYS = list(
+    SITE_CONFIG["encryption_recipient_public_keys"]
+)
+DECRYPTION_PRIVATE_KEY = SITE_CONFIG["decryption_private_key"]
+DECRYPTION_PASSPHRASE_FILE = SITE_CONFIG["decryption_passphrase_file"]
 # kraken db
 KRAKEN_DB = pj(RESOURCES, 'kraken/pluspf_20230605')
 
 #tmp folders
-TMPDIR = 'tmp' #do not use scratch, amount of storage is limited
-TMPDIR_ALT = '/scratch-local'
+TMPDIR = SITE_CONFIG["shared_tmp_root"]
+TMPDIR_ALT = SITE_CONFIG["fallback_tmp_root"]
 tmpdir = pj(TMPDIR,getpass.getuser())
 tmpdir_alternative = pj(TMPDIR_ALT,getpass.getuser())
 

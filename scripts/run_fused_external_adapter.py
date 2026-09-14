@@ -26,13 +26,21 @@ from pipeline_runtime import (
 from select_cram_reference import choose_reference, read_cram_header
 
 
-DEFAULT_HG19_REFERENCE = "/gpfs/work3/0/qtholstg/hg38_res_v2/cram_refs/hg19.fa"
-DEFAULT_HG19_B37_CHRY_REFERENCE = (
-    "/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa"
+DEFAULT_RESOURCE_ROOT = os.environ.get("SHORT_READ_RESOURCE_ROOT", "")
+DEFAULT_HG19_REFERENCE = os.environ.get(
+    "SHORT_READ_HG19_REFERENCE",
+    os.path.join(DEFAULT_RESOURCE_ROOT, "cram_refs", "hg19.fa")
+    if DEFAULT_RESOURCE_ROOT else "",
 )
-DEFAULT_HG38_REFERENCE = (
-    "/gpfs/work3/0/qtholstg/hg38_res_v2/cram_refs/"
-    "GRCh38_full_analysis_set_plus_decoy_hla.fa"
+DEFAULT_HG19_B37_CHRY_REFERENCE = os.environ.get(
+    "SHORT_READ_HG19_B37_CHRY_REFERENCE", ""
+)
+DEFAULT_HG38_REFERENCE = os.environ.get(
+    "SHORT_READ_HG38_CRAM_REFERENCE",
+    os.path.join(
+        DEFAULT_RESOURCE_ROOT, "cram_refs",
+        "GRCh38_full_analysis_set_plus_decoy_hla.fa",
+    ) if DEFAULT_RESOURCE_ROOT else "",
 )
 
 

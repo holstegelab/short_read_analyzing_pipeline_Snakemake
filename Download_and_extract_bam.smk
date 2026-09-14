@@ -7,17 +7,19 @@ wildcard_constraints:
 
 dcache_read_token = config.get(
     "token",
-    config.get("dcache_read_token", "/gpfs/home1/gozhegov/macarons/agh_full_snellius.conf"),
+    config.get("dcache_read_token", DCACHE_READ_CONFIG),
 )
 dcache_read_prefix = config.get(
     "prefix",
-    config.get("dcache_read_prefix", "agh_full_snellius:/tape/processed"),
+    config.get("dcache_read_prefix", DCACHE_READ_PREFIX),
 )
 decryption_private_key = config.get(
     "path_to_decryption_private_key",
-    pj(RESOURCES, ".c4gh", "recipient1"),
+    DECRYPTION_PRIVATE_KEY,
 )
-decryption_passphrase_file = config.get("path_to_decryption_passphrase_file", "")
+decryption_passphrase_file = config.get(
+    "path_to_decryption_passphrase_file", DECRYPTION_PASSPHRASE_FILE
+)
 decryption_passphrase_arg = (
     f"--password-file {decryption_passphrase_file}" if decryption_passphrase_file else ""
 )
@@ -58,6 +60,7 @@ rule download_encrypted_cram_from_tape:
         remote_cram=remote_encrypted_cram,
         remote_crai=remote_cram_index,
         token=dcache_read_token,
+        rclone=RCLONE,
         cram_dir=CRAM
     resources:
         mem_mb=2000,
@@ -72,8 +75,8 @@ rule download_encrypted_cram_from_tape:
         set -euo pipefail
         mkdir -p {params.cram_dir}
         mkdir -p $(dirname {log})
-        rclone --config {params.token} -v copyto {params.remote_cram} {output.encrypted} > {log} 2>&1
-        rclone --config {params.token} -v copyto {params.remote_crai} {output.crai_download} >> {log} 2>&1
+        {params.rclone:q} --config {params.token:q} -v copyto {params.remote_cram:q} {output.encrypted:q} > {log:q} 2>&1
+        {params.rclone:q} --config {params.token:q} -v copyto {params.remote_crai:q} {output.crai_download:q} >> {log:q} 2>&1
         """
 
 

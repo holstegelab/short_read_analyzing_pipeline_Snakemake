@@ -2,6 +2,13 @@ import pandas as pd
 import read_stats
 import itertools
 import os
+from site_config import configure as _configure_site
+
+_SITE_SETTINGS = _configure_site(config)
+if _SITE_SETTINGS.source is not None:
+    envvars:
+        "SHORT_READ_SITE_CONFIG"
+
 import common as _common
 from restart_state import configure as _configure_restart, refresh_retrieval
 from common import *

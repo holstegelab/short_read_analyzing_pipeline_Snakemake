@@ -18,8 +18,8 @@ gvcf_caller = config.get("caller", "BOTH")
 glnexus_filtration = config.get("glnexus_filtration", "custom")
 sample_types = config.get("sample_types","WES")
 genotype_mode = config.get("genotype_mode", "WES") #or WGS
-dcache_read_token = config.get("token", "/gpfs/home1/gozhegov/macarons/agh_full_snellius.conf")
-dcache_read_prefix = config.get("prefix", "agh_full_snellius:/tape/processed")
+dcache_read_token = config.get("token", DCACHE_READ_CONFIG)
+dcache_read_prefix = config.get("prefix", DCACHE_READ_PREFIX)
 
 print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {sample_types}")
@@ -184,7 +184,7 @@ else:
         "Invalid option provided to 'glnexus_filtration'; \n"
         "please choose either 'default' for default GLnexus filtration \n "
         "or 'custom' (default) for absence of hard filters \n"
-        "custom preset located at /gpfs/work3/0/qtholstg/hg38_res_v2/software/Glnexus_preset.yml"
+        f"custom preset located at {GLNEXUS_PRESET}"
     )
 
 def conf_filter(wildcards):
@@ -197,7 +197,7 @@ def conf_filter(wildcards):
         elif gvcf_caller == "HaplotypeCaller":
             conf_filters = "gatk"
     elif glnexus_filtration == 'custom':
-        conf_filters = "/gpfs/work3/0/qtholstg/hg38_res_v2/software/Glnexus_preset.yml"
+        conf_filters = GLNEXUS_PRESET
     return conf_filters
 
 def region_to_bed_file(wildcards):#{{{
@@ -286,7 +286,7 @@ rule fetch_deepvariant_tar_from_dcache:
             copy_from_dcache_uri(params.remote_tar, str(output.tar), no_stage=True)
         else:
             shell(
-                "rclone --config {params.token} copyto {params.remote_tar} {output.tar}"
+                "{RCLONE:q} --config {params.token:q} copyto {params.remote_tar:q} {output.tar:q}"
             )
 
 

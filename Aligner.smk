@@ -295,7 +295,7 @@ rule archive_get:
                 print(f"[archive_get] daget chunk {i//100 + 1}/{(total + 99)//100}: {len(chunk)} file(s)", flush=True)
                 try:
                     print("RUNNING DAGET")
-                    res = subprocess.run(["/opt/dacommands/bin/daget", "-av", *chunk], capture_output=True, text=True)
+                    res = subprocess.run([DAGET, "-av", *chunk], capture_output=True, text=True)
                     if res.stdout:
                         print(res.stdout, end="", flush=True)
                     if res.stderr:
@@ -321,7 +321,7 @@ rule archive_get:
                 for i in range(0, len(pending), 100):
                     chunk = pending[i:i+100]
                     try:
-                        res = subprocess.run(["/opt/dacommands/bin/dals", "-l", *chunk], capture_output=True, text=True)
+                        res = subprocess.run([DALS, "-l", *chunk], capture_output=True, text=True)
                         out = (res.stdout or "") + (res.stderr or "")
                     except Exception:
                         traceback.print_exc(file=sys.stderr)
@@ -919,9 +919,9 @@ rule split_alignments_by_readgroup:
                 selector=str(params.reference_selector),
                 cram=readfile,
                 primary=reference_file,
-                hg19=pj(CRAMREFS, "hg19.fa"),
-                hg19_b37_chry="/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa",
-                hg38=pj(CRAMREFS, "GRCh38_full_analysis_set_plus_decoy_hla.fa"),
+                hg19=HG19_REFERENCE,
+                hg19_b37_chry=HG19_B37_CHRY_REFERENCE,
+                hg38=HG38_CRAM_REFERENCE,
                 read=True,
             ).strip()
             cramref = f"--reference {shlex.quote(selected_reference)}"
@@ -1151,9 +1151,9 @@ rule external_adapter_fused:
         runner=srcdir('scripts/run_fused_external_adapter.py'),
         alignment=external_alignment_path,
         cram_options=get_cram_ref,
-        hg19_reference=pj(CRAMREFS, "hg19.fa"),
-        hg19_b37_chry_reference="/gpfs/work3/0/qtholstg/marc/genome/hg19_b37chrY.fa",
-        hg38_reference=pj(CRAMREFS, "GRCh38_full_analysis_set_plus_decoy_hla.fa"),
+        hg19_reference=HG19_REFERENCE,
+        hg19_b37_chry_reference=HG19_B37_CHRY_REFERENCE,
+        hg38_reference=HG38_CRAM_REFERENCE,
         adapters=ADAPTERS,
         fastq_stats=srcdir('scripts/fastq_stats.py'),
         rmdups=srcdir('scripts/remove_interleaved_duplicates.py'),

@@ -19,7 +19,9 @@ LOG = logging.getLogger("staged_copy")
 DCACHE_API = "https://dcacheview.grid.surfsara.nl:22880/api/v1"
 DEFAULT_CONFIG_PATH = Path.home() / "macaroons" / "staged_archive_copy.conf"
 DEFAULT_MACAROON_PATH = Path.home() / "macaroons" / "agh_full_snellius.conf"
-DEFAULT_ADA_PATH = Path.home() / "projects" / "short_read_analyzing_pipeline_Snakemake" / "ada"
+DEFAULT_ADA_PATH = Path(
+    os.environ.get("ADA", Path(__file__).resolve().parents[1] / "ada")
+)
 DEFAULT_RCLONE_REMOTE = "agh_full_snellius"
 
 _PROGRESS_LOCK = threading.Lock()
@@ -424,7 +426,7 @@ class Scheduler:
             try:
                 if self.use_daget:
                     paths = [str(batch_file.get("resolved_source") or batch_file["source"]) for batch_file in batch.files]
-                    cmd = ["daget", "-av", *self.daget_flags, *paths]
+                    cmd = [os.environ.get("DAGET", "daget"), "-av", *self.daget_flags, *paths]
                     run_command(cmd)
                 now = time.time()
                 for file_entry in batch.files:
@@ -475,7 +477,7 @@ class Scheduler:
             try:
                 if succeeded_files and self.use_daget:
                     release_paths = [str(file_entry.get("resolved_source") or file_entry["source"]) for file_entry in succeeded_files]
-                    run_command(["darelease", *release_paths])
+                    run_command([os.environ.get("DARELEASE", "darelease"), *release_paths])
             except Exception:
                 LOG.warning("darelease failed", exc_info=True)
             with self.active_lock:
@@ -588,13 +590,13 @@ class Copier:
 
     def _rclone_mkdir(self, remote_dir: str):
         if remote_dir:
-            run_command(["rclone", "--config", str(self.config_path), "mkdir", f"{self.remote}:{remote_dir}"])
+            run_command([os.environ.get("RCLONE", "rclone"), "--config", str(self.config_path), "mkdir", f"{self.remote}:{remote_dir}"])
 
     def _rclone_copy(self, local_path: Path, remote_dir: str, remote_name: str):
-        run_command(["rclone", "--config", str(self.config_path), "-v", "--timeout", "600m", "copyto", str(local_path), f"{self.remote}:{remote_dir}/{remote_name}"])
+        run_command([os.environ.get("RCLONE", "rclone"), "--config", str(self.config_path), "-v", "--timeout", "600m", "copyto", str(local_path), f"{self.remote}:{remote_dir}/{remote_name}"])
 
     def _rclone_delete(self, remote_dir: str, remote_name: str):
-        run_command(["rclone", "--config", str(self.config_path), "-v", "deletefile", f"{self.remote}:{remote_dir}/{remote_name}"])
+        run_command([os.environ.get("RCLONE", "rclone"), "--config", str(self.config_path), "-v", "deletefile", f"{self.remote}:{remote_dir}/{remote_name}"])
 
     def _remote_adler(self, remote_path: str):
         cmd = [str(self.ada_script), "--tokenfile", str(self.config_path), "--api", DCACHE_API, "--checksum", remote_path]

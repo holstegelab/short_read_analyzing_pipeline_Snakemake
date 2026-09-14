@@ -6,9 +6,9 @@ import polars as pl
 import argparse
 
 pj = os.path.join
-RESOURCES = '/gpfs/work3/0/qtholstg/hg38_res_v2/'
-INTERVALS_DIR = pj(RESOURCES,'intervals')
-PRECOMPUTEED_BED = pj(INTERVALS_DIR, 'precomputed_kits.json')
+RESOURCES = os.environ.get("SHORT_READ_RESOURCE_ROOT")
+INTERVALS_DIR = pj(RESOURCES, "intervals") if RESOURCES else None
+PRECOMPUTEED_BED = pj(INTERVALS_DIR, "precomputed_kits.json") if INTERVALS_DIR else None
 
 
 def precompute_from_bed(bed_file):
@@ -48,6 +48,12 @@ def main():
                         help="Output JSON file for precomputed kit data")
     args = parser.parse_args()
 
+    if not args.kit_dir or not args.output:
+        parser.error(
+            "--kit_dir and --output are required unless SHORT_READ_RESOURCE_ROOT "
+            "is set by the pipeline site configuration"
+        )
+
     kit_files = glob.glob(os.path.join(args.kit_dir, "*.bed"))
     if not kit_files:
         raise Exception(f"No BED files found in directory {args.kit_dir}")
@@ -68,4 +74,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

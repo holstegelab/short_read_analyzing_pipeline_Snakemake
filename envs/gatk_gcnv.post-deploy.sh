@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GATK_ROOT="${GATK_CNV_ROOT:-/gpfs/work3/0/qtholstg/hg38_res_v2/software/gatk_4.4}"
+: "${GATK_CNV_ROOT:?Set GATK_CNV_ROOT through the pipeline site configuration before creating this environment}"
+GATK_ROOT="$GATK_CNV_ROOT"
 
 can_import_gcnvkernel() {
     python -c 'import gcnvkernel' >/dev/null 2>&1

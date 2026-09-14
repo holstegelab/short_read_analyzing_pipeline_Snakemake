@@ -12,14 +12,21 @@ rule Encrypt_all:
     input: 
         expand("{cram}/{sample}.mapped_hg38.cram.copied",sample=sample_names, cram = CRAM)
 
-sk = pj(RESOURCES,".c4gh/master_key_for_encryption")
-pk1 = config.get("path_to_public_key_1",  pj(RESOURCES, ".c4gh/recipient1.pub"))
-pk2 = config.get("path_to_public_key_2", pj(RESOURCES, ".c4gh/recipient2.pub"))
+sk = config.get("path_to_private_key", ENCRYPTION_SENDER_PRIVATE_KEY)
+if "encryption_recipient_public_keys" in config:
+    PKs = list(config["encryption_recipient_public_keys"])
+elif "path_to_public_key_1" in config or "path_to_public_key_2" in config:
+    PKs = [
+        config.get("path_to_public_key_1", ENCRYPTION_RECIPIENT_PUBLIC_KEYS[0]),
+        config.get("path_to_public_key_2", ENCRYPTION_RECIPIENT_PUBLIC_KEYS[-1]),
+    ]
+else:
+    PKs = list(ENCRYPTION_RECIPIENT_PUBLIC_KEYS)
+if not PKs:
+    raise ValueError("at least one Crypt4GH recipient public key is required")
 
-PKs = [pk1, pk2]
 
-
-agh_dcache = config.get('agh_processed', pj(RESOURCES,".agh/agh_processed.conf"))
+agh_dcache = config.get('agh_processed', AGH_DCACHE_CONFIG)
 CRAM_DELIVERY = "delivery"
 CRAM_DELIVERY_PACKAGE = pj(CRAM_DELIVERY, "projectmine_cram_decryption_package.zip")
 CRAM_REFERENCE_DICT = os.path.splitext(REF)[0] + ".dict"

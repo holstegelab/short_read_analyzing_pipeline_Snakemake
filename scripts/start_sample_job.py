@@ -401,6 +401,6 @@ def _release_archive_sources(
         if ":/" in source_value:
             source_value = source_value.split(":/", 1)[1]
         subprocess.run(
-            ["/opt/dacommands/bin/darelease", source_value],
+            [os.environ.get("DARELEASE", "darelease"), source_value],
             check=False,
         )

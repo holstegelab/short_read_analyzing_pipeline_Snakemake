@@ -15,6 +15,7 @@ from pathlib import Path
 LOG = logging.getLogger("fs_to_dcache")
 DEFAULT_COPY_TIMEOUT = "300m"
 DEFAULT_RCLONE_CONFIG_CANDIDATES = [Path("~/config/rclone/rclone.conf"), Path("~/.config/rclone/rclone.conf")]  # first path is Snellius-specific
+RCLONE_CMD = os.environ.get("RCLONE", "rclone")
 
 
 def setup_logging(verbose: bool):
@@ -332,13 +333,13 @@ class DCacheCopier:
             if remote_dir in self._seen_dirs:
                 return
             self._seen_dirs.add(remote_dir)
-        run_command(["rclone", "--config", str(self.rclone_config), "mkdir", f"{self.remote}:{remote_dir}"])
+        run_command([RCLONE_CMD, "--config", str(self.rclone_config), "mkdir", f"{self.remote}:{remote_dir}"])
 
     def _rclone_copy(self, local_path: Path, remote_dir: str, remote_name: str):
         remote_path = f"{remote_dir}/{remote_name}" if remote_dir else remote_name
         run_command(
             [
-                "rclone",
+                RCLONE_CMD,
                 "--config",
                 str(self.rclone_config),
                 "-v",
@@ -352,7 +353,7 @@ class DCacheCopier:
 
     def _rclone_delete(self, remote_dir: str, remote_name: str):
         remote_path = f"{remote_dir}/{remote_name}" if remote_dir else remote_name
-        run_command(["rclone", "--config", str(self.rclone_config), "-v", "deletefile", f"{self.remote}:{remote_path}"])
+        run_command([RCLONE_CMD, "--config", str(self.rclone_config), "-v", "deletefile", f"{self.remote}:{remote_path}"])
 
     def _remote_adler(self, remote_path: str) -> str:
         cmd = [self.ada_cmd, "--tokenfile", str(self.rclone_config)]
