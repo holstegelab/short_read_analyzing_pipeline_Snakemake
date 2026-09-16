@@ -85,7 +85,7 @@ def test_cram_encryption_and_upload_have_no_active_storage_payload():
     assert "rule copy_to_dcache:" not in encrypt
 
 
-def test_markdup_acquires_only_the_short_active_storage_peak():
+def test_markdup_does_not_require_a_late_active_storage_increase():
     common = (REPO / "common.py").read_text()
     aligner = (REPO / "Aligner.smk").read_text()
     markdup = rule_body(aligner, "markdup")
@@ -95,17 +95,16 @@ def test_markdup_acquires_only_the_short_active_storage_peak():
         return float(common.split(marker, 1)[1].splitlines()[0])
 
     assert "ACTIVE_BASELINE_FRAC = 0.85" in common
-    assert "ACTIVE_MARKDUP_TRANSIENT_FRAC = 0.15" in common
-    assert "ACTIVE_RELEASE_FRAC_MARKDUP = 0.45" in common
+    assert "ACTIVE_MARKDUP_TRANSIENT_FRAC" not in common
+    assert "ACTIVE_RELEASE_FRAC_MARKDUP = 0.30" in common
     assert "ACTIVE_RELEASE_FRAC_FINISHED = 0.55" in common
     assert "return ACTIVE_BASELINE_FRAC * active_peak_gb(wildcards)" in common
-    assert "active_use_add=active_add_markdup" in markdup
+    assert "active_use_add" not in markdup
+    assert "def active_add_markdup" not in common
     assert "active_use_remove=active_release_markdup" in markdup
     assert "def active_release_upload" not in common
-    assert (
-        fraction("ACTIVE_BASELINE_FRAC")
-        + fraction("ACTIVE_MARKDUP_TRANSIENT_FRAC")
-        == fraction("ACTIVE_RELEASE_FRAC_MARKDUP")
+    released = (
+        fraction("ACTIVE_RELEASE_FRAC_MARKDUP")
         + fraction("ACTIVE_RELEASE_FRAC_FINISHED")
-        == 1.0
     )
+    assert abs(fraction("ACTIVE_BASELINE_FRAC") - released) < 1e-12

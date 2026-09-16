@@ -47,21 +47,21 @@ def zslurm_lease_command(workflow_config):
     return configured
 
 
-# --- Active-storage reservation: shared helper + phased peak -----------------
-# Most of a sample's lifetime does not include both the aligned readgroup BAMs
-# and the published markdup BAM.  Reserve 85% of the estimated peak at
-# start_sample, then let markdup acquire the final 15% only while it can create
-# that short overlap.  On success markdup returns its transient 15% plus the
-# original 30% intermediate share; finished_sample returns the remaining 55%.
+# --- Active-storage reservation: shared helper + staged release --------------
+# Reserve 85% of the conservative historical peak for the sample lifecycle.
+# External source data is reclaimed as soon as all aligned readgroup BAMs are
+# valid, before markdup needs to publish its final BAM.  Markdup deliberately
+# takes no additional active-storage reservation: requiring a late increase
+# could leave ready markdup jobs waiting behind samples whose existing inputs
+# already consume the active-storage budget.
 #
 # Accounting for one successful sample therefore balances exactly:
-#   add:     start 0.85 + markdup 0.15 = 1.00 peak
-#   remove:  markdup 0.45 + finished 0.55 = 1.00 peak
-# If markdup fails, ZSlurm rolls back its 0.15 start-add and leaves the 0.85
-# lifecycle reservation intact for Snakemake's retry.
+#   add:     start 0.85
+#   remove:  markdup 0.30 + finished 0.55 = 0.85
+# A failed markdup removes nothing, so the lifecycle reservation remains intact
+# for Snakemake's retry.
 ACTIVE_BASELINE_FRAC = 0.85
-ACTIVE_MARKDUP_TRANSIENT_FRAC = 0.15
-ACTIVE_RELEASE_FRAC_MARKDUP = 0.45
+ACTIVE_RELEASE_FRAC_MARKDUP = 0.30
 ACTIVE_RELEASE_FRAC_FINISHED = 0.55
 
 
@@ -88,13 +88,10 @@ def active_use_gb(wildcards):
     return ACTIVE_BASELINE_FRAC * active_peak_gb(wildcards)
 
 
-def active_add_markdup(wildcards):
-    """Reserve the short readgroup-BAM/final-BAM publication overlap."""
-    return ACTIVE_MARKDUP_TRANSIENT_FRAC * active_peak_gb(wildcards)
-
 def active_release_markdup(wildcards):
-    """Release markdup's transient add plus completed intermediate storage."""
+    """Release completed intermediate storage after successful markdup."""
     return ACTIVE_RELEASE_FRAC_MARKDUP * active_peak_gb(wildcards)
+
 
 def active_release_finished(wildcards):
     """Release the remainder (markdup.bam share) at finished_sample."""

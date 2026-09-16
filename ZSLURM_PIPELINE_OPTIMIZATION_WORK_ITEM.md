@@ -542,12 +542,13 @@ The normal durable filenames are unchanged: `bams/{sample}.markdup.bam`, its
 index/statistic, `cram/{sample}.mapped_hg38.cram.ADLER32`, and
 `cram/{sample}.mapped_hg38.cram.copied`. The old GPFS-only merged BAM,
 plaintext CRAM, encrypted CRAM and CRAI are no longer DAG products. Removing
-the former transfer payload allows the long-lived active-storage reservation
-to remain at 85% of the conservative peak. Markdup temporarily adds the other
-15% only while the final BAM can overlap its readgroup inputs. It removes that
-transient share plus 30% of completed intermediates on success; the remaining
-55% is removed by `finished_sample`. A failed markdup rolls back only its
-temporary add and preserves the sample's baseline reservation for retry.
+the former transfer payload allows the active-storage reservation to remain at
+85% of the historical estimate. Markdup deliberately requests no late storage
+increase, because such a request can block the job that needs to consume and
+release its already-resident readgroup inputs. It removes 30% of completed
+intermediates on success; the remaining 55% is removed by `finished_sample`.
+A failed markdup removes nothing and preserves the full 85% reservation for
+retry.
 
 The externally materialized source is no longer pinned by the markdup output.
 It remains available until every readgroup BAM, index, and validation marker
@@ -559,10 +560,9 @@ A historical audit of 7,063 samples with explicit source sizes estimated the
 source + readgroup BAM + final BAM publication peak at 94.2% of the old full
 reservation at the median, 110.6% at p95, and 116.0% at the observed maximum.
 Reclaiming an external CRAM source before markdup removes roughly 20 percentage
-points from those values. The short markdup overlap is nevertheless admitted
-against the full original estimate instead of relying on the 85% baseline
-alone; its short duration changes how long capacity is held, not the capacity
-required at publication.
+points from those values. The remaining short readgroup/final-BAM overlap is
+accepted within the 85% lifecycle reservation rather than introducing a late
+scheduler admission barrier.
 
 Focused validation covers one/multiple readgroups, no-dedup, duplicate,
 supplementary, secondary and unmapped records; old/new samtools record and

@@ -1598,11 +1598,8 @@ rule markdup:
         n=get_n_merge_markdup,
         use_threads=3,
         mem_mb=get_mem_mb_merge_markdup,
-        # The final BAM briefly overlaps the aligned readgroup BAMs on GPFS.
-        # Acquire only that transient peak share for this phase. On success the
-        # remove includes this add plus the completed intermediate-data share;
-        # on failure ZSlurm rolls back only the add and preserves the baseline.
-        active_use_add=active_add_markdup,
+        # Do not require a late storage increase: it can block completed
+        # readgroup inputs from reaching the phase that releases their budget.
         active_use_remove=active_release_markdup,
         ssd_use="required",
         ssd_gb=get_ssd_gb_merge_markdup
