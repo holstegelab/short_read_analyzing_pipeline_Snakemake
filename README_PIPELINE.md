@@ -36,6 +36,7 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 
 5. **gVCF generation**
    - `HaplotypeCaller` produces region-split gVCFs; `reblock_gvcf` compresses blocks. For DeepVariant, equivalent pipeline in `Deepvariant.smk` culminating in `DVWhatshapPhasingMerge`.
+   - `deepvariant_phasing_fused` keeps raw calls and the uncompressed merged gVCF inside its scratch directory. It publishes only compressed/indexed VCF and gVCF products plus the small statistics consumed downstream.
    - `extract_exomes_gvcf` (Snakemake rule in `gVCF.smk`) produces WES subset for WGS samples via `SelectVariants`; WES samples bypass extraction (`cp`).
    - `gvcf_sample_done` marks completion once all region files exist (level 1 for WGS, level 0 for WES).
 

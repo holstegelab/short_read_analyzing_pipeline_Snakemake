@@ -54,7 +54,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-merge-stats", required=True)
     parser.add_argument("--output-bcftools-stats", required=True)
     parser.add_argument("--output-bcftools-summary", required=True)
-    parser.add_argument("--output-tmp-gvcf", required=True)
     parser.add_argument("--output-gvcf", required=True)
     parser.add_argument("--output-gvcf-tbi", required=True)
     parser.add_argument("--output-exome-gvcf", required=True)
@@ -355,7 +354,6 @@ def main() -> int:
             (merge_stats, Path(args.output_merge_stats)),
             (bcftools_stats, Path(args.output_bcftools_stats)),
             (bcftools_summary, Path(args.output_bcftools_summary)),
-            (tmp_gvcf, Path(args.output_tmp_gvcf)),
             (final_gvcf_tbi, Path(args.output_gvcf_tbi)),
             (final_gvcf, Path(args.output_gvcf)),
             (exome_gvcf_tbi, Path(args.output_exome_gvcf_tbi)),

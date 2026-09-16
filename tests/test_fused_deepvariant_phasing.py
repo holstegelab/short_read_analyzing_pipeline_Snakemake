@@ -148,7 +148,6 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
         "--output-merge-stats": outputs / "merge.stats",
         "--output-bcftools-stats": outputs / "bcftools.stats",
         "--output-bcftools-summary": outputs / "summary.tsv",
-        "--output-tmp-gvcf": outputs / "tmp.g.vcf",
         "--output-gvcf": outputs / "merged.g.vcf.gz",
         "--output-gvcf-tbi": outputs / "merged.g.vcf.gz.tbi",
         "--output-exome-gvcf": outputs / "exome.g.vcf.gz",
@@ -213,6 +212,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     assert "[deepvariant_phasing_fused] scratch=" in result.stderr
 
     assert all(path.exists() == success for path in output_args.values())
+    assert not (outputs / "tmp.g.vcf").exists()
     assert lease_log.read_text().splitlines() == (["status"] if mode == "deepvariant_failure" else ["status", "set"])
     if mode != "skip_sex":
         assert dv_env_log.read_text() == "|"

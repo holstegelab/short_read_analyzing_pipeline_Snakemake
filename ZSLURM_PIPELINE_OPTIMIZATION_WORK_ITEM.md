@@ -556,6 +556,13 @@ exists, after which the local `release_materialized_source` barrier lets
 Snakemake temp-GC reclaim it before (or while) markdup is dispatched. Active
 inputs are not pipeline-owned and remain untouched.
 
+The fused DeepVariant phasing rule no longer publishes its uncompressed
+regional merged gVCF (`*.wg.vcf`) to active storage. That file is an internal
+input to compression only and has no downstream rule consumer. It remains in
+the assigned scratch job directory and is removed with that directory; only
+the compressed/indexed VCF and gVCF products and small statistics cross back
+to the workflow directory.
+
 A historical audit of 7,063 samples with explicit source sizes estimated the
 source + readgroup BAM + final BAM publication peak at 94.2% of the old full
 reservation at the median, 110.6% at p95, and 116.0% at the observed maximum.

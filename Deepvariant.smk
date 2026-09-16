@@ -298,7 +298,6 @@ rule deepvariant_phasing_fused:
         mwstats=pj(STAT, "whatshap_dvphasing/{sample}.{region}.merge_stats"),
         bcftools_stats=temp(pj(STAT, "deepvariant_bcftools/{sample}.{region}.bcftools_stats.txt")),
         bcftools_summary=ensure(pj(STAT, "deepvariant_bcftools/{sample}.{region}.summary.tsv"), non_empty=True),
-        tmp_gvcf=temp(pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf")),
         gvcf=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz"),
         gvcf_tbi=pj(DEEPVARIANT, "gVCF/{region}/{sample}.{region}.wg.vcf.gz.tbi"),
         gvcf_exome=ensure(pj(DEEPVARIANT, "gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz"), non_empty=True),
@@ -361,7 +360,6 @@ rule deepvariant_phasing_fused:
             --output-merge-stats {output.mwstats:q} \
             --output-bcftools-stats {output.bcftools_stats:q} \
             --output-bcftools-summary {output.bcftools_summary:q} \
-            --output-tmp-gvcf {output.tmp_gvcf:q} \
             --output-gvcf {output.gvcf:q} \
             --output-gvcf-tbi {output.gvcf_tbi:q} \
             --output-exome-gvcf {output.gvcf_exome:q} \
