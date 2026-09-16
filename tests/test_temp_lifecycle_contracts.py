@@ -32,7 +32,10 @@ def test_external_start_routes_publish_tracked_temp_directories():
     assert "dcache_download_slots=1" not in s3
     assert "_start_sample_route(wildcards) == 'archive'" in aligner
     assert "files.append(ancient(external_data_dir(" in aligner
-    assert 'bam=pj(BAM, "{sample}.markdup.bam")' in release
+    assert "bam=get_readgroups_bam" in release
+    assert "bai=get_readgroups_bai" in release
+    assert "checks=get_readgroup_checks" in release
+    assert 'pj(BAM, "{sample}.markdup.bam")' not in release
     assert 'materialized=lambda wildcards: external_data_dir(' in release
     assert 'f"{wildcards.sample}.materialized_consumed"' in snakefile
 
@@ -82,9 +85,27 @@ def test_cram_encryption_and_upload_have_no_active_storage_payload():
     assert "rule copy_to_dcache:" not in encrypt
 
 
-def test_cram_transfer_share_is_removed_from_active_reservation():
+def test_markdup_acquires_only_the_short_active_storage_peak():
     common = (REPO / "common.py").read_text()
-    assert "ACTIVE_CRAM_TRANSFER_FRAC_REMOVED = 0.15" in common
-    assert "return ACTIVE_RESERVATION_FRAC * res" in common
+    aligner = (REPO / "Aligner.smk").read_text()
+    markdup = rule_body(aligner, "markdup")
+
+    def fraction(name):
+        marker = f"{name} = "
+        return float(common.split(marker, 1)[1].splitlines()[0])
+
+    assert "ACTIVE_BASELINE_FRAC = 0.85" in common
+    assert "ACTIVE_MARKDUP_TRANSIENT_FRAC = 0.15" in common
+    assert "ACTIVE_RELEASE_FRAC_MARKDUP = 0.45" in common
+    assert "ACTIVE_RELEASE_FRAC_FINISHED = 0.55" in common
+    assert "return ACTIVE_BASELINE_FRAC * active_peak_gb(wildcards)" in common
+    assert "active_use_add=active_add_markdup" in markdup
+    assert "active_use_remove=active_release_markdup" in markdup
     assert "def active_release_upload" not in common
-    assert "0.30 / ACTIVE_RESERVATION_FRAC" in common
+    assert (
+        fraction("ACTIVE_BASELINE_FRAC")
+        + fraction("ACTIVE_MARKDUP_TRANSIENT_FRAC")
+        == fraction("ACTIVE_RELEASE_FRAC_MARKDUP")
+        + fraction("ACTIVE_RELEASE_FRAC_FINISHED")
+        == 1.0
+    )

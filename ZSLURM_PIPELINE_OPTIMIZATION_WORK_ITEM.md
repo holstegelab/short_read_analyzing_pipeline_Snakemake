@@ -542,9 +542,27 @@ The normal durable filenames are unchanged: `bams/{sample}.markdup.bam`, its
 index/statistic, `cram/{sample}.mapped_hg38.cram.ADLER32`, and
 `cram/{sample}.mapped_hg38.cram.copied`. The old GPFS-only merged BAM,
 plaintext CRAM, encrypted CRAM and CRAI are no longer DAG products. Removing
-the former transfer payload also removes 15% from the initial active-storage
-reservation; the remaining add/remove accounting balances at markdup and
-`finished_sample`.
+the former transfer payload allows the long-lived active-storage reservation
+to remain at 85% of the conservative peak. Markdup temporarily adds the other
+15% only while the final BAM can overlap its readgroup inputs. It removes that
+transient share plus 30% of completed intermediates on success; the remaining
+55% is removed by `finished_sample`. A failed markdup rolls back only its
+temporary add and preserves the sample's baseline reservation for retry.
+
+The externally materialized source is no longer pinned by the markdup output.
+It remains available until every readgroup BAM, index, and validation marker
+exists, after which the local `release_materialized_source` barrier lets
+Snakemake temp-GC reclaim it before (or while) markdup is dispatched. Active
+inputs are not pipeline-owned and remain untouched.
+
+A historical audit of 7,063 samples with explicit source sizes estimated the
+source + readgroup BAM + final BAM publication peak at 94.2% of the old full
+reservation at the median, 110.6% at p95, and 116.0% at the observed maximum.
+Reclaiming an external CRAM source before markdup removes roughly 20 percentage
+points from those values. The short markdup overlap is nevertheless admitted
+against the full original estimate instead of relying on the 85% baseline
+alone; its short duration changes how long capacity is held, not the capacity
+required at publication.
 
 Focused validation covers one/multiple readgroups, no-dedup, duplicate,
 supplementary, secondary and unmapped records; old/new samtools record and

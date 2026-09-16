@@ -27,6 +27,7 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 3. **Alignment and merge**
    - `align_reads_fused` runs DRAGMAP and its per-readgroup merge/check/dechimer/sort tail.
    - `markdup` consumes all validated readgroup BAMs, creates a merged BAM only on assigned node SSD when needed, and performs duplicate marking there. Only the final markdup BAM/index/statistic are atomically published to shared storage.
+   - For external inputs, the staged source is reclaimed as soon as all readgroup BAMs, indexes, and validation markers exist; markdup does not pin or read the source. The long-lived active-storage reservation is 85% of the estimated peak. Markdup temporarily acquires the remaining 15% while its final BAM can overlap the readgroup BAMs, then releases that transient share together with completed intermediates.
 
 4. **QC, contamination, duplicates**
    - `merge_rgs_badmap` for contamination FASTQs.

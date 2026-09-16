@@ -47,27 +47,26 @@ def zslurm_lease_command(workflow_config):
     return configured
 
 
-# --- Active-storage reservation: shared helper + staged release --------------
-# active_use_gb() reserves the input+bam PEAK at start_sample and is the shared basis
-# for the staged RELEASE of the reservation, and lives here in common so every module
-# (Aligner markdup and Snakefile finished_sample) can reach it.
+# --- Active-storage reservation: shared helper + phased peak -----------------
+# Most of a sample's lifetime does not include both the aligned readgroup BAMs
+# and the published markdup BAM.  Reserve 85% of the estimated peak at
+# start_sample, then let markdup acquire the final 15% only while it can create
+# that short overlap.  On success markdup returns its transient 15% plus the
+# original 30% intermediate share; finished_sample returns the remaining 55%.
 #
-# The peak collapses in stages, so we hand the reservation back in stages instead of
-# holding the full peak until finished_sample:
-#   * markdup done -> fastqs + intermediate bams gone (only markdup.bam remains)
-#   * finished     -> markdup.bam gone (deepvariant/stats/whatshap/chrM done)
-# CRAM creation, encryption and upload now stay within assigned SSD, so the former
-# 15% encrypted-CRAM transfer share is never added to active storage.
-# Fractions are deliberately CONSERVATIVE: releasing too much risks a real active
-# disk overflow; releasing too little only over-reserves (safe). Tune here. They MUST
-# sum to 1.0; a sample must traverse markdup + finished_sample for the per-sample
-# add/remove to balance exactly (partial paths only ever under-release = safe).
-ACTIVE_CRAM_TRANSFER_FRAC_REMOVED = 0.15
-ACTIVE_RESERVATION_FRAC = 1.0 - ACTIVE_CRAM_TRANSFER_FRAC_REMOVED
-ACTIVE_RELEASE_FRAC_MARKDUP = 0.30 / ACTIVE_RESERVATION_FRAC
+# Accounting for one successful sample therefore balances exactly:
+#   add:     start 0.85 + markdup 0.15 = 1.00 peak
+#   remove:  markdup 0.45 + finished 0.55 = 1.00 peak
+# If markdup fails, ZSlurm rolls back its 0.15 start-add and leaves the 0.85
+# lifecycle reservation intact for Snakemake's retry.
+ACTIVE_BASELINE_FRAC = 0.85
+ACTIVE_MARKDUP_TRANSIENT_FRAC = 0.15
+ACTIVE_RELEASE_FRAC_MARKDUP = 0.45
+ACTIVE_RELEASE_FRAC_FINISHED = 0.55
 
-def active_use_gb(wildcards):
-    """Reserve source-input lifecycle plus the estimated processing peak."""
+
+def active_peak_gb(wildcards):
+    """Return the conservative source/readgroup/final-BAM GPFS peak."""
     sample = SAMPLEINFO[wildcards['sample']]
     filesize = sample['filesize']
     capture_kit = sample['capture_kit']
@@ -81,15 +80,25 @@ def active_use_gb(wildcards):
         res += 2.0 * active_filesize * 0.15
     else:
         res += 2.0 * active_filesize
-    return ACTIVE_RESERVATION_FRAC * res
+    return res
+
+
+def active_use_gb(wildcards):
+    """Reserve the long-lived portion of the estimated active-storage peak."""
+    return ACTIVE_BASELINE_FRAC * active_peak_gb(wildcards)
+
+
+def active_add_markdup(wildcards):
+    """Reserve the short readgroup-BAM/final-BAM publication overlap."""
+    return ACTIVE_MARKDUP_TRANSIENT_FRAC * active_peak_gb(wildcards)
 
 def active_release_markdup(wildcards):
-    """Release the fastq + intermediate-bam share of the reservation at markdup."""
-    return ACTIVE_RELEASE_FRAC_MARKDUP * active_use_gb(wildcards)
+    """Release markdup's transient add plus completed intermediate storage."""
+    return ACTIVE_RELEASE_FRAC_MARKDUP * active_peak_gb(wildcards)
 
 def active_release_finished(wildcards):
     """Release the remainder (markdup.bam share) at finished_sample."""
-    return max(0.0, 1.0 - ACTIVE_RELEASE_FRAC_MARKDUP) * active_use_gb(wildcards)
+    return ACTIVE_RELEASE_FRAC_FINISHED * active_peak_gb(wildcards)
 
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']

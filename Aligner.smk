@@ -1598,8 +1598,11 @@ rule markdup:
         n=get_n_merge_markdup,
         use_threads=3,
         mem_mb=get_mem_mb_merge_markdup,
-        # fastqs + intermediate bams are gone once markdup runs -> hand that share of
-        # the start_sample reservation back now (see active_release_markdup).
+        # The final BAM briefly overlaps the aligned readgroup BAMs on GPFS.
+        # Acquire only that transient peak share for this phase. On success the
+        # remove includes this add plus the completed intermediate-data share;
+        # on failure ZSlurm rolls back only the add and preserves the baseline.
+        active_use_add=active_add_markdup,
         active_use_remove=active_release_markdup,
         ssd_use="required",
         ssd_gb=get_ssd_gb_merge_markdup
@@ -1634,13 +1637,15 @@ rule markdup:
 localrules: release_materialized_source
 
 rule release_materialized_source:
-    """Keep external source data through alignment, then let temp GC reclaim it."""
+    """Reclaim external source data once every readgroup alignment is valid."""
     input:
         ready=pj(SOURCEDIR, "{sample}.route_ready"),
         materialized=lambda wildcards: external_data_dir(
             wildcards['sample'], SAMPLEINFO[wildcards['sample']]
         ),
-        bam=pj(BAM, "{sample}.markdup.bam")
+        bam=get_readgroups_bam,
+        bai=get_readgroups_bai,
+        checks=get_readgroup_checks
     output:
         marker=touch(pj(SOURCEDIR, "{sample}.materialized_consumed"))
     wildcard_constraints:
