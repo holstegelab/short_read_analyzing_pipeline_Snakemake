@@ -285,5 +285,7 @@ scratch entitlement and mount/namespace details must be confirmed on a real
 pilot; public documentation is not a substitute for that probe. Existing
 Snellius test results are recorded separately in `FUSED_CLEANUP_VALIDATION.md`.
 This plan intentionally does not migrate patient data, share credentials,
-publish code, alter a running pipeline or implement the earlier proposed
-merge+markdup / CRAM+encryption fusions.
+publish code or alter a running pipeline. The merge+markdup and
+CRAM+encryption+upload fusions are now implemented and tested in the isolated
+`codex/active-storage-fusion-20260915` branch; they still require a measured
+Snellius canary and the Spider scratch-contract work above before deployment.

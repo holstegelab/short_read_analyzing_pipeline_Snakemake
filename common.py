@@ -50,19 +50,21 @@ def zslurm_lease_command(workflow_config):
 # --- Active-storage reservation: shared helper + staged release --------------
 # active_use_gb() reserves the input+bam PEAK at start_sample and is the shared basis
 # for the staged RELEASE of the reservation, and lives here in common so every module
-# (Aligner markdup, Encrypt copy_to_dcache, Snakefile finished_sample) can reach it.
+# (Aligner markdup and Snakefile finished_sample) can reach it.
 #
 # The peak collapses in stages, so we hand the reservation back in stages instead of
 # holding the full peak until finished_sample:
-#   * markdup done  -> fastqs + intermediate bams gone (only markdup.bam remains)
-#   * cram uploaded -> mapped_hg38.cram gone
-#   * finished      -> markdup.bam gone (deepvariant/stats/whatshap/chrM done)
+#   * markdup done -> fastqs + intermediate bams gone (only markdup.bam remains)
+#   * finished     -> markdup.bam gone (deepvariant/stats/whatshap/chrM done)
+# CRAM creation, encryption and upload now stay within assigned SSD, so the former
+# 15% encrypted-CRAM transfer share is never added to active storage.
 # Fractions are deliberately CONSERVATIVE: releasing too much risks a real active
 # disk overflow; releasing too little only over-reserves (safe). Tune here. They MUST
-# sum to <= 1.0; a sample must traverse markdup + copy_to_dcache for the per-sample
+# sum to 1.0; a sample must traverse markdup + finished_sample for the per-sample
 # add/remove to balance exactly (partial paths only ever under-release = safe).
-ACTIVE_RELEASE_FRAC_MARKDUP = 0.30
-ACTIVE_RELEASE_FRAC_UPLOAD = 0.15
+ACTIVE_CRAM_TRANSFER_FRAC_REMOVED = 0.15
+ACTIVE_RESERVATION_FRAC = 1.0 - ACTIVE_CRAM_TRANSFER_FRAC_REMOVED
+ACTIVE_RELEASE_FRAC_MARKDUP = 0.30 / ACTIVE_RESERVATION_FRAC
 
 def active_use_gb(wildcards):
     """Reserve source-input lifecycle plus the estimated processing peak."""
@@ -79,19 +81,15 @@ def active_use_gb(wildcards):
         res += 2.0 * active_filesize * 0.15
     else:
         res += 2.0 * active_filesize
-    return res
+    return ACTIVE_RESERVATION_FRAC * res
 
 def active_release_markdup(wildcards):
     """Release the fastq + intermediate-bam share of the reservation at markdup."""
     return ACTIVE_RELEASE_FRAC_MARKDUP * active_use_gb(wildcards)
 
-def active_release_upload(wildcards):
-    """Release the cram share of the reservation once the cram has been uploaded."""
-    return ACTIVE_RELEASE_FRAC_UPLOAD * active_use_gb(wildcards)
-
 def active_release_finished(wildcards):
     """Release the remainder (markdup.bam share) at finished_sample."""
-    return max(0.0, 1.0 - ACTIVE_RELEASE_FRAC_MARKDUP - ACTIVE_RELEASE_FRAC_UPLOAD) * active_use_gb(wildcards)
+    return max(0.0, 1.0 - ACTIVE_RELEASE_FRAC_MARKDUP) * active_use_gb(wildcards)
 
 
 chr = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
@@ -593,7 +591,7 @@ def remote_base_for_samplefile(samplefile):
     return remote_base_for_sample(samples[0])
 
 
-def _dcache_endpoint(value):
+def dcache_endpoint(value):
     endpoint = parse_dcache_uri(value)
     if endpoint is None:
         return None
@@ -609,7 +607,7 @@ def _dcache_endpoint(value):
 
 def copy_from_dcache_uri(remote_uri, local_path, *, no_stage=False):
     """Download one dCache URI directly with checksum verification."""
-    endpoint = _dcache_endpoint(remote_uri)
+    endpoint = dcache_endpoint(remote_uri)
     if endpoint is None:
         raise ValueError(f"Not a dCache URI: {remote_uri!r}")
     remote, remote_path, config_path = endpoint
@@ -644,7 +642,7 @@ def copy_from_dcache_uri(remote_uri, local_path, *, no_stage=False):
 
 
 def copy_with_checksum(local_path, remote_dir, remote_name, checksum_path, config_path, ada_script, remote_profile='agh_processed'):
-    endpoint = _dcache_endpoint(remote_dir)
+    endpoint = dcache_endpoint(remote_dir)
     if endpoint is not None:
         remote, bare_remote_dir, endpoint_config = endpoint
         remote_file = os.path.join(bare_remote_dir, remote_name)

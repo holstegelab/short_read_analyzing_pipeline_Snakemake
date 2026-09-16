@@ -55,10 +55,36 @@ def test_raw_intermediates_are_temporary_but_completed_results_are_durable():
     assert 'os.path.join(STAT, "*.stats_bundle.tar.gz")' in snakefile
 
 
-def test_markdup_ssd_reservation_scales_with_measured_tempfile_ratio():
+def test_markdup_ssd_reservation_includes_merge_spill_and_final_bam():
     aligner = (REPO / "Aligner.smk").read_text()
     block = rule_body(aligner, "markdup")
 
     assert 'ssd_use="required"' in block
-    assert "ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(" in block
-    assert "input.bam, factor=1.9, overhead_gb=4, minimum_gb=8" in block
+    assert "ssd_gb=get_ssd_gb_merge_markdup" in block
+    assert "factor = 4.0 if len(input.bam) > 1 else 3.0" in aligner
+    assert "overhead_gb=6, minimum_gb=12" in aligner
+
+
+def test_cram_encryption_and_upload_have_no_active_storage_payload():
+    encrypt = (REPO / "Encrypt.smk").read_text()
+    block = rule_body(encrypt, "cram_encrypt_fused")
+
+    assert 'bam=pj(BAM,"{sample}.markdup.bam")' in block
+    assert 'copied=pj(CRAM,"{sample}.mapped_hg38.cram.copied")' in block
+    assert 'sum=pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32")' in block
+    assert 'mapped_hg38.cram.c4gh"))' not in block
+    assert 'mapped_hg38.cram.crai"))' not in block
+    assert 'pj(CRAM,"{sample}.mapped_hg38.cram")' not in block
+    assert "ssd_use=\"required\"" in block
+    assert "factor=1.5, overhead_gb=6, minimum_gb=12" in block
+    assert 'dcache_upload_slots="0.05"' in block
+    assert "--upload-script" in block
+    assert "rule copy_to_dcache:" not in encrypt
+
+
+def test_cram_transfer_share_is_removed_from_active_reservation():
+    common = (REPO / "common.py").read_text()
+    assert "ACTIVE_CRAM_TRANSFER_FRAC_REMOVED = 0.15" in common
+    assert "return ACTIVE_RESERVATION_FRAC * res" in common
+    assert "def active_release_upload" not in common
+    assert "0.30 / ACTIVE_RESERVATION_FRAC" in common

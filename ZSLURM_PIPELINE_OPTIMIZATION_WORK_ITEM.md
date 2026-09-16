@@ -513,6 +513,47 @@ are still active and the manager remains the old in-memory deployment.
 Production activation of lease-dependent fusion therefore remains pending
 until the controlled manager/chief handover described above.
 
+## Implementation update: active-storage fusions (2026-09-15)
+
+Implemented in the isolated `codex/active-storage-fusion-20260915` branch:
+
+- `markdup` now consumes all validated readgroup BAMs. For multiple readgroups,
+  `samtools merge` writes only to assigned node SSD; `samtools markdup` consumes
+  that local BAM and atomically publishes only the final BAM, index and stats.
+- The job starts at the former merge CPU reservation and monotonically shrinks
+  to the former markdup reservation. A single-readgroup sample starts directly
+  at the markdup reservation. Memory never grows between phases.
+- `cram_encrypt_fused` writes CRAM/CRAI to assigned SSD, encrypts there and
+  uploads both products directly from SSD. Only the checksum and `.copied`
+  receipt cross back to active storage.
+- Over 19,000 historical jobs, upload occupied 3.8% of combined CRAM,
+  encryption and upload time. The entire job therefore holds a weighted
+  `dcache_upload_slots=0.05` reservation: the default pool of four admits 80
+  fused jobs, while existing pure transfers retain their full-slot limit.
+- The CRAM job monotonically shrinks from conversion to the combined
+  encryption/upload tail. It never waits inside a worker for a phase-time
+  global slot acquisition.
+- Initial SSD reservations include simultaneous local input/intermediate/final
+  bytes plus fixed headroom. Runner metrics record per-phase scratch high-water
+  use for production calibration; these first estimates must not be reduced
+  from tiny-fixture measurements.
+
+The normal durable filenames are unchanged: `bams/{sample}.markdup.bam`, its
+index/statistic, `cram/{sample}.mapped_hg38.cram.ADLER32`, and
+`cram/{sample}.mapped_hg38.cram.copied`. The old GPFS-only merged BAM,
+plaintext CRAM, encrypted CRAM and CRAI are no longer DAG products. Removing
+the former transfer payload also removes 15% from the initial active-storage
+reservation; the remaining add/remove accounting balances at markdup and
+`finished_sample`.
+
+Focused validation covers one/multiple readgroups, no-dedup, duplicate,
+supplementary, secondary and unmapped records; old/new samtools record and
+normalized markdup-stat equivalence; real CRAM 3.1 plus Crypt4GH round-trip;
+monotonic lease calls, failure publication boundaries and scratch cleanup.
+Existing direct/legacy upload tests continue to cover the unchanged transfer
+job. Full-suite and measured canary results are recorded with the
+branch before deployment.
+
 ## Implementation update: routed start and alignment fusion (2026-08-09)
 
 Implemented, but deliberately feature-gated and not submitted to production:

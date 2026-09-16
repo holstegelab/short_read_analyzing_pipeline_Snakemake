@@ -25,11 +25,12 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
    - `external_alignments_to_fastq` or `{sample}.{readgroup}.fastq.cut_*.fq.gz` produced via `adapter_removal` + `adapter_removal_identify` (`Aligner.smk`).
 
 3. **Alignment and merge**
-   - `align_reads` runs Dragmap per readgroup; `merge_bam_alignment`, `dechimer`, `sort_bam_alignment`, `check_rg_bam`, `merge_rgs` consolidate across readgroups.
+   - `align_reads_fused` runs DRAGMAP and its per-readgroup merge/check/dechimer/sort tail.
+   - `markdup` consumes all validated readgroup BAMs, creates a merged BAM only on assigned node SSD when needed, and performs duplicate marking there. Only the final markdup BAM/index/statistic are atomically published to shared storage.
 
 4. **QC, contamination, duplicates**
    - `merge_rgs_badmap` for contamination FASTQs.
-   - `markdup`, `mCRAM` finalize BAM→CRAM conversion (`CRAM/{sample}.mapped_hg38.cram`).
+   - `markdup` supplies the final analysis BAM to the downstream QC and caller rules.
    - `get_validated_sex`, `verifybamid`, `hs_stats`, `Artifact_stats`, `samtools_stat*`, `bamstats_*`, `coverage`, `gatherstats` family generate QC artefacts in `stat/` and samplefile-level tabs.
 
 5. **gVCF generation**
@@ -40,7 +41,7 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 6. **Finishing and archival**
    - `stat_sample_done` creates `{sample}.done` sentinel used by `Snakefile::finished_sample` and `tar_stats_per_sample`.
    - `tar_stats_per_sample` packages per-sample QC into `stat/{sample}.stats.tar.gz`, currently using `tar --remove-files` to delete inputs.
-   - `Encrypt_crams` and `copy_to_dcache` encrypt and upload CRAM/CRAI to dCache, marking `{sample}.mapped_hg38.cram.copied`.
+   - `cram_encrypt_fused` creates CRAM/CRAI on assigned node SSD, encrypts and uploads both directly from SSD, verifies both Adler-32 checksums and publishes only `{sample}.mapped_hg38.cram.ADLER32` plus `{sample}.mapped_hg38.cram.copied` on active storage. Its weighted `0.05` upload-slot reservation reflects the measured 3.8% upload duty without creating a phase-time wait.
    - If the cohort has a `dcache:<remote>:/path` `.target`, all processed-data upload helpers use that remote/config directly from Snellius and retain the established `cram/`, `stat/`, `kraken/`, `gvcf/`, and `chrM/` layout below the target root.
    - `Snakefile::finished_sample` touches `{SOURCEDIR}/{sample}.finished` after CRAM copy, gVCF done, stats done, Kraken output ready.
 - `{sample}.done` (from `Stat.smk::stat_sample_done`) only asserts statistics availability; `{sample}.finished` is the global completion marker consumed by `Snakefile::finished_sample` to release active-storage reservations.
@@ -54,8 +55,8 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 ## Artefacts and persistence
 
 Persistent by default:
-- `CRAM/{sample}.mapped_hg38.cram` + `.crai` (until encrypted copy step finishes).
-- `CRAM/{sample}.mapped_hg38.cram.c4gh`, `.copied`, `.ADLER32` (post-upload verification).
+- `CRAM/{sample}.mapped_hg38.cram.copied` and `.ADLER32` upload receipts.
+- The encrypted CRAM and its CRAI are durable at the configured dCache target. Plaintext CRAM, encrypted CRAM and CRAI exist only in the fused job's assigned SSD directory; active storage holds only the checksum and completion receipt.
 - `stat/{sample}.stats.tar.gz` (but original inputs removed; consider `temp()` refactor).
 - Cohort files: `{samplefile}.bam_quality.tab`, `{samplefile}.bam_rg_quality.tab`, `{samplefile}.oxo_quality.tab`, `{samplefile}.coverage.hdf5`, `{samplefile}.sex_chrom.tab`.
 - gVCF outputs: `gVCF/reblock/{region}/{sample}.{region}.wg.vcf.gz` (WES, or WGS before exome extraction), `gVCF/exome_extract/{region}/{sample}.{region}.wg.vcf.gz` (WGS exome slices), `Deepvariant/gVCF/...` equivalents when DeepVariant active.
@@ -105,7 +106,7 @@ Target: after per-region gVCF (and exome subset) generation across cohort, creat
    - Keep original gVCFs persistent until remote transfer verified; mark derived tars as final deliverables. Optionally mark per-sample gVCFs as `temp()` once tar + upload succeed to reclaim space.
 
 5. **Upload automation**
-   - Mirror `Encrypt.smk::copy_to_dcache` logic: new module/rules to upload region tarballs and exome tarballs. Implement checksum verification before touching `.copied` sentinel (e.g., `GVCF/{region}.tar.copied`).
+   - Mirror the verified-upload boundary in `Encrypt.smk::cram_encrypt_fused`: upload region tarballs and exome tarballs, verify checksums, and only then touch a `.copied` sentinel (e.g., `GVCF/{region}.tar.copied`).
    - Add configuration toggles for enabling gVCF/exome uploads.
 
 6. **Update combined workflows**

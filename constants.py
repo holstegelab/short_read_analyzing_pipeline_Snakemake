@@ -223,16 +223,18 @@ current_dir = os.getcwd()
 #
 # Rules absent from this table fall back to the profile default (time=3600).
 RUNTIME = {
-    'merge_rgs':                               ( 23400,  23400),
     # Sum of the two phase budgets until fused measurements are available.
     'align_reads_fused':                       ( 30000,  17400),
-    'markdup':                                 ( 13200,   2700),
+    # Sequential sum of the former merge and markdup p99 budgets until the
+    # fused phase has enough production measurements of its own.
+    'merge_markdup_fused':                     ( 36600,  26100),
     'adapter_removal':                         ( 12900,   2700),
     'external_adapter_fused':                  ( 25200,  15000),
     'extract_and_tar_deepvariant_level2_wgs':  (  9300,   9300),
     'bam_qc_fused':                            ( 10800,  10800),
     'split_alignments_by_readgroup':           (  8700,   8700),
-    'mCRAM':                                   (  8700,   8700),
+    # Sequential sum of CRAM conversion, encryption and upload budgets.
+    'cram_encrypt_fused':                      ( 10500,  10500),
     'archive_get':                             (  8400,   8400),
     'dcache_get':                              ( 90000,  90000),
     'dcache_to_active':                        ( 43200,  43200),
@@ -244,10 +246,8 @@ RUNTIME = {
     'kraken':                                  (  1200,   1200),
     'chrm_extract_align_fused':                (  2400,   2400),
     'chrm_mutect_tail_fused':                  (  3000,   3000),
-    'Encrypt_crams':                           (  1200,   1200),
     'archive_to_active':                       (   900,    900),
     'merge_rgs_badmap':                        (   900,    900),
-    'copy_to_dcache':                          (   600,    600),
     'tar_badmap_fastqs':                       (   600,    600),
     'copy_deepvariant_wgs_region_to_dcache':   (   300,    300),
     'copy_deepvariant_wes_region_to_dcache':   (   300,    300),

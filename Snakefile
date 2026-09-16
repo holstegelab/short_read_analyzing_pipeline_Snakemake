@@ -517,11 +517,9 @@ onstart:
         return c
     try:
         n = 0
-        # (A) cram uploaded (.copied): the cram + its encrypted/index siblings are done
-        #     -- their only consumers (Encrypt_crams/copy_to_dcache) are past, and the
-        #     cram is NOT on the deepvariant/stats path (those read the bam). Safe even
-        #     while the sample is still in flight, so the big crams free early instead
-        #     of waiting for the whole sample to finish.
+        # (A) New fused jobs publish no CRAM payload on active storage. Restart
+        #     compatibility still reclaims plaintext/encrypted/index files left
+        #     by the former separate CRAM, encryption and upload rules.
         for cop in glob.glob(os.path.join(CRAM, "*.mapped_hg38.cram.copied")):
             base = cop[:-len(".copied")]  # -> {sample}.mapped_hg38.cram
             n += _rm_all((base, base + ".crai", base + ".c4gh"))

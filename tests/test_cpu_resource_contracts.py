@@ -21,15 +21,19 @@ def checkpoint_block(filename, checkpoint_name):
 
 
 def test_input_independent_cpu_reservations_follow_observed_average():
-    assert 'n="0.95"' in rule_block("Aligner.smk", "markdup")
-    assert 'n="0.45"' in rule_block("Encrypt.smk", "Encrypt_crams")
-    assert 'n="1.85"' in rule_block("Aligner.smk", "mCRAM")
+    markdup = rule_block("Aligner.smk", "markdup")
+    cram = rule_block("Encrypt.smk", "cram_encrypt_fused")
+    assert "n=get_n_merge_markdup" in markdup
+    assert "--markdup-cores 0.95" in markdup
+    assert 'n="1.85"' in cram
+    assert "--encrypt-cores 0.45" in cram
+    assert 'dcache_upload_slots="0.05"' in cram
 
 
-def test_mcram_keeps_two_samtools_threads_separate_from_scheduler_reservation():
-    block = rule_block("Aligner.smk", "mCRAM")
+def test_fused_cram_keeps_two_samtools_threads_separate_from_scheduler_reservation():
+    block = rule_block("Encrypt.smk", "cram_encrypt_fused")
     assert "use_threads=2" in block
-    assert "-@ {resources.use_threads}" in block
+    assert "--cram-threads {resources.use_threads}" in block
 
 
 def test_split_cpu_reservation_only_grows_for_real_split_or_sanitization():
@@ -54,14 +58,12 @@ def test_split_cpu_reservation_only_grows_for_real_split_or_sanitization():
 
 def test_simple_cpu_reservations_follow_observed_average():
     expected = {
-        ("Aligner.smk", "merge_rgs"): 'n="2.3"',
         ("Aligner.smk", "merge_rgs_badmap"): 'n="0.7"',
         ("Stat.smk", "tar_stats_per_sample"): 'n="0.55"',
         ("Stat.smk", "chrM_and_numt_read_stats"): 'n="0.6"',
         ("Stat.smk", "whatsHap_phase_stats"): 'n="0.5"',
         ("Stat.smk", "tar_badmap_fastqs"): 'n="0.65"',
         ("Stat.smk", "copy_badmap_to_dcache"): 'n="0.5"',
-        ("Encrypt.smk", "copy_to_dcache"): 'n="0.35"',
     }
     for (filename, rule_name), reservation in expected.items():
         assert reservation in rule_block(filename, rule_name)
@@ -89,9 +91,9 @@ def test_fused_cpu_reservations_keep_tool_parallelism_separate():
 
 
 def test_fractional_reservations_do_not_reduce_integer_tool_threads():
-    merge = rule_block("Aligner.smk", "merge_rgs")
-    assert "use_threads=3" in merge
-    assert "-@ {resources.use_threads}" in merge
+    merge_markdup = rule_block("Aligner.smk", "markdup")
+    assert "use_threads=3" in merge_markdup
+    assert "--merge-threads {resources.use_threads}" in merge_markdup
 
     split = rule_block("Aligner.smk", "split_alignments_by_readgroup")
     assert "n=get_n_split_alignments" in split

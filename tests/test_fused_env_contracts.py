@@ -103,6 +103,10 @@ def test_production_fusions_are_unconditional_and_have_no_predecessors():
             "external_adapter_fused": ["external_alignments_to_fastq"],
             "align_reads_fused": ["align_reads", "merge_bam_alignment_dechimer", "sort_bam_alignment"],
             "kmer_sex_fused": ["kmer_reads", "get_validated_sex"],
+            "markdup": ["merge_rgs"],
+        },
+        "Encrypt.smk": {
+            "cram_encrypt_fused": ["Encrypt_crams", "copy_to_dcache"],
         },
         "Deepvariant.smk": {"deepvariant_phasing_fused": ["deepvariant", "DVWhatshapPhasingMerge"]},
         "Stat.smk": {"bam_qc_fused": ["coverage", "verifybamid", "hs_stats", "artifacts_and_oxog_metrics", "samtools_stats", "bamstats_all_and_exome"]},
@@ -119,6 +123,7 @@ def test_production_fusions_are_unconditional_and_have_no_predecessors():
             assert f"\nrule {fused}:" in source
             for old in predecessors:
                 assert f"rule {old}:" not in source
+    assert "rule mCRAM:" not in (REPO / "Aligner.smk").read_text()
 
 
 def test_adapter_routes_use_one_shared_implementation():

@@ -17,10 +17,12 @@ Analysis includes several steps:
 * Removing adapters with **AdapterRemoval**
   > AdapterRemoval doesn't delete sequences from reads, so we always have a back-up copy
 * Aligning reads with **DRAGMAP** (`dragen-os`)
-* Merge different BAM files after DRAGMAP for a single sample *only in case if one sample has more than 1 pair of fastq files*
-* Mark duplicates with **Samtools**
+* Merge different BAM files after DRAGMAP and mark duplicates with **Samtools**
+  in one SSD-local job. The merged BAM is never written to shared storage.
 
-  > at this step we create additional **CRAM** files for storage. These files will be saved on the tape and used as back-up copy
+  > CRAM creation, Crypt4GH encryption and checksum-verified upload run in a
+  > second SSD-local job. Neither plaintext nor encrypted CRAM payloads are
+  > materialized on shared storage.
 
 * Check mapping quality and possible chimeric reads with custom scripts
 
@@ -160,8 +162,9 @@ criteria for that next step.
 ### Supported processing stages
 
 The pipeline uses one implementation per production stage. The former
-`fuse_*` switches and predecessor rule chains have been retired. Input/output
-paths, tool arguments, resource reservations and fused rule names are retained.
+`fuse_*` switches and predecessor rule chains have been retired. Durable
+downstream filenames are retained; large intra-stage intermediates are local
+to the assigned scratch allocation.
 
 | Stage | Implementation | Environment |
 |---|---|---|
@@ -169,6 +172,8 @@ paths, tool arguments, resource reservations and fused rule names are retained.
 | BAM/CRAM extraction + adapters | `external_adapter_fused` → same adapter implementation | `preprocess.yaml` |
 | Alignment + merge/check/dechimer + sort | `align_reads_fused` | `align_fused.yaml` |
 | KMC + sex | `kmer_sex_fused` | `kmc.yaml` |
+| Readgroup merge + duplicate marking | `markdup` → `run_fused_merge_markdup.py` | `preprocess.yaml` |
+| CRAM creation + encryption + verified upload | `cram_encrypt_fused` | `preprocess.yaml` |
 | DeepVariant + phasing | `deepvariant_phasing_fused` | `vcf_handling.yaml` + native runtime |
 | Parallel BAM QC | `bam_qc_fused` | `qc_fused.yaml` |
 | chrM/NUMT extraction + realignment | `chrm_extract_align_fused` | `preprocess.yaml` |
@@ -180,15 +185,14 @@ reservation. Only the alignment-input route extracts raw FASTQs and changes
 its memory lease. Shared scratch/publication/lease helpers live in
 `scripts/pipeline_runtime.py`, independently of alignment.
 
-The five `*_lease_mode` settings still accept `required` (default), `optional`
+The seven `*_lease_mode` settings accept `required` (default), `optional`
 and `disabled`. These are not fusion switches. `optional` retains the initial
 reservation if lease service is unavailable; `disabled` is for local testing.
 Keep scheduler reservations separate from tool threads; live values are in
 the rules, and this cleanup does not retune them.
 
-Split, sample-level merge/markdup, CRAM creation/encryption, source handling,
-Kraken, cohort statistics and supported alternative callers remain separate
-stages. See [RESTARTING.md](RESTARTING.md) before restarting completed samples,
+Split, source handling, Kraken, cohort statistics and supported alternative
+callers remain separate stages. See [RESTARTING.md](RESTARTING.md) before restarting completed samples,
 and [the dependency inventory and Spider migration plan](PORTABILITY_PLAN.md)
 before deploying on another system. Clone + resource copy is not yet a
 complete installation procedure.

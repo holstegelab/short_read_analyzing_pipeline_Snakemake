@@ -212,7 +212,10 @@ def get_source_files(wildcards):  #{{{
 
 rule Aligner_all:
     input:
-        expand("{cram}/{sample}.mapped_hg38.cram",sample=sample_names,cram=CRAM)   #default target removed, as it keeps all cram files on disk till end of pipeline
+        # CRAM creation, encryption and upload are fused in Encrypt.smk. The
+        # durable receipt replaces the former plaintext-CRAM aggregate target,
+        # so Align cannot pin CRAM payloads on active GPFS.
+        expand("{cram}/{sample}.mapped_hg38.cram.copied", sample=sample_names, cram=CRAM)
 
 checkpoint get_readgroups:
     """Get the readgroup info for a sample.
@@ -1493,35 +1496,6 @@ def get_readgroup_checks(wildcards):
     return files
 
 
-# merge different readgroups bam files for same sample
-rule merge_rgs:
-    """Merge bam files for different readgroups of the same sample.
-    If there is only one readgroup, just link the bam file."""
-    input:
-        bam=get_readgroups_bam,
-        bai=get_readgroups_bai,
-        checks=get_readgroup_checks
-    output:
-        mer_bam=temp(pj(BAM,"{sample}.merged.bam"))
-    log: pj(LOG,"Aligner","{sample}.mergereadgroups.log")
-    resources:
-        time = get_time('merge_rgs'),
-        # Real-data sweep: 2.20 cores average and 2.23x speedup at samtools -@ 3.
-        n="2.3",
-        use_threads=3,
-        mem_mb=384
-    priority: 19
-    conda: CONDA_MAIN
-    run:
-        if len(input.bam) > 1:
-            cmd = "samtools merge -@ {resources.use_threads} {output} {input.bam} 2> {log}"
-            shell(cmd)
-        else:
-            #switching to copy as hard link updates also time of input.bam
-            cmd = "cp {input.bam} {output}"
-            shell(cmd)
-
-
 def get_badmap_fastq(wildcards):  #{{{
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
     readgroups_b = sinfo['readgroups']
@@ -1564,72 +1538,96 @@ def get_mem_mb_markdup(wildcards, attempt):  #{{{
 
 #}}}
 
-def get_markdup_input_bam(wildcards):
+def get_n_merge_markdup(wildcards):
     sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
-    rgs = sinfo['readgroups']
-    if len(rgs) > 1:
-        return pj(BAM, f"{wildcards['sample']}.merged.bam")
-    else:
-        rg_id = rgs[0]['info']['ID']
-        return pj(BAM, f"{wildcards['sample']}.{rg_id}.sorted.bam")
+    # Preserve the measured reservations of the former separate phases: the
+    # merge phase averages 2.20 cores, while single-RG markdup averages 0.93.
+    return "2.3" if len(sinfo['readgroups']) > 1 else "0.95"
+
+
+def get_mem_mb_merge_markdup(wildcards, attempt):
+    markdup_mem = get_mem_mb_markdup(wildcards, attempt)
+    sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
+    # A multi-RG exome still has to accommodate the former 384-MB merge phase.
+    return max(markdup_mem, 384 if len(sinfo['readgroups']) > 1 else 0)
+
+
+def get_ssd_gb_merge_markdup(wildcards, input):
+    # Multi-RG peak: local merged BAM + markdup spill + final BAM/index.
+    # Single-RG jobs omit the local merged copy. These are deliberately
+    # conservative first estimates and are recorded by the runner for tuning.
+    factor = 4.0 if len(input.bam) > 1 else 3.0
+    return ssd_gb_for_inputs(
+        input.bam, factor=factor, overhead_gb=6, minimum_gb=12
+    )
+
+
+MERGE_MARKDUP_LEASE_MODE = str(
+    config.get('merge_markdup_lease_mode', 'required')
+).strip().lower()
+if MERGE_MARKDUP_LEASE_MODE not in {'required', 'optional', 'disabled'}:
+    raise ValueError(
+        "merge_markdup_lease_mode must be required, optional, or disabled"
+    )
 
 rule markdup:
-    """Mark duplicates using samtools markdup."""
+    """Merge read groups and mark duplicates without a GPFS merged BAM."""
     input:
-        bam=get_markdup_input_bam
+        bam=get_readgroups_bam,
+        bai=get_readgroups_bai,
+        checks=get_readgroup_checks
     output:
         mdbams=temp(pj(BAM,"{sample}.markdup.bam")),
         mdbams_bai=temp(pj(BAM,"{sample}.markdup.bam.bai")),
         MD_stat=pj(STAT,"{sample}.markdup.stat")
     priority: 20
     params:
+        runner=srcdir('scripts/run_fused_merge_markdup.py'),
         machine=2500,
-    # machine error rate, default is 2500
-    # NovaSeq uses 100
-        no_dedup =lambda wildcards: 1 if SAMPLEINFO[wildcards['sample']]['no_dedup'] else 0
+        # machine error rate, default is 2500; NovaSeq uses 100
+        no_dedup=lambda wildcards: 1 if SAMPLEINFO[wildcards['sample']]['no_dedup'] else 0,
+        lease_mode=MERGE_MARKDUP_LEASE_MODE,
+        lease_command=zslurm_lease_command(config)
     log:
-        samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log")
+        runner=pj(LOG,"Aligner","{sample}.merge_markdup_fused.log"),
+        merge=pj(LOG,"Aligner","{sample}.mergereadgroups.log"),
+        samtools_markdup=pj(LOG,"Aligner","{sample}.markdup.log"),
+        io_profile=pj(LOG,"Aligner","{sample}.merge_markdup_fused.io.json")
     resources:
-        time = get_time('markdup'),
-        # CPU use is input-size independent (avg 0.93 core over 3,415 WGS
-        # jobs); reserve representative throughput rather than a full core.
-        n="0.95",
-        mem_mb=get_mem_mb_markdup,
+        time=get_time('merge_markdup_fused'),
+        n=get_n_merge_markdup,
+        use_threads=3,
+        mem_mb=get_mem_mb_merge_markdup,
         # fastqs + intermediate bams are gone once markdup runs -> hand that share of
         # the start_sample reservation back now (see active_release_markdup).
         active_use_remove=active_release_markdup,
-        temp_loc=lambda wildcards: pj(f"markdup_temporary_{wildcards.sample}"),
         ssd_use="required",
-        # Two WGS observations used 1.726x and 1.749x compressed input size in
-        # the deleted-open markdup tempfile.  Input/output BAMs stay on GPFS.
-        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
-            input.bam, factor=1.9, overhead_gb=4, minimum_gb=8
-        )
+        ssd_gb=get_ssd_gb_merge_markdup
     conda: CONDA_MAIN
-    #write index is buggy in samtools 1.17, 2/110 invalid index, probably race condition due to multithreading.
-    #switching to single thread
     shell:
         """
-            if [ {params.no_dedup} -eq 1 ]; then
-                cp {input.bam} {output.mdbams}
-                samtools index {output.mdbams}
-                touch {output.MD_stat}
-            else
-                TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-                if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-                MDROOT=""
-                if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.temp_loc}"; MDROOT="{resources.temp_loc}"; fi
-                JOB_ID="${{SLURM_JOB_ID}}"; if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi; if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-                MDTMP="$TMPDIR_USE/markdup/$JOB_ID/{wildcards.sample}"
-                mkdir -p "$(dirname "$MDTMP")"
-                # markdup had NO temp cleanup (unlike aligner_sort/aligner_fastq), so its
-                # working-dir fallback left markdup_temporary_<sample> dirs behind. Clean
-                # our own job subtree on exit; rmdir shared parents only if empty; and
-                # remove the per-sample fallback root (MDROOT) -- never $TMPDIR_USE itself
-                # when it is shared scratch (/scratch-node or $SLURM_TMPDIR).
-                trap 'rm -rf "$TMPDIR_USE/markdup/$JOB_ID" 2>/dev/null || true; rmdir "$TMPDIR_USE/markdup" 2>/dev/null || true; [ -n "${{MDROOT:-}}" ] && rmdir "$MDROOT" 2>/dev/null || true' EXIT INT TERM
-                samtools markdup -T "$MDTMP" -f {output.MD_stat} -S -d {params.machine} {input.bam} --write-index {output.mdbams}##idx##{output.mdbams_bai} 2> {log.samtools_markdup}
-            fi
+        python {params.runner:q} \
+            --input-bam {input.bam:q} \
+            --input-bai {input.bai:q} \
+            --check-marker {input.checks:q} \
+            --sample {wildcards.sample:q} \
+            --output-bam {output.mdbams:q} \
+            --output-bai {output.mdbams_bai:q} \
+            --output-stat {output.MD_stat:q} \
+            --merge-log {log.merge:q} \
+            --markdup-log {log.samtools_markdup:q} \
+            --metrics {log.io_profile:q} \
+            --no-dedup {params.no_dedup} \
+            --optical-distance {params.machine} \
+            --merge-threads {resources.use_threads} \
+            --initial-cores {resources.n} \
+            --initial-memory-mb {resources.mem_mb} \
+            --markdup-cores 0.95 \
+            --markdup-memory-mb {resources.mem_mb} \
+            --lease-mode {params.lease_mode:q} \
+            --lease-command {params.lease_command:q} \
+            --ssd-gb {resources.ssd_gb} \
+            2> {log.runner:q}
         """
 
 
@@ -1649,28 +1647,3 @@ rule release_materialized_source:
         sample=START_SAMPLE_EXTERNAL_PATTERN
     shell:
         "touch {output.marker:q}"
-
-
-rule mCRAM:
-    """Convert bam to mapped cram."""
-    input:
-        bam=rules.markdup.output.mdbams,
-        bai=rules.markdup.output.mdbams_bai
-    output:
-        cram=temp(pj(CRAM,"{sample}.mapped_hg38.cram")),
-        crai=temp(pj(CRAM,"{sample}.mapped_hg38.cram.crai"))
-    resources:
-        time = get_time('mCRAM'),
-        # Scheduling reservation follows observed average CPU (1.85 cores),
-        # while samtools keeps its two worker threads below.
-        n="1.85",
-        use_threads=2,
-        # Full-depth Knight WGS CRAM conversion was observed at about 1.44 GB,
-        # leaving virtually no headroom with the previous 1.5 GB request.
-        mem_mb=1800
-    priority: 30
-    conda: CONDA_MAIN
-    log:
-        pj(LOG,"Aligner","{sample}.mCRAM.log")
-    shell:
-        "samtools view --output-fmt cram,version=3.1,archive --reference {REF} -@ {resources.use_threads} --write-index -o {output.cram}##idx##{output.crai} {input.bam} 2> {log}"

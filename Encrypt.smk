@@ -134,81 +134,92 @@ rule copy_cram_delivery_assets_to_dcache:
             )
 
 
-rule Encrypt_crams:
-    input: pj(CRAM,"{sample}.mapped_hg38.cram")
-    output: enCRAM=temp(pj(CRAM,"{sample}.mapped_hg38.cram.c4gh"))
+CRAM_ENCRYPT_LEASE_MODE = str(
+    config.get('cram_encrypt_lease_mode', 'required')
+).strip().lower()
+if CRAM_ENCRYPT_LEASE_MODE not in {'required', 'optional', 'disabled'}:
+    raise ValueError(
+        "cram_encrypt_lease_mode must be required, optional, or disabled"
+    )
+
+
+def cram_upload_endpoint(wildcards):
+    """Return (remote, directory, config) for this sample's CRAM upload."""
+    target = os.path.join(remote_base_for_sample(wildcards.sample), "cram")
+    endpoint = dcache_endpoint(target)
+    if endpoint is not None:
+        return endpoint
+    return "agh_processed", target, agh_dcache
+
+
+rule cram_encrypt_fused:
+    """Create, encrypt and checksum-upload CRAM/CRAI entirely through SSD."""
+    input:
+        bam=pj(BAM,"{sample}.markdup.bam"),
+        bai=pj(BAM,"{sample}.markdup.bam.bai"),
+        delivery=cram_delivery_marker
+    output:
+        copied=pj(CRAM,"{sample}.mapped_hg38.cram.copied"),
+        sum=pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32")
     params:
-        private_key = sk,
-        public_key = expand("--recipient_pk {PKs}", PKs = PKs)
-    conda: CONDA_MAIN         
+        runner=srcdir("scripts/run_fused_cram_encrypt.py"),
+        transfer=srcdir("scripts/dcache_transfer.py"),
+        private_key=sk,
+        public_keys=PKs,
+        upload_remote=lambda wildcards: cram_upload_endpoint(wildcards)[0],
+        upload_directory=lambda wildcards: cram_upload_endpoint(wildcards)[1],
+        upload_config=lambda wildcards: cram_upload_endpoint(wildcards)[2],
+        ada_script=srcdir(ADA),
+        lease_mode=CRAM_ENCRYPT_LEASE_MODE,
+        lease_command=zslurm_lease_command(config)
+    log:
+        runner=pj(LOG,"Aligner","{sample}.cram_encrypt_fused.log"),
+        cram=pj(LOG,"Aligner","{sample}.mCRAM.log"),
+        io_profile=pj(LOG,"Aligner","{sample}.cram_encrypt_fused.io.json")
+    conda: CONDA_MAIN
+    priority: 30
     resources:
-        time = get_time('Encrypt_crams'),
-        mem_mb=200,
-        # Input size has little relation to CPU use; reserve the observed
-        # representative average (0.43 core) with minimal headroom.
-        n="0.45"
+        time=get_time('cram_encrypt_fused'),
+        # Preserve the measured CRAM-conversion reservation, then shrink to
+        # the former representative encryption CPU/memory usage.
+        n="1.85",
+        use_threads=2,
+        mem_mb=1800,
+        # Mean upload duty was 3.8% over >19k historical jobs. A weighted 0.05
+        # reservation allows 80 fused jobs in the default four-slot pool while
+        # leaving ordinary transfer jobs at one full slot each.
+        dcache_upload_slots="0.05",
+        ssd_use="required",
+        # CRAM + encrypted CRAM overlap locally during encryption. The BAM
+        # remains on GPFS, so 1.5x BAM size is a conservative first estimate.
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.bam, factor=1.5, overhead_gb=6, minimum_gb=12
+        )
     shell:
         """
-        python -m crypt4gh encrypt --sk {params.private_key}  {params.public_key} < {input} > {output}
+        python {params.runner:q} \
+            --input-bam {input.bam:q} \
+            --input-bai {input.bai:q} \
+            --reference {REF:q} \
+            --sample {wildcards.sample:q} \
+            --private-key {params.private_key:q} \
+            --recipient-keys {params.public_keys:q} \
+            --upload-script {params.transfer:q} \
+            --upload-config {params.upload_config:q} \
+            --upload-remote {params.upload_remote:q} \
+            --upload-directory {params.upload_directory:q} \
+            --ada {params.ada_script:q} \
+            --output-copied {output.copied:q} \
+            --output-checksum {output.sum:q} \
+            --cram-log {log.cram:q} \
+            --metrics {log.io_profile:q} \
+            --cram-threads {resources.use_threads} \
+            --initial-cores {resources.n} \
+            --initial-memory-mb {resources.mem_mb} \
+            --encrypt-cores 0.45 \
+            --encrypt-memory-mb 512 \
+            --lease-mode {params.lease_mode:q} \
+            --lease-command {params.lease_command:q} \
+            --ssd-gb {resources.ssd_gb} \
+            2> {log.runner:q}
         """
-
-rule copy_to_dcache:
-    input:
-        cram=rules.Encrypt_crams.output.enCRAM,
-        crai=pj(CRAM,"{sample}.mapped_hg38.cram.crai"),
-        delivery=cram_delivery_marker
-    resources:
-        time = get_time('copy_to_dcache'),
-        mem_mb=512,
-        n="0.35",
-        dcache_upload_slots=1,
-        # cram is uploaded here -> give back its share of the start_sample reservation
-        # (see active_release_upload in common.py). The remainder frees at finished.
-        active_use_remove=active_release_upload
-    params:
-        ada_script = srcdir(ADA) #temporarily as ada on Snellius is out of date
-    output:
-        copied = (pj(CRAM,"{sample}.mapped_hg38.cram.copied")),
-        sum = (pj(CRAM,"{sample}.mapped_hg38.cram.ADLER32"))
-    run:
-
-        sample = SAMPLEINFO[wildcards['sample']]
-        target = sample['target']
-        samplefile = os.path.basename(sample['samplefile'])
-
-        if target is None:
-            target = os.path.join(sample['study'], samplefile)
-
-        if target.endswith('/'):
-            target = target[:-1]
-
-        target_cram = os.path.join(target, "cram")
-
-        input_cram = os.path.basename(input['cram'])
-        input_crai = os.path.basename(input['crai'])
-        copy_with_checksum(
-            str(input.cram),
-            target_cram,
-            input_cram,
-            str(output.sum),
-            agh_dcache,
-            params.ada_script,
-        )
-
-        crai_checksum = str(output.sum) + ".crai.tmp"
-        try:
-            copy_with_checksum(
-                str(input.crai),
-                target_cram,
-                input_crai,
-                crai_checksum,
-                agh_dcache,
-                params.ada_script,
-            )
-        finally:
-            try:
-                os.unlink(crai_checksum)
-            except FileNotFoundError:
-                pass
-
-        shell("touch {output.copied}")

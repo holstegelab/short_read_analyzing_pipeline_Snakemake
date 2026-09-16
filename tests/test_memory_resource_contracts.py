@@ -31,8 +31,6 @@ def test_large_fused_memory_targets_follow_phase_peak_estimates():
 
 def test_clear_overreservations_are_reduced():
     expected = {
-        ("Aligner.smk", "merge_rgs"): "mem_mb=384",
-        ("Encrypt.smk", "copy_to_dcache"): "mem_mb=512",
         ("Stat.smk", "tar_badmap_fastqs"): "mem_mb=384",
         ("Stat.smk", "copy_badmap_to_dcache"): "mem_mb=512",
         ("chrM_analysis.smk", "chrm_extract_align_fused"): "mem_mb=2000",
@@ -64,10 +62,19 @@ def test_split_alignments_base_memory_is_seven_and_a_half_gb():
 def test_markdup_wgs_base_memory_is_three_gb():
     aligner = (REPO / "Aligner.smk").read_text()
     start = aligner.index("def get_mem_mb_markdup")
-    end = aligner.index("def get_markdup_input_bam", start)
+    end = aligner.index("def get_n_merge_markdup", start)
 
     assert "res = 3000 if 'wgs'" in aligner[start:end]
     assert "else 150" in aligner[start:end]
+
+
+def test_storage_fusions_retain_phase_memory_peaks_and_only_shrink():
+    markdup = rule_block("Aligner.smk", "markdup")
+    cram = rule_block("Encrypt.smk", "cram_encrypt_fused")
+    assert "mem_mb=get_mem_mb_merge_markdup" in markdup
+    assert "--markdup-memory-mb {resources.mem_mb}" in markdup
+    assert "mem_mb=1800" in cram
+    assert "--encrypt-memory-mb 512" in cram
 
 
 def test_runner_defaults_match_pipeline_lease_targets():

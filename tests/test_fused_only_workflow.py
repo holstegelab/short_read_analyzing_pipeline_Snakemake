@@ -52,10 +52,44 @@ def test_native_fastq_alignment_dag_has_only_fused_producers(tmp_path, groups, s
                      "--config", "END_POINT=Align", "chrM=No")
     for name in ("adapter_removal", "align_reads_fused", "kmer_sex_fused", "markdup"):
         assert f"rule {name}:" in output
-    assert ("rule merge_rgs:" in output) == (groups > 1)
+    assert "rule merge_rgs:" not in output
     assert "rule external_adapter_fused:" not in output
     assert "rule align_reads:" not in output
     assert "rule kmer_reads:" not in output
+
+
+def test_cram_delivery_dag_uses_only_fused_storage_rules(tmp_path):
+    sample = fastq_fixture(tmp_path, groups=2)
+    output = command(
+        tmp_path, "--dry-run", f"cram/{sample}.mapped_hg38.cram.copied",
+        "--config", "END_POINT=Align", "chrM=No",
+    )
+    assert "rule markdup:" in output
+    assert "rule cram_encrypt_fused:" in output
+    assert "rule merge_rgs:" not in output
+    assert "rule mCRAM:" not in output
+    assert "rule Encrypt_crams:" not in output
+    assert "rule copy_to_dcache:" not in output
+
+
+def test_modern_dcache_target_reaches_fused_encryption_and_upload(tmp_path):
+    sample = fastq_fixture(tmp_path)
+    (tmp_path / "cohort.target").write_text(
+        "dcache:test_target:/processed/cohort\n", encoding="utf-8"
+    )
+    (tmp_path / "test_target.conf").write_text(
+        "[test_target]\ntype = webdav\n", encoding="utf-8"
+    )
+    output = command(
+        tmp_path, "--dry-run", "--printshellcmds",
+        f"cram/{sample}.mapped_hg38.cram.copied",
+        "--config", "END_POINT=Align", "chrM=No",
+    )
+    assert "rule cram_encrypt_fused:" in output
+    assert "rule copy_to_dcache:" not in output
+    assert "rule copy_cram_delivery_assets_to_dcache:" in output
+    assert "--upload-remote test_target" in output
+    assert "--upload-directory /processed/cohort/cram" in output
 
 
 @pytest.mark.skipif(not shutil.which("AdapterRemoval") or not shutil.which("pigz"),
