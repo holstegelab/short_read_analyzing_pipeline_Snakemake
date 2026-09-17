@@ -1,6 +1,7 @@
 # Spider controller profile. Site-dependent biological/resource paths come from
 # SHORT_READ_SITE_CONFIG; see DEPLOYMENT.md. This profile requires the matching
-# ZSlurm allocation-scratch candidate and its ZSLURM_SCRATCH_DIR contract.
+# ZSlurm allocation-scratch release pinned in deployment/component-lock.yaml
+# and its ZSLURM_SCRATCH_DIR contract.
 use-conda: true
 use-apptainer: true
 conda-prefix: /project/holstegelab/Software/short_read_pipeline/conda

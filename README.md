@@ -140,9 +140,11 @@ configuration; examples live under `config/sites/`. Tokens, private-key
 contents and passwords remain outside the repository and public resource
 archive.
 
-Spider path configuration and the allocation-scratch implementation are
-present in the portability release candidate. Production remains blocked on
-the final manager/worker, storage, tool and small biological canaries listed in
+Spider path configuration and the allocation-scratch implementation are part
+of the portability release on `main`. Real Spider pilots have validated
+manager/worker RPC, lease resize, isolated scratch cleanup and a paired-FASTQ
+preprocessing DAG. Production remains blocked on the full alignment/calling,
+storage, tool, restart and Apptainer canaries listed in
 [DEPLOYMENT.md](DEPLOYMENT.md). The [portability plan](PORTABILITY_PLAN.md)
 records the dependency inventory and remaining acceptance criteria.
 

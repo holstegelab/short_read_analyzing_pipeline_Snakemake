@@ -3,8 +3,8 @@ created: 2026-09-17
 
 pipeline:
   repository: https://github.com/holstegelab/short_read_analyzing_pipeline_Snakemake.git
-  release_ref: codex-spider-portability-2026-09-17.1
-  upstream_base: c386a7d9e29fb06216a256b15d37bca1d9ed05d9
+  release_ref: codex-spider-portability-2026-09-17.2
+  upstream_base: dc6cd25e841efb66d64b440ba16583a634c1377a
   fused_cleanup_rebased_commit: 8720c46cd43e52a7a97833334c7a34d8bee85cb5
 
 snakemake:

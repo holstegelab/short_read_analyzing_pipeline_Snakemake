@@ -15,7 +15,7 @@ historical duplicate-rule bypass, that fork contains independent fixes used by
 this workflow, including checkpoint-safe temp cleanup, Conda support for
 `run:` rules, incomplete-metadata cleanup, and the symlinked-working-directory
 Apptainer bind. This list is not a replacement for the fork history. The
-workflow no longer needs duplicate rule names, so the release candidate
+workflow no longer needs duplicate rule names, so the pinned release revision
 restores only that validation on top of the pinned fork commit; it does not
 rebase the deployment onto stock Snakemake.
 
@@ -185,7 +185,7 @@ The Spider profile is [`profiles/spider/config.yaml`](profiles/spider/config.yam
 It intentionally has no `/scratch-node` bind. `partition=compute` is a logical
 ZSlurm job class, not a physical Spider partition.
 
-The scratch release candidate now discovers Spider's allocation `$TMPDIR`,
+The pinned ZSlurm release discovers Spider's allocation `$TMPDIR`,
 gives every ZSlurm child a private directory through
 `ZSLURM_SCRATCH_DIR`, rewrites all ordinary temp variables to that directory,
 and cleans only that child directory. Partial pilots advertise at most 100 GiB
@@ -202,10 +202,12 @@ executor. Its output FASTQs passed gzip validation and the expected read/base
 counts. The adapter rule used its normal five-core claim; only its walltime was
 reduced to fit Spider's 30-minute `short` limit.
 
-This is not yet a full alignment/calling production certification. The account
-used for the canary could not read the installed CardSeq reference/software
-tree, so alignment, DeepVariant, dCache writes, failure/restart and Apptainer
-still require site-owned canaries before enabling autogrow or a cohort run.
+This is not yet a full alignment/calling production certification. The canary
+account could not read the pre-existing resource/software tree under
+`/project/cardseq`, which belongs to another Spider project; CardSeq is not a
+pipeline component. Alignment, DeepVariant, dCache writes, failure/restart and
+Apptainer therefore still require site-owned canaries before enabling autogrow
+or a cohort run.
 
 Snellius archive sources additionally require its `daget`, `dals` and
 `darelease` commands. On Spider, use a tested dCache/S3 route unless an

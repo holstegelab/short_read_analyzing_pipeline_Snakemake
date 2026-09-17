@@ -1,20 +1,22 @@
 # Release baseline
 
-This checkout freezes the fused-only workflow on the current upstream main
-line and makes installation-specific paths explicit. It is prepared in the
-isolated branch `codex/spider-portability-20260917`; it does not alter a
-running Snellius workflow.
+This release freezes the fused-only workflow on the upstream main line and
+makes installation-specific paths explicit. It was merged to `main` after the
+isolated Snellius and Spider canaries. A merge does not replace code already
+loaded by running Snakemake controllers or ZSlurm managers; deploying it still
+requires an explicit checkout/update and, for ZSlurm, a planned new manager.
 
 The machine-readable component pins and resource archive hashes are in
 [`deployment/component-lock.yaml`](deployment/component-lock.yaml). The
-immutable tag `codex-spider-portability-2026-09-17` identifies the tested
-Spider deployment candidate; use the exact component commits in the lock
+immutable tag `codex-spider-portability-2026-09-17.2` identifies the merged,
+tested portability release; use the exact component commits in the lock
 rather than the moving heads of their repositories.
 
 ## Scope of this baseline
 
-- Current `origin/main` at `c386a7d`, including the latest gCNV analysis and
-  DeepVariant packaging changes.
+- Pre-merge `origin/main` at `dc6cd25`, retaining the resource audit anchored
+  at `c386a7d`, plus the active-storage fusion and portability commits listed
+  in this release history.
 - The reviewed fused-only cleanup, rebased as `8720c46`; predecessor rule
   implementations remain removed.
 - Site configuration schema 1, loaded before `common` and `constants` in both
@@ -53,11 +55,15 @@ These checks validate unchanged Snellius defaults, explicit Snellius site
 configuration, Spider path resolution and worker environment transport. They
 are not an end-to-end Spider certification.
 
-The Spider portability candidate implements the allocation-scratch contract
+The Spider portability release implements the allocation-scratch contract
 described here. Its publication run passed **195 tests with 25 skips**, and
-ZSlurm passed **161 tests**. It also has a real Spider allocation resolver
-canary, but still needs a complete ZSlurm manager/worker and biological smoke
-run before production.
+ZSlurm passed **162 tests**. Real Spider pilots subsequently exercised the
+manager/chief RPC, dynamic lease resize, isolated scratch cleanup and a
+two-rule paired-FASTQ preprocessing DAG. The same DAG completed on Snellius
+with the preceding Snakemake fork commit `83c79c1d`, confirming that existing
+installations do not require an immediate Snakemake update. Full alignment,
+DeepVariant, dCache publication, restart and Apptainer canaries are still
+required before Spider production.
 Archive commands (`daget`, `dals`, `darelease`) remain Snellius-only unless a
 target backend is installed and tested.
 
