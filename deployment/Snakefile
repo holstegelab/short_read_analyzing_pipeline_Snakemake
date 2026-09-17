@@ -1,6 +1,12 @@
 """Sample-independent creation of the pipeline's software environments."""
 
 from pathlib import Path
+import sys
+
+
+PIPELINE_ROOT = Path(workflow.basedir).parent.resolve()
+if str(PIPELINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PIPELINE_ROOT))
 
 from site_config import configure as configure_site
 
@@ -11,7 +17,6 @@ if SITE.source is not None:
         "SHORT_READ_SITE_CONFIG"
 
 
-PIPELINE_ROOT = Path(workflow.basedir).parent.resolve()
 ENVIRONMENT_FILES = {
     "preprocess": PIPELINE_ROOT / "envs/preprocess.yaml",
     "align_fused": PIPELINE_ROOT / "envs/align_fused.yaml",

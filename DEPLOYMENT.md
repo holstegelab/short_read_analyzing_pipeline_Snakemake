@@ -111,6 +111,7 @@ Snakefile in an empty clone: with no sample jobs in its DAG, that command has no
 environments to create.
 
 ```bash
+cd /absolute/path/to/short_read_analyzing_pipeline_Snakemake
 export SHORT_READ_SITE_CONFIG=/absolute/protected/path/spider.yaml
 CONDA_PREFIX_ROOT=$(python -c \
   'from site_config import configure; print(configure().values["conda_prefix"])')
@@ -118,6 +119,11 @@ snakemake --snakefile deployment/Snakefile --cores 1 --use-conda \
   --conda-prefix "$CONDA_PREFIX_ROOT" --conda-create-envs-only \
   --config END_POINT=gVCF caller=Deepvariant
 ```
+
+The deployment Snakefile also resolves its repository modules when passed by
+absolute path from another working directory. Changing to the repository root
+above additionally keeps its `.deployment/` bookkeeping out of a cohort run
+directory.
 
 The core deployment creates eight environments regardless of sample count.
 Add `deployment_groups=gcnv`, `pca`, `delly`, `legacy`, or a comma-separated

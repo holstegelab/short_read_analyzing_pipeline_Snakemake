@@ -2,14 +2,14 @@
 
 This checkout freezes the fused-only workflow on the current upstream main
 line and makes installation-specific paths explicit. It is prepared in the
-isolated branch `codex/spider-release-baseline-20260914`; it does not alter a
+isolated branch `codex/spider-portability-20260917`; it does not alter a
 running Snellius workflow.
 
 The machine-readable component pins and resource archive hashes are in
-[`deployment/component-lock.yaml`](deployment/component-lock.yaml). The local
-tag `codex-spider-portability-baseline-2026-09-14` identifies the tested final
-pipeline commit. The tag and branch must be pushed deliberately before another
-site can fetch them.
+[`deployment/component-lock.yaml`](deployment/component-lock.yaml). The
+immutable tag `codex-spider-portability-2026-09-17` identifies the tested
+Spider deployment candidate; use the exact component commits in the lock
+rather than the moving heads of their repositories.
 
 ## Scope of this baseline
 
@@ -33,7 +33,8 @@ production release or generate platform locks before long-term archival.
 
 ## Validation boundary
 
-The final pipeline run passed **169 tests with no failures or skips** while
+The original baseline pipeline run passed **169 tests with no failures or
+skips** while
 comparing representative complete DAGs and real adapter outputs against a
 fresh `c386a7d` archive. A separate explicit-Snellius-site run passed the real
 root-workflow/worker-reparse checks. `git diff --check` passed.
@@ -52,10 +53,11 @@ These checks validate unchanged Snellius defaults, explicit Snellius site
 configuration, Spider path resolution and worker environment transport. They
 are not an end-to-end Spider certification.
 
-The later Spider portability candidate implements the allocation-scratch
-contract described here without changing this historical baseline tag. It has
-unit coverage plus a real Spider allocation resolver canary, but still needs a
-complete ZSlurm manager/worker and biological smoke run before production.
+The Spider portability candidate implements the allocation-scratch contract
+described here. Its publication run passed **195 tests with 25 skips**, and
+ZSlurm passed **161 tests**. It also has a real Spider allocation resolver
+canary, but still needs a complete ZSlurm manager/worker and biological smoke
+run before production.
 Archive commands (`daget`, `dals`, `darelease`) remain Snellius-only unless a
 target backend is installed and tested.
 

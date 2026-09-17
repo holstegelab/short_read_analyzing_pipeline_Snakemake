@@ -1,8 +1,8 @@
 # Dependency inventory and Spider/ZSlurm migration plan
 
 Date: 2026-09-07; implementation update: 2026-09-17. Steps 1 and 2 and the code
-portion of step 3 now have isolated release implementations and documentation;
-they are not yet pushed or deployed. The workflow is still **not end-to-end
+portion of step 3 now have isolated, published release candidates and
+documentation; they are not deployed. The workflow is still **not end-to-end
 tested on Spider**. The running pipelines and scheduler are not being
 reconfigured.
 
