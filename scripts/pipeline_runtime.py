@@ -102,6 +102,33 @@ def executable(value: str) -> str:
     return str(Path(path).resolve())
 
 
+def deepvariant_executable(value: str) -> str:
+    """Validate and resolve a prepared native DeepVariant launcher.
+
+    The native runtime is installed separately from the rule's Conda
+    environment.  Keep this check at execution/preflight time so Snakemake can
+    construct the workflow DAG and create Conda environments before the native
+    runtime has been prepared.
+    """
+    if os.sep in value:
+        runner = Path(value).expanduser()
+    else:
+        resolved = shutil.which(value)
+        runner = Path(resolved) if resolved else Path(value)
+    prefix = runner.parent.parent
+    ready = prefix / ".deepvariant-native.ready"
+    if (
+        not ready.is_file()
+        or not runner.is_file()
+        or not os.access(runner, os.X_OK)
+    ):
+        raise FileNotFoundError(
+            f"DeepVariant native runtime is incomplete at {prefix}. "
+            "Run scripts/prepare_deepvariant_native.py --prefix PATH first."
+        )
+    return str(runner.resolve())
+
+
 def _atomic_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)

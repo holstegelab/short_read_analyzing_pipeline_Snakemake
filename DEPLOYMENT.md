@@ -111,20 +111,28 @@ the reproducibility inputs first:
 sha256sum -c deployment/environment-inputs.sha256
 ```
 
-Use the sample-independent deployment Snakefile to create the environments for
-the selected endpoints. Do not run `--conda-create-envs-only` against the main
-Snakefile in an empty clone: with no sample jobs in its DAG, that command has no
-environments to create.
+The main workflow is the software-environment manifest. Run environment
+creation from a configured cohort directory containing its sample TSV and
+sidecars; the selected endpoint and the real DAG then determine exactly which
+environments are required. An empty directory has no sample jobs and therefore
+no environments to create. It is also safe to omit this explicit preparation:
+the normal `--use-conda` workflow invocation creates missing environments.
 
 ```bash
-cd /absolute/path/to/short_read_analyzing_pipeline_Snakemake
+PIPELINE=/absolute/path/to/short_read_analyzing_pipeline_Snakemake
+cd /absolute/path/to/configured/cohort-run
 export SHORT_READ_SITE_CONFIG=/absolute/protected/path/spider.yaml
-CONDA_PREFIX_ROOT=$(python -c \
+CONDA_PREFIX_ROOT=$(PYTHONPATH="$PIPELINE" python -c \
   'from site_config import configure; print(configure().values["conda_prefix"])')
-snakemake --snakefile deployment/Snakefile --cores 1 --use-conda \
+snakemake --snakefile "$PIPELINE/Snakefile" --cores 1 --use-conda \
   --conda-prefix "$CONDA_PREFIX_ROOT" --conda-create-envs-only \
   --config END_POINT=gVCF caller=Deepvariant
 ```
+
+The native DeepVariant runtime is deliberately not inspected while the DAG is
+built. It can therefore be prepared after the Conda environments. A normal
+workflow execution validates it once on the controller before submitting any
+DeepVariant jobs; the fused runner validates it again before use.
 
 On Spider, a non-interactive Bash descended from an SSH login can reload the
 Conda function from `.bashrc`. If that function still points at an old base
@@ -136,7 +144,7 @@ controller without the SSH startup markers and use its absolute executable:
 CONTROLLER=/absolute/path/to/controller-environment
 env -u BASH_ENV -u SSH_CLIENT -u SSH_CONNECTION -u SSH_TTY \
   PATH="$CONTROLLER/bin:$PATH" \
-  "$CONTROLLER/bin/snakemake" --snakefile deployment/Snakefile --cores 1 \
+  "$CONTROLLER/bin/snakemake" --snakefile "$PIPELINE/Snakefile" --cores 1 \
   --use-conda --conda-prefix "$CONDA_PREFIX_ROOT" \
   --conda-create-envs-only --config END_POINT=gVCF caller=Deepvariant
 ```
@@ -144,15 +152,11 @@ env -u BASH_ENV -u SSH_CLIENT -u SSH_CONNECTION -u SSH_TTY \
 Verify both `"$CONTROLLER/bin/conda" --version` and the Conda version reported
 by Snakemake; merely checking `which conda` does not expose a shell function.
 
-The deployment Snakefile also resolves its repository modules when passed by
-absolute path from another working directory. Changing to the repository root
-above additionally keeps its `.deployment/` bookkeeping out of a cohort run
-directory.
-
-The core deployment creates eight environments regardless of sample count.
-Add `deployment_groups=gcnv`, `pca`, `delly`, `legacy`, or a comma-separated
-combination when those optional endpoints are required; `deployment_groups=all`
-selects every declared environment. Every selected `*.post-deploy.sh` runs.
+There is intentionally no second deployment Snakefile or duplicated list of
+environments. To prepare another endpoint, invoke the main Snakefile with that
+endpoint against a representative configured cohort. Every `*.post-deploy.sh`
+belonging to an environment selected by that DAG runs when the environment is
+first created.
 Important post-deploy behavior includes the pinned patched DRAGMAP and KMC
 builds, GATK 4.5 installation and GATK-gCNV Python setup. `GATK_CNV_ROOT` is
 derived from the selected site software root.

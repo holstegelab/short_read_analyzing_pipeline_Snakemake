@@ -120,6 +120,21 @@ def test_root_workflow_lists_only_supported_rule_implementations(tmp_path, calle
         assert "DeepVariant_apptainer_all" in output
 
 
+def test_deepvariant_dag_build_does_not_require_prepared_native_runtime(tmp_path):
+    sample = fastq_fixture(tmp_path)
+    output = command(
+        tmp_path,
+        "--dry-run",
+        f"deepvariant/gVCF/A0/{sample}.A0.wg.vcf.gz",
+        "--config",
+        "END_POINT=gVCF",
+        "caller=Deepvariant",
+        "chrM=No",
+        f"deepvariant_native_prefix={tmp_path / 'not-installed'}",
+    )
+    assert "rule deepvariant_phasing_fused:" in output
+
+
 def alignment_fixture(root, kind, groups, erf=False):
     sample = "TEST_A"
     reference = root / "reference.fa"

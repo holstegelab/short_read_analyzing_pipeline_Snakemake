@@ -17,6 +17,7 @@ from pipeline_runtime import (
     _atomic_json,
     _atomic_publish,
     assigned_scratch,
+    deepvariant_executable,
     executable,
     lease_preflight,
     shrink_lease,
@@ -150,7 +151,7 @@ def main() -> int:
     ):
         if not Path(raw).is_file():
             raise FileNotFoundError(raw)
-    deepvariant = executable(args.deepvariant_runner)
+    deepvariant = deepvariant_executable(args.deepvariant_runner)
     whatshap = executable(args.whatshap)
     bcftools = executable(args.bcftools)
     bgzip = executable(args.bgzip)

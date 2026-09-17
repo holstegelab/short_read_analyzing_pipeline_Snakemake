@@ -493,12 +493,40 @@ from restart_state import verify_rule_filters
 verify_rule_filters(workflow.rules, REUSED_SAMPLES)
 
 onstart:
+    import os
+
+    # DeepVariant is a separately prepared native runtime; CONDA_VCF only
+    # supplies the wrapper and post-processing tools.  Validate the runtime
+    # once on the controller, after DAG construction but before any jobs are
+    # submitted.  Worker Snakemake processes have is_main_process=False, and
+    # --conda-create-envs-only does not execute onstart, so neither path turns
+    # this preflight back into a deployment circularity.
+    if workflow.is_main_process and any(
+        job.rule.name == "deepvariant_phasing_fused"
+        for job in workflow.dag.needrun_jobs()
+    ):
+        from pathlib import Path
+        from scripts.pipeline_runtime import deepvariant_executable
+        native_prefix = config.get(
+            "deepvariant_native_prefix",
+            os.environ.get("DEEPVARIANT_NATIVE_PREFIX"),
+        )
+        if not native_prefix:
+            raise ValueError(
+                "DeepVariant requires --config "
+                "deepvariant_native_prefix=/path/to/runtime or the "
+                "DEEPVARIANT_NATIVE_PREFIX environment variable"
+            )
+        deepvariant_executable(
+            str(Path(native_prefix).expanduser() / "bin/run_deepvariant")
+        )
+
     # Reclaim temp files that Snakemake's temp() GC leaves behind across a RESTART.
     # A consuming job that already ran in a prior invocation is skipped on rerun, so
     # its temp outputs are never collected and pile up on active storage. Two gates,
     # each removing only files whose consumers are provably done, and NEVER touching
     # the .started/.finished/.copied markers themselves. Wrapped so it can never abort.
-    import glob, os, shutil
+    import glob, shutil
     def _rm(path):
         try:
             if os.path.isdir(path):
