@@ -19,6 +19,12 @@ workflow no longer needs duplicate rule names, so the release candidate
 restores only that validation on top of the pinned fork commit; it does not
 rebase the deployment onto stock Snakemake.
 
+The pipeline remains compatible with the immediately preceding fork revision
+`83c79c1d3d8dfd68bc42f4ac9ffa3dbb97d8c8ed`: the Snellius release canary
+built its DAG and completed real worker jobs with that revision. Updating to
+the revision in the component lock is nevertheless recommended because it
+restores duplicate-rule validation and prevents the ambiguity from returning.
+
 Install the Snakemake fork and executor plugin into the same controller
 environment. Install ZSlurm into the environment used by the manager and pilot
 chiefs. Confirm imports, rather than assuming the checkout is the imported code:
@@ -120,6 +126,24 @@ snakemake --snakefile deployment/Snakefile --cores 1 --use-conda \
   --config END_POINT=gVCF caller=Deepvariant
 ```
 
+On Spider, a non-interactive Bash descended from an SSH login can reload the
+Conda function from `.bashrc`. If that function still points at an old base
+Conda, it takes precedence over a newer executable at the front of `PATH`.
+Snakemake requires Conda 24.7.1 or newer. Update the login Conda, or launch the
+controller without the SSH startup markers and use its absolute executable:
+
+```bash
+CONTROLLER=/absolute/path/to/controller-environment
+env -u BASH_ENV -u SSH_CLIENT -u SSH_CONNECTION -u SSH_TTY \
+  PATH="$CONTROLLER/bin:$PATH" \
+  "$CONTROLLER/bin/snakemake" --snakefile deployment/Snakefile --cores 1 \
+  --use-conda --conda-prefix "$CONDA_PREFIX_ROOT" \
+  --conda-create-envs-only --config END_POINT=gVCF caller=Deepvariant
+```
+
+Verify both `"$CONTROLLER/bin/conda" --version` and the Conda version reported
+by Snakemake; merely checking `which conda` does not expose a shell function.
+
 The deployment Snakefile also resolves its repository modules when passed by
 absolute path from another working directory. Changing to the repository root
 above additionally keeps its `.deployment/` bookkeeping out of a cohort run
@@ -171,10 +195,17 @@ cross-site pipeline guess. The nonexistent physical `staging` partition and
 its autogrow path are disabled. GPFS RDMA telemetry is disabled for CephFS.
 
 A real Spider `short` allocation confirmed that the pipeline resolves the
-exported child path below the allocation's private `/tmp` XFS bind. This is not
-yet an end-to-end production certification: run the manager/worker RPC, lease,
-failure/restart and Apptainer canaries below before enabling autogrow or a
-cohort run.
+exported child path below the allocation's private `/tmp` XFS bind. A second
+canary exercised manager/worker RPC, dynamic lease resize, private scratch
+cleanup and a real two-job paired-FASTQ preprocessing DAG through the native
+executor. Its output FASTQs passed gzip validation and the expected read/base
+counts. The adapter rule used its normal five-core claim; only its walltime was
+reduced to fit Spider's 30-minute `short` limit.
+
+This is not yet a full alignment/calling production certification. The account
+used for the canary could not read the installed CardSeq reference/software
+tree, so alignment, DeepVariant, dCache writes, failure/restart and Apptainer
+still require site-owned canaries before enabling autogrow or a cohort run.
 
 Snellius archive sources additionally require its `daget`, `dals` and
 `darelease` commands. On Spider, use a tested dCache/S3 route unless an

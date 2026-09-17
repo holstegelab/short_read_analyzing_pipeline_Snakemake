@@ -3,7 +3,7 @@ created: 2026-09-17
 
 pipeline:
   repository: https://github.com/holstegelab/short_read_analyzing_pipeline_Snakemake.git
-  release_ref: codex-spider-portability-2026-09-17
+  release_ref: codex-spider-portability-2026-09-17.1
   upstream_base: c386a7d9e29fb06216a256b15d37bca1d9ed05d9
   fused_cleanup_rebased_commit: 8720c46cd43e52a7a97833334c7a34d8bee85cb5
 
@@ -14,7 +14,7 @@ snakemake:
 
 zslurm:
   repository: https://github.com/holstegelab/zslurm.git
-  commit: ae044e0ea05500389b57687e994567f3e9a87e54
+  commit: de0d2f295d411bab0bfd932ad0f7955ebd1cf85f
 
 snakemake_executor_plugin_zslurm:
   repository: https://github.com/holstegelab/snakemake-executor-plugin-zslurm.git
