@@ -13,10 +13,6 @@ import shutil
 from pathlib import Path
 
 
-module Tools:
-    snakefile: 'Tools.smk'
-    config: config
-use rule * from Tools
 mode = config.get("computing_mode", "WES")
 DEEPVARIANT_APPTAINER = config.get("deepvariant_apptainer_output", f"{DEEPVARIANT}_apptainer")
 DEEPVARIANT_NATIVE_PREFIX = config.get(
@@ -130,7 +126,13 @@ rule extract_and_tar_deepvariant_level2_wgs:
     resources:
         time = get_time('extract_and_tar_deepvariant_level2_wgs'),
         mem_mb=4000,
-        n=lambda wildcards, threads: str(threads)
+        n=lambda wildcards, threads: str(threads),
+        ssd_use="possible",
+        # One level-2 region is a fraction of its level-1 gVCFs; scratch holds
+        # the extracted files and their uncompressed tar at the same time.
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.gvcfs, factor=0.30, overhead_gb=2, minimum_gb=2
+        )
     script:
         "scripts/extract_and_tar_deepvariant_level2.py"
 
@@ -153,7 +155,11 @@ rule extract_and_tar_deepvariant_level2_wes:
     resources:
         time = get_time('extract_and_tar_deepvariant_level2_wes'),
         mem_mb=4000,
-        n=lambda wildcards, threads: str(threads)
+        n=lambda wildcards, threads: str(threads),
+        ssd_use="possible",
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.gvcfs, factor=0.30, overhead_gb=2, minimum_gb=2
+        )
     script:
         "scripts/extract_and_tar_deepvariant_level2.py"
 

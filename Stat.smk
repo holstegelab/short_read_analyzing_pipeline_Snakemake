@@ -20,18 +20,6 @@ onsuccess: shell("rm -fr logs/Stats/*")
 wildcard_constraints:
     sample=PROCESSING_SAMPLE_PATTERN
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-
-use rule * from Aligner
-
-module Tools:
-    snakefile: 'Tools.smk'
-    config: config
-
-use rule BedToIntervalList from Tools
-
 ##THIS FUNCION IS COPIED ALSO in Aligner.smk and Kraken.smk
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
     """If samples are on tape, we do not have sample readgroup info.
@@ -50,7 +38,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = Aligner.checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']

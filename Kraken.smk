@@ -12,12 +12,6 @@ wildcard_constraints:
     readid=r'R1|R2'
     # readgroup="[\w\d_\-@]+"
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-
-use rule * from Aligner
-
 rule kraken_all:
     input:
         expand("{kraken}/{sample}.kraken_summary.tsv", sample=sample_names, kraken=KRAKEN)    
@@ -147,7 +141,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = Aligner.checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']

@@ -43,24 +43,44 @@ def assigned_scratch(
 ) -> Path:
     """Resolve this job's scratch root; never borrow another job's directory.
 
-    Required-SSD callers omit ``shared_fallback`` and retain the strict
-    ``/scratch-node`` contract.  Rules with ``ssd_use=possible`` explicitly
-    supply a workflow-local shared directory for normal compute nodes.
+    ZSlurm exports ``ZSLURM_SCRATCH_DIR`` for the individual child job.  The
+    legacy Snellius path and ``SLURM_TMPDIR`` keep direct Slurm execution
+    working where the scheduler provides a dedicated variable. Generic
+    ``TMPDIR`` is deliberately not guessed: on one site it can be local SSD,
+    while on another it can be the node's small system filesystem. ZSlurm
+    normalizes either layout through its explicit child-job variable.
+
+    Required-SSD callers omit ``shared_fallback``.  Rules with
+    ``ssd_use=possible`` explicitly supply a workflow-local shared directory.
     """
-    candidate: Path | None = Path(explicit) if explicit else None
-    if candidate is None:
-        user = os.environ.get("USER")
-        job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID")
-        if user and job_id:
-            candidate = Path(f"/scratch-node/{user}.{job_id}")
-        if candidate is None or not candidate.is_dir():
-            slurm_tmp = os.environ.get("SLURM_TMPDIR")
-            if slurm_tmp:
-                resolved = Path(slurm_tmp).resolve()
-                if resolved.is_relative_to(Path("/scratch-node")):
-                    candidate = resolved
-    if candidate is not None and candidate.is_dir() and os.access(candidate, os.W_OK):
-        return candidate.resolve()
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(explicit))
+
+    assigned = os.environ.get("ZSLURM_SCRATCH_DIR")
+    if assigned:
+        candidates.append(Path(assigned))
+
+    user = os.environ.get("USER")
+    job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID")
+    if user and job_id:
+        candidates.append(Path(f"/scratch-node/{user}.{job_id}"))
+
+    slurm_tmp = os.environ.get("SLURM_TMPDIR")
+    if slurm_tmp:
+        candidates.append(Path(slurm_tmp))
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_dir() and os.access(resolved, os.W_OK):
+            return resolved
 
     if shared_fallback:
         fallback = Path(shared_fallback)
@@ -68,12 +88,11 @@ def assigned_scratch(
         if fallback.is_dir() and os.access(fallback, os.W_OK):
             return fallback.resolve()
 
-    if candidate is None or not candidate.is_dir() or not os.access(candidate, os.W_OK):
-        raise RuntimeError(
-            "ssd_use=required but this job has no writable assigned "
-            "/scratch-node directory"
-        )
-    return candidate.resolve()
+    raise RuntimeError(
+        "ssd_use=required but this job has no writable assigned scratch "
+        "directory (ZSLURM_SCRATCH_DIR, /scratch-node job path, "
+        "or SLURM_TMPDIR)"
+    )
 
 
 def executable(value: str) -> str:
@@ -487,5 +506,3 @@ def acquire_lease(
         file=sys.stderr,
     )
     return lease
-
-

@@ -6,17 +6,6 @@ from common import *
 
 onsuccess: shell("rm -rf logs/combineGVCF/*")
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-
-module gVCF:
-    snakefile: 'gVCF.smk'
-    config: config
-
-use rule * from gVCF
-
-
 rule Combine_gVCF_all:
     input:
         expand(pj(GVCF,"MERGED/{samplefile}.{region}.wg.vcf.gz"),samplefile=SAMPLE_FILES,region=level2_regions),
@@ -54,5 +43,4 @@ rule combinegvcfs:
 
     shell:
         """{gatk} CombineGVCFs --java-options "-Xmx{resources.mem_mb}M"  -G StandardAnnotation -G AS_StandardAnnotation {params.inputs} -O {output} -R {REF_MALE} -L {input.interval} 2> {log}"""
-
 

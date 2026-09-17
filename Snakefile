@@ -47,12 +47,18 @@ module DBImport:
     snakefile: 'DBImport.smk'
     config: config
 
-# module Genotype:
-#     snakefile: 'Genotype.smk'
-#     config: config
-# module VQSR:
-#     snakefile: 'VQSR.smk'
-#     config: config
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+
+use rule * from Tools
+
+module Genotype:
+    snakefile: 'Genotype.smk'
+    config: config
+module VQSR:
+    snakefile: 'VQSR.smk'
+    config: config
 module Stat:
     snakefile: 'Stat.smk'
     config: config
@@ -102,7 +108,6 @@ END_RULE = []
 CLEAN_RULE = []
 chrM_flag = config.get("chrM","Yes")
 if chrM_flag == "Yes":
-    use rule * from chrM_analysis
     chrM_rule = rules.chrM_analysis_all.input
 else:
     chrM_rule = []
@@ -146,8 +151,6 @@ if end_point == "gVCF":
 
         use rule * from Kraken
         
-        use rule * from Stat
-
         rule finished_sample:
             """Finish processing a sample. 
 
@@ -204,8 +207,6 @@ if end_point == "gVCF":
         use rule * from Deepvariant
 
         use rule * from Kraken
-
-        use rule * from Stat
 
         rule finished_sample:
             """Finish processing a sample. 
@@ -291,7 +292,10 @@ elif end_point == "Genotype" or end_point == "Genotyper":
               "* To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller' \n "
               "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
     elif gvcf_caller == "BOTH":
-        use rule * from Genotype
+        # Genotype and GLnexus have distinct annotation implementations with
+        # several historical generic rule names. Keep both DAGs, but give the
+        # GATK branch explicit names instead of relying on global overwrite.
+        use rule * from Genotype as gatk_*
 
         use rule * from Deepvariant
 
@@ -317,14 +321,11 @@ elif end_point == "Combine":
     elif gVCF_combine_method == "COMBINE_GVCF":
         use rule * from gVCF
 
-        END_RULE = rules.Combine_gVCF_all.input
-
         use rule * from Combine_gVCF
 
+        END_RULE = rules.Combine_gVCF_all.input
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
-        use rule * from Aligner
-
         if gvcf_caller == "HaplotypeCaller":
             use rule * from gVCF
 
@@ -422,8 +423,6 @@ elif end_point == "VQSR" or end_point == "VCF":
 
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
-        use rule * from Aligner
-
         if gvcf_caller == "HaplotypeCaller":
             use rule * from gVCF
 
@@ -444,7 +443,7 @@ elif end_point == "VQSR" or end_point == "VCF":
                   "* To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'"
                   "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
         elif gvcf_caller == "BOTH":
-            use rule * from Genotype
+            use rule * from Genotype as gatk_*
 
             use rule * from Deepvariant
 

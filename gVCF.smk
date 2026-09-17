@@ -4,15 +4,6 @@ onsuccess: shell("rm -fr logs/gVCF/*")
 wildcard_constraints:
     sample=PROCESSING_SAMPLE_PATTERN,
 
-module Tools:
-    snakefile:
-        "Tools.smk"
-    config:
-        config
-
-use rule * from Tools
-
-
 rule gVCF_all:
     input:
         expand("{gvcf}/{sample}.done", sample=sample_names, gvcf=GVCF),

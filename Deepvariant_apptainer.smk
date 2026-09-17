@@ -19,6 +19,7 @@ rule deepvariant_apptainer:
             haploid_contigs=lambda wildcards: 'chrX,chrX_KI270880v1_alt,chrX_KI270881v1_alt,chrX_KI270913v1_alt,chrY,chrY_KI270740v1_random' if wildcards['region'].endswith("H") else 'chrNONE',
             skipsex = lambda wildcards, input: int(get_validated_sex_file(input) == 'female' and wildcards['region'].startswith('Y')),
             inter_dir = pj(DEEPVARIANT_APPTAINER,'DV_intermediate'),
+            scratch_resolver=srcdir('scripts/resolve_scratch.py'),
             # check = CHECKEMPTY
     container: 'docker://google/deepvariant:1.9.0'
     resources:
@@ -38,12 +39,11 @@ rule deepvariant_apptainer:
         """
         if [ {params.skipsex} -eq 0 ]
         then
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
             JOB_ID="${{SLURM_JOB_ID}}"
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant_apptainer/$JOB_ID"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant_apptainer/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
+            TMP_SSD=$(python {params.scratch_resolver:q} --fallback {params.inter_dir:q})
+            RUNDIR_BASE="$TMP_SSD/deepvariant_apptainer/$JOB_ID"
             RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
             echo "SSD base: $TMP_SSD" >&2
             echo "RUNDIR_BASE: $RUNDIR_BASE" >&2
@@ -90,4 +90,3 @@ rule DeepVariant_apptainer_all:
 
 # python {params.check} {output.vcf}
 # python {params.check} {output.gvcf}
-

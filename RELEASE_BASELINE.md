@@ -52,11 +52,12 @@ These checks validate unchanged Snellius defaults, explicit Snellius site
 configuration, Spider path resolution and worker environment transport. They
 are not an end-to-end Spider certification.
 
-In particular, SSD-required production jobs must not be launched on Spider
-until the ZSlurm allocation-scratch contract is complete. Spider uses the
-allocation `$TMPDIR`; current chief/pipeline scratch discovery still contains
-`/scratch-node` assumptions. Archive commands (`daget`, `dals`, `darelease`)
-are also Snellius-only unless a target backend is installed and tested.
+The later Spider portability candidate implements the allocation-scratch
+contract described here without changing this historical baseline tag. It has
+unit coverage plus a real Spider allocation resolver canary, but still needs a
+complete ZSlurm manager/worker and biological smoke run before production.
+Archive commands (`daget`, `dals`, `darelease`) remain Snellius-only unless a
+target backend is installed and tested.
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the installation sequence and a
 readiness checklist.

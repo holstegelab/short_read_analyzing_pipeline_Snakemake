@@ -10,6 +10,15 @@ Clone the pipeline, Snakemake fork, ZSlurm and native executor into stable,
 shared locations visible to the controller and workers. Check out the pinned
 commits or the pipeline release tag; do not deploy from a moving default branch.
 
+Do not silently substitute stock Snakemake for the pinned fork. Besides the
+historical duplicate-rule bypass, that fork contains independent fixes used by
+this workflow, including checkpoint-safe temp cleanup, Conda support for
+`run:` rules, incomplete-metadata cleanup, and the symlinked-working-directory
+Apptainer bind. This list is not a replacement for the fork history. The
+workflow no longer needs duplicate rule names, so the release candidate
+restores only that validation on top of the pinned fork commit; it does not
+rebase the deployment onto stock Snakemake.
+
 Install the Snakemake fork and executor plugin into the same controller
 environment. Install ZSlurm into the environment used by the manager and pilot
 chiefs. Confirm imports, rather than assuming the checkout is the imported code:
@@ -96,10 +105,27 @@ the reproducibility inputs first:
 sha256sum -c deployment/environment-inputs.sha256
 ```
 
-Use Snakemake to create the environments for the selected endpoints so every
-matching `*.post-deploy.sh` runs. Important post-deploy behavior includes the
-pinned patched DRAGMAP and KMC builds, GATK 4.5 installation and GATK-gCNV
-Python setup. `GATK_CNV_ROOT` is derived from the selected site software root.
+Use the sample-independent deployment Snakefile to create the environments for
+the selected endpoints. Do not run `--conda-create-envs-only` against the main
+Snakefile in an empty clone: with no sample jobs in its DAG, that command has no
+environments to create.
+
+```bash
+export SHORT_READ_SITE_CONFIG=/absolute/protected/path/spider.yaml
+CONDA_PREFIX_ROOT=$(python -c \
+  'from site_config import configure; print(configure().values["conda_prefix"])')
+snakemake --snakefile deployment/Snakefile --cores 1 --use-conda \
+  --conda-prefix "$CONDA_PREFIX_ROOT" --conda-create-envs-only \
+  --config END_POINT=gVCF caller=Deepvariant
+```
+
+The core deployment creates eight environments regardless of sample count.
+Add `deployment_groups=gcnv`, `pca`, `delly`, `legacy`, or a comma-separated
+combination when those optional endpoints are required; `deployment_groups=all`
+selects every declared environment. Every selected `*.post-deploy.sh` runs.
+Important post-deploy behavior includes the pinned patched DRAGMAP and KMC
+builds, GATK 4.5 installation and GATK-gCNV Python setup. `GATK_CNV_ROOT` is
+derived from the selected site software root.
 
 The Git-ignored native tools must be built in the Python/htslib environment
 that runs preprocessing, not copied from another checkout or Python ABI:
@@ -129,15 +155,20 @@ The Spider profile is [`profiles/spider/config.yaml`](profiles/spider/config.yam
 It intentionally has no `/scratch-node` bind. `partition=compute` is a logical
 ZSlurm job class, not a physical Spider partition.
 
-Do not run the production Spider workflow yet. Step 3 of
-[`PORTABILITY_PLAN.md`](PORTABILITY_PLAN.md) remains required:
+The scratch release candidate now discovers Spider's allocation `$TMPDIR`,
+gives every ZSlurm child a private directory through
+`ZSLURM_SCRATCH_DIR`, rewrites all ordinary temp variables to that directory,
+and cleans only that child directory. Partial pilots advertise at most 100 GiB
+per allocated core, bounded again by actual filesystem free space. Generic
+`TMPDIR` discovery is enabled only in the Spider ZSlurm site file; it is not a
+cross-site pipeline guess. The nonexistent physical `staging` partition and
+its autogrow path are disabled. GPFS RDMA telemetry is disabled for CephFS.
 
-- chief discovery and propagation of the pilot allocation `$TMPDIR`;
-- a bounded allocation scratch capacity, including partial pilots;
-- unique child-job scratch roots and ownership-safe cleanup;
-- removal of remaining `/scratch-node` assumptions in selected rules;
-- replacement/disablement of the nonexistent physical `staging` partition;
-- real manager/worker RPC, lease and failure/restart smoke tests.
+A real Spider `short` allocation confirmed that the pipeline resolves the
+exported child path below the allocation's private `/tmp` XFS bind. This is not
+yet an end-to-end production certification: run the manager/worker RPC, lease,
+failure/restart and Apptainer canaries below before enabling autogrow or a
+cohort run.
 
 Snellius archive sources additionally require its `daget`, `dals` and
 `darelease` commands. On Spider, use a tested dCache/S3 route unless an

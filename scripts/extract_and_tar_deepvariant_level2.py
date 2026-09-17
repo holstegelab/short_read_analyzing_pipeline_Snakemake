@@ -12,21 +12,15 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from pipeline_runtime import assigned_scratch
+
 
 def writable_scratch(output_parent: Path) -> Path:
-    user = os.environ.get("USER", "")
-    job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID")
-    candidates = []
-    if user and job_id:
-        candidates.append(Path(f"/scratch-node/{user}.{job_id}"))
-    slurm_tmp = os.environ.get("SLURM_TMPDIR")
-    if slurm_tmp:
-        candidates.append(Path(slurm_tmp))
-    candidates.append(output_parent)
-    for candidate in candidates:
-        if candidate.is_dir() and os.access(candidate, os.W_OK):
-            return candidate
-    return output_parent
+    return assigned_scratch(shared_fallback=os.fspath(output_parent))
 
 
 def log(message):

@@ -52,7 +52,9 @@ def test_profile_records_failure_and_cleans_local_path(tmp_path):
 def test_assigned_scratch_requires_explicit_or_slurm_path(tmp_path, monkeypatch):
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     monkeypatch.delenv("SLURM_JOBID", raising=False)
+    monkeypatch.delenv("ZSLURM_SCRATCH_DIR", raising=False)
     monkeypatch.delenv("SLURM_TMPDIR", raising=False)
+    monkeypatch.delenv("TMPDIR", raising=False)
     with pytest.raises(RuntimeError, match="no writable assigned"):
         assigned_scratch()
     assert assigned_scratch(str(tmp_path)) == tmp_path.resolve()

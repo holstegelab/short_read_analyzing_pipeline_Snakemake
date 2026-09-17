@@ -25,7 +25,9 @@ def test_assigned_scratch_uses_shared_fallback_only_when_supplied(
 ):
     monkeypatch.setenv("USER", "zslurm-no-such-test-user")
     monkeypatch.setenv("SLURM_JOB_ID", "999999999")
+    monkeypatch.delenv("ZSLURM_SCRATCH_DIR", raising=False)
     monkeypatch.delenv("SLURM_TMPDIR", raising=False)
+    monkeypatch.delenv("TMPDIR", raising=False)
 
     with pytest.raises(RuntimeError, match="ssd_use=required"):
         fused_alignment.assigned_scratch()
@@ -35,6 +37,29 @@ def test_assigned_scratch_uses_shared_fallback_only_when_supplied(
         shared_fallback=str(fallback)
     ) == fallback.resolve()
     assert fallback.is_dir()
+
+
+def test_assigned_scratch_prefers_zslurm_child_directory(tmp_path, monkeypatch):
+    assigned = tmp_path / "engine" / "jobs" / "job-42"
+    assigned.mkdir(parents=True)
+    native_tmp = tmp_path / "native"
+    native_tmp.mkdir()
+    monkeypatch.setenv("ZSLURM_SCRATCH_DIR", str(assigned))
+    monkeypatch.setenv("SLURM_TMPDIR", str(native_tmp))
+
+    assert fused_alignment.assigned_scratch() == assigned.resolve()
+
+
+def test_assigned_scratch_does_not_guess_from_generic_tmpdir(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("ZSLURM_SCRATCH_DIR", raising=False)
+    monkeypatch.delenv("SLURM_TMPDIR", raising=False)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setenv("SLURM_JOB_ID", "41279611")
+
+    with pytest.raises(RuntimeError, match="no writable assigned"):
+        fused_alignment.assigned_scratch()
 
 
 def test_atomic_publish_moves_a_shared_filesystem_output(tmp_path):

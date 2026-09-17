@@ -22,25 +22,9 @@ SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_
 # extract all sample names from SAMPLEINFO dict to use it rule all
 sample_names = SAMPLEINFO.keys()
 
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-module gVCF:
-    snakefile: 'gVCF.smk'
-    config: config
-module DBImport:
-    snakefile: 'DBImport.smk'
-    config: config
-module Genotype:
-    snakefile: 'Genotype.smk'
-    config: config
-
-use rule * from Genotype
-
 mode = config.get("computing_mode", "WES")
 rule VQSR_all:
     input:
-        rules.Genotype_all.input,
         expand("{vcf}/VQSR/{chr}/Merged_after_VQSR_{chr}_{mode}.vcf",vcf=config['VCF_Final'], chr = main_chr, mode = mode),
     default_target: True
 
