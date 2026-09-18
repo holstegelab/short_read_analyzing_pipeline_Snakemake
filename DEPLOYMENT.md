@@ -101,56 +101,67 @@ CLI workflow settings still take precedence for their established keys. For
 example, `--config deepvariant_native_prefix=...` overrides the corresponding
 site default for that invocation.
 
-## 4. Create environments and native tools
+## 4. Bootstrap the site once
 
-Choose durable Conda and Apptainer prefixes. The supplied profiles contain the
-known project defaults; change them when the target project path differs. Check
-the reproducibility inputs first:
+This section is for the site administrator, not for every cohort run. Choose
+durable Conda and Apptainer prefixes in the site configuration and check the
+reproducibility inputs first:
 
 ```bash
 sha256sum -c deployment/environment-inputs.sha256
 ```
 
-The main workflow is the software-environment manifest. Run environment
-creation from a configured cohort directory containing its sample TSV and
-sidecars; the selected endpoint and the real DAG then determine exactly which
-environments are required. An empty directory has no sample jobs and therefore
-no environments to create. It is also safe to omit this explicit preparation:
-the normal `--use-conda` workflow invocation creates missing environments.
+Install a named, site-bound Snakemake profile once. The installer copies the
+Spider execution settings, records this pinned Snakefile, takes the Conda and
+Apptainer prefixes from the site configuration, passes that configuration to
+every controller/worker parse, and selects the production-safe `mtime` rerun
+trigger:
 
 ```bash
 PIPELINE=/absolute/path/to/short_read_analyzing_pipeline_Snakemake
+python "$PIPELINE/scripts/install_site_profile.py" \
+  --site-config /absolute/protected/path/spider.yaml \
+  --profile-name zslurm2
+```
+
+After that one-time step, both explicit environment preparation and normal
+workflow execution use the named profile. Run environment preparation from a
+configured cohort directory containing its sample TSV and sidecars; the real
+DAG determines exactly which environments are required. An empty directory has
+no sample jobs and therefore no environments to create. Explicit preparation
+is optional because a normal workflow invocation creates missing environments:
+
+```bash
 cd /absolute/path/to/configured/cohort-run
-export SHORT_READ_SITE_CONFIG=/absolute/protected/path/spider.yaml
-CONDA_PREFIX_ROOT=$(PYTHONPATH="$PIPELINE" python -c \
-  'from site_config import configure; print(configure().values["conda_prefix"])')
-snakemake --snakefile "$PIPELINE/Snakefile" --cores 1 --use-conda \
-  --conda-prefix "$CONDA_PREFIX_ROOT" --conda-create-envs-only \
+snakemake --profile zslurm2 --cores 1 --conda-create-envs-only \
   --config END_POINT=gVCF caller=Deepvariant
 ```
 
-The native DeepVariant runtime is deliberately not inspected while the DAG is
-built. It can therefore be prepared after the Conda environments. A normal
-workflow execution validates it once on the controller before submitting any
-DeepVariant jobs; the fused runner validates it again before use.
+The `preprocess` environment's post-deploy hook automatically builds
+`fastcheck`, `fastcheck_hts`, `bam_merge`, `bam_dechimer` and
+`fix_bam_rg_pairs` in an isolated temporary directory and atomically installs
+them into this pipeline checkout. Native-source checksums participate in the
+environment hash. Do not locate a hashed environment manually and do not run
+`conda run --prefix ... make`.
 
 On Spider, a non-interactive Bash descended from an SSH login can reload the
 Conda function from `.bashrc`. If that function still points at an old base
 Conda, it takes precedence over a newer executable at the front of `PATH`.
-Snakemake requires Conda 24.7.1 or newer. Update the login Conda, or launch the
-controller without the SSH startup markers and use its absolute executable:
+Snakemake requires Conda 24.7.1 or newer. This is a controller installation
+problem, not part of each pipeline invocation. Activate the intended
+controller and verify what it actually sees:
 
 ```bash
-CONTROLLER=/absolute/path/to/controller-environment
-env -u BASH_ENV -u SSH_CLIENT -u SSH_CONNECTION -u SSH_TTY \
-  PATH="$CONTROLLER/bin:$PATH" \
-  "$CONTROLLER/bin/snakemake" --snakefile "$PIPELINE/Snakefile" --cores 1 \
-  --use-conda --conda-prefix "$CONDA_PREFIX_ROOT" \
-  --conda-create-envs-only --config END_POINT=gVCF caller=Deepvariant
+source /absolute/path/to/controller-environment/bin/activate
+snakemake --version
+conda --version
+type -a conda
 ```
 
-Verify both `"$CONTROLLER/bin/conda" --version` and the Conda version reported
-by Snakemake; merely checking `which conda` does not expose a shell function.
+The controller may be a Python environment containing Snakemake while Conda is
+provided separately; it does not have to contain `bin/conda`. If `conda
+--version` is too old, update/fix the site's login Conda before continuing.
+Merely checking `which conda` does not expose a shell function.
 
 There is intentionally no second deployment Snakefile or duplicated list of
 environments. To prepare another endpoint, invoke the main Snakefile with that
@@ -160,20 +171,6 @@ first created.
 Important post-deploy behavior includes the pinned patched DRAGMAP and KMC
 builds, GATK 4.5 installation and GATK-gCNV Python setup. `GATK_CNV_ROOT` is
 derived from the selected site software root.
-
-The Git-ignored native tools must be built in the Python/htslib environment
-that runs preprocessing, not copied from another checkout or Python ABI:
-
-```bash
-conda run --prefix /path/to/resolved/preprocess-env \
-  make -C scripts all-hts PYTHON=python
-conda run --prefix /path/to/resolved/preprocess-env \
-  python -c 'import sys; sys.path.insert(0, "scripts"); import fastcheck, fastcheck_hts'
-```
-
-`all-hts` builds `fastcheck`, `fastcheck_hts`, `bam_merge`, `bam_dechimer` and
-`fix_bam_rg_pairs`. This release was tested from a fresh worktree, so those
-artifacts were not borrowed from the active pipeline checkout.
 
 Prepare native DeepVariant at its final prefix. Its launchers contain absolute
 paths and the directory must not be moved afterwards:
@@ -219,15 +216,19 @@ equivalent archive backend is installed.
 
 ## 6. Start only after the readiness checks pass
 
-For Snellius, an explicit site-configured invocation is:
+Once the site profile is installed, a normal cohort start is deliberately
+short and does not repeat any deployment paths:
 
 ```bash
-export SHORT_READ_SITE_CONFIG=/path/to/checkout/config/sites/snellius.yaml
-python -m snakemake \
-  --profile /path/to/checkout/profiles/zslurm \
-  --snakefile /path/to/checkout/Snakefile \
-  --config END_POINT=Genotype caller=Deepvariant Combine_gVCF_method=GLnexus
+cd /absolute/path/to/configured/cohort-run
+snakemake --profile zslurm2 --zslurm-instance zslurm_site_controller
 ```
+
+Endpoint/caller overrides can still be appended with `--config`. The installed
+profile already supplies the Snakefile, site configuration, Conda/Apptainer
+prefixes, executor and normal safety settings. Snellius can use the installer
+with `--profile-template "$PIPELINE/profiles/zslurm/config.yaml"`; its
+established `zslurm2` profile remains valid.
 
 For Spider, use `profiles/spider` only after the scratch work above passes a
 single-pilot canary. Before scaling, verify:

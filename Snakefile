@@ -4,6 +4,13 @@ import itertools
 import os
 from site_config import configure as _configure_site
 
+# Conda post-deploy scripts are copied next to their hashed environment before
+# execution, so they cannot locate this checkout through BASH_SOURCE.  Export
+# the canonical workflow root while the controller parses the Snakefile.  The
+# preprocessing post-deploy hook uses it only to build the checkout-local
+# native helpers against the selected environment's Python and htslib ABI.
+os.environ["SHORT_READ_PIPELINE_ROOT"] = os.path.realpath(workflow.basedir)
+
 _SITE_SETTINGS = _configure_site(config)
 if _SITE_SETTINGS.source is not None:
     envvars:

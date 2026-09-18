@@ -36,7 +36,7 @@ reconfigured by the repository merge.
 | Native executor | Separate package `snakemake-executor-plugin-zslurm`; release fix commit `9ed793e` transports declared/resolved environment values to shell-free workers | No; install the pinned commit into the Snakemake environment on controller and workers |
 | Controller Python modules | `Snakefile`, `common.py`, `read_stats.py`: pandas, numpy, PyYAML, h5py, Snakemake and its plugins | No; a complete pinned controller environment is not supplied by this pipeline |
 | Rule environments | `envs/*.yaml` and **post-deploy scripts**; environments currently live outside resources under the user's `.snakemake` prefix | No; recreate at the final installation prefix, then smoke-test |
-| Custom native tools | `scripts/Makefile`: `bam_merge`, `bam_dechimer`, `fix_bam_rg_pairs`, `fastcheck` and `fastcheck_hts` extensions | No; binaries/extensions are Git-ignored. Build on target, against the Python ABI/htslib used there |
+| Custom native tools | `scripts/Makefile`: `bam_merge`, `bam_dechimer`, `fix_bam_rg_pairs`, `fastcheck` and `fastcheck_hts` extensions | No; binaries/extensions are Git-ignored. The preprocessing post-deploy hook now builds them automatically on target against that environment's Python/htslib ABI |
 | Native DeepVariant 1.9.0 | `software/deepvariant-1.9.0-native` under resources; `scripts/prepare_deepvariant_native.py` | Not by moving the installed runtime: launchers embed absolute paths. Recreate at final prefix from pinned image/archive and verify |
 | Containers | GLnexus v1.4.1 for joint calling; optional DeepVariant comparison image 1.9.0 | Not normally: images/cache are in a separate `.apptainer` prefix. Provision Apptainer and cache verified images if those endpoints are selected |
 | References/databases | See resource groups below, including all indexes and region files | Usually data can be copied, but verify completeness, symlink targets, hashes and licenses |
@@ -235,9 +235,10 @@ correctly without changing the algorithm's tool parallelism.
 
 ### 4. Build software and add a preflight
 
-At final Spider paths, recreate environments including post-deploy actions,
-build native tools/extensions, prepare native DeepVariant and cache GLnexus
-only if needed. Test imports and actual binary versions from worker envs.
+At final Spider paths, recreate environments including post-deploy actions;
+the preprocessing hook builds the native tools/extensions automatically.
+Prepare native DeepVariant and cache GLnexus only if needed. Test imports and
+actual binary versions from worker envs.
 
 Add a read-only preflight before expensive DAG construction: selected endpoint
 dependencies, executable/ABI/ISA checks, references/indexes, intended target

@@ -15,6 +15,7 @@ dependencies:
 - r-ggplot2=3.3.6
 - python-crypt4gh=1.6
 - python=3.12
+- setuptools
 - h5py
 - numpy
 - bwa=0.7.17
