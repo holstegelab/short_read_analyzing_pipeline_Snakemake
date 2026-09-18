@@ -3,6 +3,7 @@ from common import *
 
 import utils
 from shlex import quote
+import readgroup_checkpoint as _readgroup_checkpoint
 onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
     sample=PROCESSING_SAMPLE_PATTERN,
@@ -141,7 +142,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = _readgroup_checkpoint.output(sample)
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']

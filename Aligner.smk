@@ -10,6 +10,7 @@ import traceback
 import json
 import tempfile
 from collections.abc import Mapping
+import readgroup_checkpoint as _readgroup_checkpoint
 
 import read_samples
 from common import *
@@ -166,7 +167,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = _readgroup_checkpoint.output(sample)
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']
@@ -249,6 +250,11 @@ checkpoint get_readgroups:
     conda: CONDA_MAIN
     script:
         "scripts/get_readgroups.py"
+
+# Snakemake isolates the checkpoint namespace of every workflow module.  Make
+# this canonical checkpoint available to the Stat and Kraken modules after it
+# has been registered by the checkpoint directive above.
+_readgroup_checkpoint.register(checkpoints.get_readgroups)
 
 rule archive_get:
     """Stage a batch of files from archive.

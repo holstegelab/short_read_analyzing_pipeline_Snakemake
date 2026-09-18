@@ -35,6 +35,8 @@ module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 
+use rule * from Aligner
+
 module gVCF:
     snakefile: 'gVCF.smk'
     config: config
@@ -147,8 +149,6 @@ if end_point == "gVCF":
 
         use rule * from Deepvariant
 
-        use rule * from Aligner
-
         use rule * from Kraken
         
         rule finished_sample:
@@ -177,8 +177,6 @@ if end_point == "gVCF":
     elif gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
 
-        use rule * from Aligner
-
         use rule * from Kraken
 
         rule finished_sample:
@@ -202,8 +200,6 @@ if end_point == "gVCF":
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
-        use rule * from Aligner
-        
         use rule * from Deepvariant
 
         use rule * from Kraken
@@ -251,13 +247,9 @@ elif end_point == 'PrepareRef':
 
     END_RULE = rules.Reference_preparation_all.input
 elif end_point == "Align" or end_point == "Aligner":
-    use rule * from Aligner
-
     END_RULE = rules.Aligner_all.input
     print("You will run following steps: Aligning with dragen")
 elif end_point == "Genotype" or end_point == "Genotyper":
-    use rule * from Aligner
-
     if gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
 
@@ -309,8 +301,6 @@ elif end_point == "Genotype" or end_point == "Genotyper":
             "invalid option provided to 'caller'; please choose either 'HaplotypeCaller'(default) or 'Deepvariant'."
         )
 elif end_point == "Combine":
-    use rule * from Aligner
-
     if gVCF_combine_method == "DBIMPORT":
         use rule * from gVCF
 
@@ -362,8 +352,6 @@ elif end_point == "Combine":
             "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
         )
 elif end_point == "VQSR" or end_point == "VCF":
-    use rule * from Aligner
-
     if gVCF_combine_method == "DBIMPORT":
         use rule * from gVCF
 

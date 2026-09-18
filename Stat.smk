@@ -9,6 +9,7 @@ from shlex import quote
 import math
 import read_samples
 import datetime
+import readgroup_checkpoint as _readgroup_checkpoint
 
 
 BAM_QC_LEASE_MODE = str(config.get('bam_qc_lease_mode', 'required')).strip().lower()
@@ -38,7 +39,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = _readgroup_checkpoint.output(sample)
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']
