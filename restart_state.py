@@ -107,6 +107,11 @@ def cleanup_finished_intermediates(root, sample, *, finished=True, samples=(),
                 pattern = glob.escape(sample) + name[len(sample):]
                 targets.extend(Path(path) for path in glob.glob(str(root/folder/pattern)))
     removed, errors = 0, []
+
+    def ignore_missing(_operation, _path, exc):
+        if not isinstance(exc, FileNotFoundError):
+            raise exc
+
     for path in dict.fromkeys(targets):
         if longer and path.name.startswith(longer):
             continue
@@ -114,10 +119,13 @@ def cleanup_finished_intermediates(root, sample, *, finished=True, samples=(),
             if path.is_symlink() or path.is_file():
                 path.unlink()
             elif path.is_dir():
-                shutil.rmtree(path)
+                shutil.rmtree(path, onexc=ignore_missing)
             else:
                 continue
             removed += 1
+        except FileNotFoundError:
+            # Another job may already have collected this temp output.
+            continue
         except OSError as exc:
             errors.append(f'{path}: {exc}')
     return removed, errors

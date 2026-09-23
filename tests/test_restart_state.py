@@ -83,7 +83,7 @@ def test_finished_cleanup_failure_is_nonfatal_and_retryable(tmp_path, monkeypatc
     directory.mkdir(parents=True)
     original = rs.shutil.rmtree
 
-    def fail_once(path):
+    def fail_once(path, **_kwargs):
         monkeypatch.setattr(rs.shutil, 'rmtree', original)
         raise OSError('temporary GPFS error')
 
@@ -91,6 +91,43 @@ def test_finished_cleanup_failure_is_nonfatal_and_retryable(tmp_path, monkeypatc
     removed, errors = rs.cleanup_finished_intermediates(tmp_path, 'A')
     assert removed == 0 and len(errors) == 1
     assert directory.exists()
+    assert rs.cleanup_finished_intermediates(tmp_path, 'A') == (1, [])
+    assert not directory.exists()
+
+
+def test_finished_cleanup_ignores_files_removed_concurrently(tmp_path, monkeypatch):
+    marker = tmp_path/'source/A.finished'
+    marker.parent.mkdir()
+    marker.touch()
+    path = tmp_path/'bams/A.markdup.bam'
+    path.parent.mkdir()
+    path.touch()
+    original = Path.unlink
+
+    def already_removed(candidate, *args, **kwargs):
+        if candidate == path:
+            original(candidate)
+            raise FileNotFoundError(path)
+        return original(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'unlink', already_removed)
+    assert rs.cleanup_finished_intermediates(tmp_path, 'A') == (0, [])
+    assert not path.exists()
+
+
+def test_finished_cleanup_ignores_disappearing_directory_entries(tmp_path, monkeypatch):
+    marker = tmp_path/'source/A.finished'
+    marker.parent.mkdir()
+    marker.touch()
+    directory = tmp_path/'readgroups/A.sourcefile.input'
+    directory.mkdir(parents=True)
+    original = rs.shutil.rmtree
+
+    def child_disappeared(path, *, onexc):
+        onexc(None, str(path/'gone'), FileNotFoundError(path/'gone'))
+        original(path)
+
+    monkeypatch.setattr(rs.shutil, 'rmtree', child_disappeared)
     assert rs.cleanup_finished_intermediates(tmp_path, 'A') == (1, [])
     assert not directory.exists()
 
