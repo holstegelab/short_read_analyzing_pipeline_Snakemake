@@ -87,6 +87,55 @@ def test_protected_root_and_worker_enforce_filters_in_all_imported_modules(tmp_p
         assert 'Legacy worker' not in output
 
 
+def test_finished_rule_cleans_temp_without_deleting_cohort_inputs(tmp_path):
+    fixture(tmp_path)
+    (tmp_path/'source/TEST_A.finished').unlink()
+    for name in ('cram/TEST_A.mapped_hg38.cram.copied',
+                 'stats/TEST_A.stats.tar.gz', 'kraken/TEST_A.bracken_report.tsv',
+                 'deepvariant/TEST_A.done', 'fq/TEST_A.0_R1.fastq.gz',
+                 'bams/TEST_A.markdup.bam'):
+        path = tmp_path/name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    command(tmp_path, 'source/TEST_A.finished', '--config', 'chrM=No',
+            '--force-use-threads', '--allowed-rules', 'finished_sample')
+    assert (tmp_path/'source/TEST_A.finished').exists()
+    assert not (tmp_path/'fq/TEST_A.0_R1.fastq.gz').exists()
+    assert not (tmp_path/'bams/TEST_A.markdup.bam').exists()
+    assert (tmp_path/'stats/TEST_A.stats.tar.gz').exists()
+
+
+def test_restart_onstart_cleans_reused_sample_before_pipeline_done(tmp_path):
+    fixture(tmp_path)
+    manifest = frozen(tmp_path, chrm='No')
+    state = json.loads(manifest.read_text())
+    state['reused_samples'] = ['TEST_A']
+    manifest.write_text(json.dumps(state))
+    for name in ('fq/TEST_A.0_R1.fastq.gz', 'bams/TEST_A.markdup.bam',
+                 'cram/TEST_B.mapped_hg38.cram.copied',
+                 'stats/TEST_B.stats.tar.gz', 'kraken/TEST_B.bracken_report.tsv',
+                 'deepvariant/TEST_B.done'):
+        path = tmp_path/name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    command(tmp_path, 'source/TEST_B.finished', '--config', 'chrM=No',
+            '--force-use-threads', '--allowed-rules', 'finished_sample',
+            manifest=manifest)
+    assert not (tmp_path/'pipeline.done').exists()
+    assert not (tmp_path/'fq/TEST_A.0_R1.fastq.gz').exists()
+    assert not (tmp_path/'bams/TEST_A.markdup.bam').exists()
+    assert (tmp_path/'source/TEST_A.finished').exists()
+    # A completed/no-op restart should still run the controller's cleanup.
+    leftover = tmp_path/'fq/TEST_A.1_R1.fastq.gz'
+    leftover.parent.mkdir(exist_ok=True)
+    leftover.touch()
+    marker = f'.snakemake/restart_cleanup/{manifest.stem}.done'
+    command(tmp_path, marker, '--config', 'chrM=No',
+            '--force-use-threads', manifest=manifest)
+    assert not leftover.exists()
+    assert (tmp_path/marker).exists()
+
+
 @pytest.mark.skipif(not shutil.which('AdapterRemoval') or not shutil.which('pigz'),
                     reason='Real AdapterRemoval and pigz required')
 @pytest.mark.parametrize('protected', [False, True])

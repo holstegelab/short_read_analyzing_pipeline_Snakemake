@@ -37,6 +37,64 @@ def test_restore_keeps_mtime_and_does_not_overwrite_existing(tmp_path):
     assert (tmp_path/'stats/A.qc').read_bytes() == b'current'
 
 
+@pytest.mark.parametrize('use_inventory', [False, True])
+def test_finished_cleanup_removes_only_own_temp_and_keeps_restart_products(tmp_path,
+                                                                           use_inventory):
+    paths = (
+        'source/A.finished', 'source/A.s3_data/input.cram',
+        'fq/A.0_R1.fastq.gz', 'fq/A.0.fastq.cut_1.fq.gz',
+        'bams/A.markdup.bam', 'bams/A.markdup.bam.bai',
+        'readgroups/A.sourcefile.input/A.0.cram',
+        'readgroups/A.sourcefile.input.checks_done',
+        'fq/A.B.0_R1.fastq.gz', 'bams/A.B.markdup.bam',
+        'stats/A.stats.tar.gz', 'deepvariant/gVCF/A.g.vcf.gz',
+        'fq_badmap/A.badmap.fastqs.tar.gz',
+    )
+    for name in paths:
+        path = tmp_path/name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    inventory = rs.finished_cleanup_inventory(tmp_path, ('A', 'A.B')) if use_inventory else None
+    removed, errors = rs.cleanup_finished_intermediates(
+        tmp_path, 'A', samples=('A', 'A.B'), inventory=inventory)
+    assert (removed, errors) == (7, [])
+    for name in paths[1:8]:
+        assert not (tmp_path/name).exists()
+    for name in paths[8:]:
+        assert (tmp_path/name).exists()
+    assert rs.cleanup_finished_intermediates(
+        tmp_path, 'A', samples=('A', 'A.B'), inventory=inventory) == (0, [])
+
+
+def test_finished_cleanup_needs_marker_except_inside_finished_rule(tmp_path):
+    path = tmp_path/'bams/A.markdup.bam'
+    path.parent.mkdir()
+    path.touch()
+    assert rs.cleanup_finished_intermediates(tmp_path, 'A') == (0, [])
+    assert path.exists()
+    assert rs.cleanup_finished_intermediates(tmp_path, 'A', finished=False) == (1, [])
+    assert not path.exists()
+
+
+def test_finished_cleanup_failure_is_nonfatal_and_retryable(tmp_path, monkeypatch):
+    (tmp_path/'source').mkdir()
+    (tmp_path/'source/A.finished').touch()
+    directory = tmp_path/'readgroups/A.sourcefile.input'
+    directory.mkdir(parents=True)
+    original = rs.shutil.rmtree
+
+    def fail_once(path):
+        monkeypatch.setattr(rs.shutil, 'rmtree', original)
+        raise OSError('temporary GPFS error')
+
+    monkeypatch.setattr(rs.shutil, 'rmtree', fail_once)
+    removed, errors = rs.cleanup_finished_intermediates(tmp_path, 'A')
+    assert removed == 0 and len(errors) == 1
+    assert directory.exists()
+    assert rs.cleanup_finished_intermediates(tmp_path, 'A') == (1, [])
+    assert not directory.exists()
+
+
 def test_recover_overwritten_statistics_keeps_backup(tmp_path):
     make_archive(tmp_path, {'stats/A.qc':b'original'})
     (tmp_path/'stats/A.qc').write_bytes(b'partial rerun')

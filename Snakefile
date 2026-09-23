@@ -2,6 +2,7 @@ import pandas as pd
 import read_stats
 import itertools
 import os
+from pathlib import Path
 from site_config import configure as _configure_site
 
 _SITE_SETTINGS = _configure_site(config)
@@ -10,7 +11,9 @@ if _SITE_SETTINGS.source is not None:
         "SHORT_READ_SITE_CONFIG"
 
 import common as _common
-from restart_state import configure as _configure_restart, refresh_retrieval
+from restart_state import (configure as _configure_restart,
+                           refresh_retrieval, cleanup_finished_intermediates,
+                           finished_cleanup_inventory)
 from common import *
 
 (_common.REUSED_SAMPLES, _common.REBUILD_SAMPLES,
@@ -130,6 +133,17 @@ def finished_sample_inputs(wildcards, require_gvcf=False, require_deepvariant=Fa
         ))
     return files
 
+
+def finish_sample(wildcards, output):
+    count, errors = cleanup_finished_intermediates(
+        Path.cwd(), wildcards.sample, finished=False, samples=SAMPLEINFO)
+    if count or errors:
+        print(f'[finished_sample] {wildcards.sample}: removed {count} '
+              f'temp paths; cleanup errors: {len(errors)}')
+        for error in errors[:5]:
+            print(f'[finished_sample] {error}')
+    Path(output[0]).touch()
+
 rule_all_combine = []
 VQSR_rule = []
 VQSR = config.get("VQSR","NO")
@@ -163,9 +177,8 @@ if end_point == "gVCF":
                 active_use_remove=active_release_finished,
                 mem_mb=200,
                 n="0.5"
-            shell: """
-                touch {output}
-                """
+            run:
+                finish_sample(wildcards, output)
 
 
 
@@ -192,9 +205,8 @@ if end_point == "gVCF":
                 active_use_remove=active_release_finished,
                 mem_mb=200,
                 n="0.5"
-            shell: """
-                touch {output}
-                """
+            run:
+                finish_sample(wildcards, output)
 
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
@@ -221,9 +233,8 @@ if end_point == "gVCF":
                 active_use_remove=active_release_finished,
                 mem_mb=200,
                 n="0.5"
-            shell: """
-                touch {output}
-            """
+            run:
+                finish_sample(wildcards, output)
 
         print("You will run following steps: Aligning with dragen and gVCF calling with Deepvariant. \n"
               "To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'")
@@ -481,6 +492,26 @@ rule pipeline:
     output:
         done=touch('pipeline.done')
 
+# A completed pipeline otherwise has no jobs, so onstart would never run.
+# The controller creates a fresh manifest on every invocation; its tiny local
+# marker guarantees one start hook for already-completed samples on a restart.
+_restart_manifest = os.environ.get('SHORT_READ_RESTART_MANIFEST')
+_restart_cleanup_marker = pj('.snakemake', 'restart_cleanup',
+                             Path(_restart_manifest).stem + '.done'
+                             if _restart_manifest else 'no_manifest.done')
+
+localrules: ensure_restart_cleanup
+
+rule ensure_restart_cleanup:
+    output:
+        _restart_cleanup_marker
+    run:
+        Path(output[0]).parent.mkdir(parents=True, exist_ok=True)
+        Path(output[0]).touch()
+
+if REUSED_SAMPLES:
+    CLEAN_RULE.append(_restart_cleanup_marker)
+
 rule all:
     input:
         CLEAN_RULE,
@@ -494,11 +525,10 @@ from restart_state import verify_rule_filters
 verify_rule_filters(workflow.rules, REUSED_SAMPLES)
 
 onstart:
-    # Reclaim temp files that Snakemake's temp() GC leaves behind across a RESTART.
-    # A consuming job that already ran in a prior invocation is skipped on rerun, so
-    # its temp outputs are never collected and pile up on active storage. Two gates,
-    # each removing only files whose consumers are provably done, and NEVER touching
-    # the .started/.finished/.copied markers themselves. Wrapped so it can never abort.
+    # A prior invocation can leave temp outputs behind: their consumers are
+    # skipped for reused samples, so Snakemake does not garbage-collect them.
+    # The controller has already validated the reused samples in restart_state.
+    # Never clean a sample explicitly selected for rebuilding.
     import glob, os, shutil
     def _rm(path):
         try:
@@ -515,56 +545,75 @@ onstart:
                 _rm(p)
                 c += 1
         return c
-    try:
+    if workflow.is_main_process:
+      try:
         n = 0
         # (A) New fused jobs publish no CRAM payload on active storage. Restart
         #     compatibility still reclaims plaintext/encrypted/index files left
         #     by the former separate CRAM, encryption and upload rules.
         for cop in glob.glob(os.path.join(CRAM, "*.mapped_hg38.cram.copied")):
+            sample = os.path.basename(cop)[:-len('.mapped_hg38.cram.copied')]
+            if sample in REBUILD_SAMPLES:
+                continue
             base = cop[:-len(".copied")]  # -> {sample}.mapped_hg38.cram
             n += _rm_all((base, base + ".crai", base + ".c4gh"))
-        # (B) Per-sample .finished means the sample products exist, but cohort
-        #     aggregation may still consume loose statistics and gVCFs. Keep the
-        #     staged source/FASTQ/BAM recovery path intact until the durable
-        #     pipeline-wide marker proves that aggregation and uploads completed.
-        finished = glob.glob(os.path.join(SOURCEDIR, "*.finished"))
-        if os.path.exists("pipeline.done"):
-            for fin in finished:
-                s = os.path.basename(fin)[:-len(".finished")]
-                se = glob.escape(s)
-                paths = [os.path.join(SOURCEDIR, s + ".data"),
-                         os.path.join(SOURCEDIR, s + ".dcache_data"),
-                         os.path.join(FQ_BADMAP, s + ".badmap.fastqs.tar.gz")]
-                for pat in (os.path.join(FQ, se + ".*.fq.gz"),
-                            os.path.join(FQ_BADMAP, se + ".badmap.*.fastq.gz"),
-                            os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz"),
-                            os.path.join(BAM, se + ".*.bam"),
-                            os.path.join(BAM, se + ".*.bam.bai")):
-                    paths.extend(glob.glob(pat))
-                n += _rm_all(paths)
+        # (B) Finished per-sample temp files are no longer needed even if
+        #     cohort-level aggregation is still pending. Keep cohort inputs
+        #     (stats, gVCFs, badmap) untouched here.
+        finished = {os.path.basename(fin)[:-len('.finished')]
+                    for fin in glob.glob(os.path.join(SOURCEDIR, '*.finished'))
+                    if os.path.basename(fin)[:-len('.finished')] in SAMPLEINFO}
+        completed_pipeline = os.path.exists('pipeline.done')
+        cleanup_samples = ((finished - REBUILD_SAMPLES) if completed_pipeline
+                           else (finished & REUSED_SAMPLES))
+        failures = []
+        inventory = (finished_cleanup_inventory(Path.cwd(), cleanup_samples)
+                     if cleanup_samples else {})
+        for s in sorted(cleanup_samples):
+            removed, errors = cleanup_finished_intermediates(
+                Path.cwd(), s, samples=SAMPLEINFO, inventory=inventory)
+            n += removed
+            failures.extend(errors)
+        if completed_pipeline:
+            for s in cleanup_samples:
+                # These uploads are not finished_sample dependencies. Only
+                # remove their local data after the upload marker exists.
+                if os.path.exists(os.path.join(FQ_BADMAP, s + '.badmap.tar.copied')):
+                    se = glob.escape(s)
+                    paths = [os.path.join(FQ_BADMAP, s + '.badmap.fastqs.tar.gz')]
+                    for pat in (os.path.join(FQ_BADMAP, se + '.badmap.*.fastq.gz'),
+                                os.path.join(FQ_BADMAP, se + '.*.badmap_*.fastq.gz')):
+                        paths.extend(glob.glob(pat))
+                    n += _rm_all(paths)
             # Samplefile/cohort archives are also declared temp(), but can be
             # stranded when a previous Snakemake invocation ended after their
             # upload consumer completed. pipeline.done proves every upload and
             # aggregation consumer has finished.
-            aggregate_temp = []
-            for pat in (
-                os.path.join(STAT, "*.stats_bundle.tar.gz"),
-                os.path.join(KRAKEN, "*.kraken_reports.tar.gz"),
-                os.path.join(KRAKEN, "*.kraken_read_classification.tar.gz"),
-                os.path.join(chrM, "tar", "chrM_gvcfs.tar.gz"),
-                os.path.join(GVCF_TAR, "deepvariant_level2_*", "*.gvcf.tar"),
-            ):
-                aggregate_temp.extend(glob.glob(pat))
-            n += _rm_all(aggregate_temp)
+            if not REBUILD_SAMPLES:
+                aggregate_temp = []
+                for pat in (
+                    os.path.join(STAT, "*.stats_bundle.tar.gz"),
+                    os.path.join(KRAKEN, "*.kraken_reports.tar.gz"),
+                    os.path.join(KRAKEN, "*.kraken_read_classification.tar.gz"),
+                    os.path.join(chrM, "tar", "chrM_gvcfs.tar.gz"),
+                    os.path.join(GVCF_TAR, "deepvariant_level2_*", "*.gvcf.tar"),
+                ):
+                    aggregate_temp.extend(glob.glob(pat))
+                n += _rm_all(aggregate_temp)
             # Retain the per-sample QC bundle and coverage: the reuse preflight
             # and cohort consumers need these even after a later restart.
         elif finished:
-            print("[onstart] preserving intermediates for %d finished sample(s): "
-                  "pipeline.done is absent" % len(finished))
+            print('[onstart] cleaned per-sample temp for %d reused sample(s); '
+                  'preserving cohort inputs until pipeline.done' % len(cleanup_samples))
         if n:
             print("[onstart] reclaimed %d orphaned temp file(s)/dir(s)" % n)
-    except Exception:
-        pass
+        if failures:
+            print(f'[onstart] {len(failures)} temp cleanup error(s); '
+                  'will retry on the next restart')
+            for error in failures[:5]:
+                print(f'[onstart] {error}')
+      except Exception as exc:
+        print(f'[onstart] temp cleanup skipped after error: {exc}')
 
 onsuccess: shell(# "rm -f zslurm-*"
                  # "rm -rf logs"

@@ -7,6 +7,7 @@ cannot change which rules a later worker sees.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import glob
 import hashlib
 import json
 import os
@@ -38,6 +39,88 @@ def parse_bool(value):
 
 def sample_digest(samples):
     return hashlib.sha256('\n'.join(sorted(samples)).encode()).hexdigest()
+
+
+def finished_cleanup_inventory(root, samples):
+    """Index temp candidates with one directory listing per GPFS folder."""
+    root = Path(root)
+    known = set(samples)
+    inventory = {}
+    for folder in ('fq', 'bams', 'readgroups'):
+        try:
+            entries = os.scandir(root/folder)
+        except FileNotFoundError:
+            continue
+        with entries:
+            for entry in entries:
+                name = entry.name
+                if folder == 'fq':
+                    eligible = (name.endswith('.fq.gz') or
+                                name.endswith(('_R1.fastq.gz', '_R2.fastq.gz')))
+                elif folder == 'bams':
+                    eligible = name.endswith(('.bam', '.bam.bai', '.bam_checked'))
+                else:
+                    eligible = '.sourcefile.' in name
+                if not eligible:
+                    continue
+                # Longest exact sample prefix wins, including dotted IDs.
+                parts = name.split('.')
+                sample = next(('.'.join(parts[:i]) for i in range(len(parts)-1, 0, -1)
+                               if '.'.join(parts[:i]) in known), None)
+                if sample is not None and (folder != 'readgroups' or
+                                           name.startswith(sample + '.sourcefile.')):
+                    inventory.setdefault(sample, []).append(Path(entry.path))
+    return inventory
+
+
+def cleanup_finished_intermediates(root, sample, *, finished=True, samples=(),
+                                   inventory=None):
+    """Best-effort removal of per-sample temp outputs after sample completion.
+
+    Do not remove stats, gVCFs, badmap FASTQs/tars, or upload markers: cohort
+    jobs and the restart preflight can still need them after ``.finished``.
+    ``finished=False`` is only for the finished_sample rule, whose inputs have
+    already completed but whose output marker has not yet been written.
+    """
+    root = Path(root)
+    if finished and not (root/'source'/f'{sample}.finished').is_file():
+        return 0, []
+    # If sample names contain dots, a glob for A.* also matches A.B.*. Never
+    # remove an intermediate that might belong to a longer sample name.
+    longer = tuple(other + '.' for other in samples
+                   if other != sample and other.startswith(sample + '.'))
+    targets = [root/'source'/f'{sample}{suffix}' for suffix in
+               ('.data', '.dcache_data', '.s3_data')]
+    if inventory is not None:
+        targets.extend(inventory.get(sample, ()))
+    else:
+        patterns = {
+            'fq': (f'{sample}.*.fq.gz', f'{sample}.*_R1.fastq.gz',
+                   f'{sample}.*_R2.fastq.gz'),
+            'bams': (f'{sample}.*.bam', f'{sample}.*.bam.bai',
+                     f'{sample}.*.bam_checked'),
+            'readgroups': (f'{sample}.sourcefile.*',),
+        }
+        for folder, names in patterns.items():
+            for name in names:
+                # Escape the sample, but leave the intentional wildcard intact.
+                pattern = glob.escape(sample) + name[len(sample):]
+                targets.extend(Path(path) for path in glob.glob(str(root/folder/pattern)))
+    removed, errors = 0, []
+    for path in dict.fromkeys(targets):
+        if longer and path.name.startswith(longer):
+            continue
+        try:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+            else:
+                continue
+            removed += 1
+        except OSError as exc:
+            errors.append(f'{path}: {exc}')
+    return removed, errors
 
 
 def product_settings(config):
