@@ -187,7 +187,7 @@ rule bracken:
     resources:
         time = get_time('bracken'),
         n="0.5",
-        mem_mb="200"
+        mem_mb=200
     conda: CONDA_KRAKEN
     shell:
         """
