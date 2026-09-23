@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${CONDA_PREFIX:?CONDA_PREFIX is required by the KMC post-deploy script}"
 
+conda install -y conda-forge::git conda-forge::patch conda-forge::make conda-forge::binutils conda-forge::gxx==13.4.0 conda-forge::gcc==13.4.0
 KMC_COMMIT=751ef36a3c1ccc6dda664f529ad218dc51d76f55
 KMC_BUILD_JOBS=${KMC_BUILD_JOBS:-8}
 
@@ -34,8 +35,8 @@ echo '--- Makefile
  		CPU_FLAGS = -m64
 -		STATIC_CFLAGS = -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
 -		STATIC_LFLAGS = -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
-+		STATIC_CFLAGS = -lpthread 
-+		STATIC_LFLAGS = -lpthread
++		STATIC_CFLAGS = -lpthread -Wno-deprecated-declarations
++		STATIC_LFLAGS = -lpthread -Wno-deprecated-declarations
  	endif
  	PY_FLAGS = -fPIC
  endif
@@ -136,3 +137,5 @@ patch --batch --ignore-whitespace -p0 < kmc_make.patch
 make -j"${KMC_BUILD_JOBS}"
 
 cp bin/* "${CONDA_PREFIX}/bin/"
+
+conda remove -y git make patch gcc gxx binutils
