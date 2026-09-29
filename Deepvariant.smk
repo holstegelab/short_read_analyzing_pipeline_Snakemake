@@ -116,7 +116,7 @@ rule extract_and_tar_deepvariant_level2_wgs:
         samplefile=lambda wc: wc.samplefile,
         interval=lambda wc: level2_interval(wc.region, wgs=True),
         dataset="wgs",
-        lease_command=srcdir("scripts/zslurm_lease_client.py")
+        lease_command=str(srcdir("scripts/zslurm_lease_client.py"))
     threads: DEEPVARIANT_LEVEL2_WORKERS
     conda:
         CONDA_VCF
@@ -145,7 +145,7 @@ rule extract_and_tar_deepvariant_level2_wes:
         samplefile=lambda wc: wc.samplefile,
         interval=lambda wc: level2_interval(wc.region, wgs=False),
         dataset="wes",
-        lease_command=srcdir("scripts/zslurm_lease_client.py")
+        lease_command=str(srcdir("scripts/zslurm_lease_client.py"))
     threads: DEEPVARIANT_LEVEL2_WORKERS
     conda:
         CONDA_VCF
