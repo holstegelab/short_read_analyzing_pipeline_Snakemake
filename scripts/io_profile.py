@@ -9,6 +9,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -32,10 +33,10 @@ def path_bytes(path: str | os.PathLike[str]) -> int | None:
                 for filename in filenames:
                     try:
                         total += (Path(root) / filename).stat().st_size
-                    except FileNotFoundError:
+                    except (FileNotFoundError, NotADirectoryError):
                         pass
             return total
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         pass
     return None
 
@@ -197,9 +198,26 @@ def run_profiled(
     start_wall = time.time()
     start_monotonic = time.monotonic()
     started_at = _utc_now()
-    local_start = _path_sizes(local_paths)
-    fs_start = _filesystem_sample(local_paths[0]) if local_paths else None
-    input_start = _path_sizes(input_paths)
+    sampling_errors: dict[str, dict[str, object]] = {}
+
+    def sample(operation, function, *arguments, default=None):
+        # A profiler observes a command; a transient measurement failure must
+        # never terminate that command or turn its successful exit into failure.
+        try:
+            return function(*arguments)
+        except Exception as exc:
+            if operation not in sampling_errors:
+                error = f"{type(exc).__name__}: {exc}"
+                sampling_errors[operation] = {
+                    "operation": operation, "error": error, "occurrences": 0,
+                }
+                print(f"[io_profile] {operation} unavailable: {error}", file=sys.stderr, flush=True)
+            sampling_errors[operation]["occurrences"] += 1
+            return default
+
+    local_start = sample("local_paths", _path_sizes, local_paths, default=[])
+    fs_start = sample("filesystem", _filesystem_sample, local_paths[0]) if local_paths else None
+    input_start = sample("input_paths", _path_sizes, input_paths, default=[])
     peaks = {
         "local_bytes": sum(item["bytes"] or 0 for item in local_start),
         "processes": 0,
@@ -233,9 +251,10 @@ def run_profiled(
             old_handlers[signum] = signal.signal(signum, forward_signal)
         proc = subprocess.Popen(list(command), start_new_session=True, text=True)
         while True:
-            process = _process_sample(proc.pid)
-            local_size = sum(path_bytes(path) or 0 for path in local_paths)
-            filesystem = _filesystem_sample(local_paths[0]) if local_paths else None
+            process = sample("process_tree", _process_sample, proc.pid, default={})
+            local_sizes = sample("local_paths", _path_sizes, local_paths, default=[])
+            local_size = sum(item["bytes"] or 0 for item in local_sizes)
+            filesystem = sample("filesystem", _filesystem_sample, local_paths[0]) if local_paths else None
             samples += 1
             peaks["local_bytes"] = max(peaks["local_bytes"], local_size)
             for key, value in process.items():
@@ -263,8 +282,16 @@ def run_profiled(
         for signum, handler in old_handlers.items():
             signal.signal(signum, handler)
 
-    local_end_before_cleanup = _path_sizes(local_paths)
-    fs_end = _filesystem_sample(local_paths[0]) if local_paths else None
+    if proc is not None and (launch_error is not None or return_code):
+        # A failed shell/orchestrator can leave sibling shard processes alive.
+        # Stop them before cleanup, otherwise they can recreate cache/runfiles.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    local_end_before_cleanup = sample("local_paths", _path_sizes, local_paths, default=[])
+    fs_end = sample("filesystem", _filesystem_sample, local_paths[0]) if local_paths else None
     cleanup = _clean_paths(cleanup_paths)
     cleanup_ok = all(item.get("removed") for item in cleanup)
     ended_at = _utc_now()
@@ -283,13 +310,14 @@ def run_profiled(
         "return_code": return_code,
         "received_signal": received_signal,
         "launch_error": launch_error,
+        "sampling_errors": list(sampling_errors.values()),
         "requested": {
             "ssd_gb": requested_ssd_gb,
             "threads": threads,
             "memory_mb": memory_mb,
         },
         "inputs_start": input_start,
-        "outputs_end": _path_sizes(output_paths),
+        "outputs_end": sample("output_paths", _path_sizes, output_paths, default=[]),
         "local_start": local_start,
         "local_end_before_cleanup": local_end_before_cleanup,
         "peaks": peaks,
@@ -300,7 +328,13 @@ def run_profiled(
         "cleanup": cleanup,
         "cleanup_ok": cleanup_ok,
     }
-    _write_json_atomic(metrics_path, payload)
+    # Metrics are diagnostic, including when the filesystem quota is reached.
+    # Preserve the command's actual exit status if diagnostics cannot be saved.
+    payload["sampling_errors"] = list(sampling_errors.values())
+    try:
+        _write_json_atomic(metrics_path, payload)
+    except OSError as exc:
+        print(f"[io_profile] cannot write metrics {metrics_path}: {exc}", file=sys.stderr, flush=True)
     if launch_error is not None:
         raise RuntimeError(launch_error)
     if return_code:
