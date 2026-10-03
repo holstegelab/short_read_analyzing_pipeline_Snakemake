@@ -18,7 +18,7 @@ def _script(path, body):
 
 
 @pytest.mark.parametrize("shared_fallback", [False, True])
-@pytest.mark.parametrize("mode", ["success", "deepvariant_failure", "phasing_failure", "skip_sex"])
+@pytest.mark.parametrize("mode", ["success", "deepvariant_failure", "phasing_failure", "skip_sex", "metrics_quota", "corrupt_metrics"])
 def test_fused_deepvariant_phasing_keeps_raw_calls_local(tmp_path, shared_fallback, mode):
     tools = tmp_path / "tools"
     tools.mkdir()
@@ -184,6 +184,31 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
             "--scratch-base", str(scratch), "--poll-interval", "0.05",
         ]
     )
+    if mode in {"metrics_quota", "corrupt_metrics"}:
+        # Fault-inject diagnostic writes in the real runner, after tool output
+        # has been created. Both final metrics quota errors and damaged phase
+        # metrics must preserve output success and still clean scratch.
+        wrapper = (
+            "import runpy, sys; from pathlib import Path; "
+            f"sys.path.insert(0, {str(RUNNER.parent)!r}); "
+        )
+        if mode == "metrics_quota":
+            wrapper += (
+                "import pipeline_runtime; "
+                "\ndef quota_failure(*args): raise OSError(122, 'Disk quota exceeded')\n"
+                "pipeline_runtime._atomic_json = quota_failure\n"
+            )
+        else:
+            wrapper += (
+                "import io_profile\n"
+                "write_metrics = io_profile._write_json_atomic\n"
+                "def damaged_metrics(path, payload):\n"
+                "    if payload['label'].endswith('.deepvariant'): Path(path).write_text('{partial')\n"
+                "    else: write_metrics(path, payload)\n"
+                "io_profile._write_json_atomic = damaged_metrics\n"
+            )
+        wrapper += f"runpy.run_path({str(RUNNER)!r}, run_name='__main__')\n"
+        command[1:2] = ["-c", wrapper]
     environment = os.environ.copy()
     inherited_tmp = tmp_path / "inherited shared tmp"
     inherited_tmp.mkdir()
@@ -211,7 +236,7 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     )
     environment.pop("PYTHONDONTWRITEBYTECODE", None)
     result = subprocess.run(command, check=False, env=environment, capture_output=True, text=True)
-    success = mode in ("success", "skip_sex")
+    success = mode in ("success", "skip_sex", "metrics_quota", "corrupt_metrics")
     assert (result.returncode == 0) == success, result.stderr
     assert "[deepvariant_phasing_fused] scratch=" in result.stderr
 
@@ -220,6 +245,12 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     assert lease_log.read_text().splitlines() == (["status"] if mode == "deepvariant_failure" else ["status", "set"])
     if mode != "skip_sex":
         assert dv_env_log.read_text() == "|"
+    if mode == "metrics_quota":
+        assert "cannot write metrics" in result.stderr
+        assert "Disk quota exceeded" in result.stderr
+        assert not (outputs / "metrics.json").exists()
+        assert list((scratch / "deepvariant_phasing_fused").iterdir()) == []
+        return
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is success
     assert metrics["attempt"] == 3
@@ -230,6 +261,9 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
     ]
     if mode == "deepvariant_failure":
         expected_phases.pop()
+    if mode == "corrupt_metrics":
+        expected_phases.pop(0)
+        assert "phase metrics unavailable" in result.stderr
     assert [phase["label"] for phase in metrics["phases"]] == expected_phases
     assert metrics["scratch_removed"] is True
     assert list((scratch / "deepvariant_phasing_fused").iterdir()) == []

@@ -91,8 +91,8 @@ def load_metrics(paths: list[Path]) -> list[dict]:
     for path in paths:
         try:
             result.append(json.loads(path.read_text(encoding="utf-8")))
-        except FileNotFoundError:
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[deepvariant_phasing_fused] phase metrics unavailable {path}: {exc}", file=sys.stderr, flush=True)
     return result
 
 
@@ -366,32 +366,36 @@ def main() -> int:
     finally:
         phases = load_metrics(phase_paths)
         shutil.rmtree(job_tmp, ignore_errors=True)
-        _atomic_json(
-            Path(args.metrics),
-            {
-                "schema_version": 1,
-                "label": "deepvariant_phasing_fused",
-                "sample": args.sample,
-                "region": args.region,
-                "attempt": args.attempt,
-                "success": success,
-                "started_at_epoch": started,
-                "duration_seconds": round(time.time() - started, 6),
-                "requested": {
-                    "initial_cores": args.initial_cores,
-                    "initial_memory_mb": args.initial_memory_mb,
-                    "low_cores": args.low_cores,
-                    "low_memory_mb": args.low_memory_mb,
-                    "ssd_gb": args.ssd_gb,
-                },
-                "lease": lease,
-                "phases": phases,
-                "scratch_job_directory": str(job_tmp),
-                "temporary_directory": str(temp_dir),
-                "cache_directory": str(cache_dir),
-                "scratch_removed": not job_tmp.exists(),
+        scratch_removed = not job_tmp.exists()
+        if not scratch_removed:
+            print(f"[deepvariant_phasing_fused] scratch cleanup incomplete: {job_tmp}", file=sys.stderr, flush=True)
+        payload = {
+            "schema_version": 1,
+            "label": "deepvariant_phasing_fused",
+            "sample": args.sample,
+            "region": args.region,
+            "attempt": args.attempt,
+            "success": success,
+            "started_at_epoch": started,
+            "duration_seconds": round(time.time() - started, 6),
+            "requested": {
+                "initial_cores": args.initial_cores,
+                "initial_memory_mb": args.initial_memory_mb,
+                "low_cores": args.low_cores,
+                "low_memory_mb": args.low_memory_mb,
+                "ssd_gb": args.ssd_gb,
             },
-        )
+            "lease": lease,
+            "phases": phases,
+            "scratch_job_directory": str(job_tmp),
+            "temporary_directory": str(temp_dir),
+            "cache_directory": str(cache_dir),
+            "scratch_removed": scratch_removed,
+        }
+        try:
+            _atomic_json(Path(args.metrics), payload)
+        except OSError as exc:
+            print(f"[deepvariant_phasing_fused] cannot write metrics {args.metrics}: {exc}", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
