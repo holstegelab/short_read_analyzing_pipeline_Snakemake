@@ -9,6 +9,17 @@ This document summarizes the short read Snakemake pipeline, focusing on per-samp
 1. **Staging and space reservation** (`Aligner.smk`)
    - Route-specific `start_sample_*` rules reserve active storage and validate or materialize inputs from active disk, `/archive`, dCache, or requester-pays S3 (`get_source_files`).
    - `get_readgroups` checkpoint populates `SAMPLEINFO` read group metadata when missing.
+   - For an Illumina uCRAM without `@RG`, opt in per sample with
+     `rescue_readgroups=true` in the ninth sample-listing column (and normally
+     `cram_no_ref=true` for an unaligned CRAM). The checkpoint scans all QNAMEs
+     to discover instrument/run/flowcell/lane combinations. The split rule
+     then streams the original CRAM into one `.cram` per recovered group,
+     adding matching `@RG` and per-record `RG:Z` values without materializing
+     a full-size rescued copy. `BC` tags are preserved, not used as platform
+     units. Use `rg_library=LIBRARY_ID` when known; otherwise `LB` defaults to
+     the sample ID, which assumes one library across the input lanes. If a
+     sample contains multiple libraries that cannot be distinguished from the
+     read names, this rescue cannot reconstruct the true library groups.
    - A `dcache:<remote>:/path` `.source` is staged as a stable batch directly from Snellius and downloaded with Adler-32 verification. An `s3://bucket/path` `.source` is downloaded per sample on a compute node with the configured AWS profile and `--request-payer requester`; AWS credentials never belong in the sample sheet. S3 downloads request ZSlurm's independent `s3_download_slots` pool. During a rolling manager upgrade, the executor falls back to the dCache-download pool so concurrency remains bounded.
 
    For an S3-backed sheet, put only the common object prefix in the sidecar,

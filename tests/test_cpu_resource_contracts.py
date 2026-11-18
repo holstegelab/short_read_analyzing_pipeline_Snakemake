@@ -67,7 +67,8 @@ def test_simple_cpu_reservations_follow_observed_average():
     }
     for (filename, rule_name), reservation in expected.items():
         assert reservation in rule_block(filename, rule_name)
-    assert 'n="0.5"' in checkpoint_block("Aligner.smk", "get_readgroups")
+    readgroups = checkpoint_block("Aligner.smk", "get_readgroups")
+    assert '"1.0" if SAMPLEINFO[wc.sample].get(\'rescue_readgroups\', False) else "0.5"' in readgroups
 
 
 def test_fused_cpu_reservations_keep_tool_parallelism_separate():

@@ -23,6 +23,7 @@ scripts/build/
 scripts/bam_dechimer
 scripts/bam_merge
 scripts/fix_bam_rg_pairs
+scripts/.native-build.lock
 scripts/*.bak.*
 
 # Local diagnostic/run outputs kept in the worktree, not workflow sources.

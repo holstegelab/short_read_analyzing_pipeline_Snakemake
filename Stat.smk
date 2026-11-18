@@ -9,6 +9,7 @@ from shlex import quote
 import math
 import read_samples
 import datetime
+import readgroup_checkpoint as _readgroup_checkpoint
 
 
 BAM_QC_LEASE_MODE = str(config.get('bam_qc_lease_mode', 'required')).strip().lower()
@@ -19,18 +20,6 @@ onsuccess: shell("rm -fr logs/Stats/*")
 
 wildcard_constraints:
     sample=PROCESSING_SAMPLE_PATTERN
-
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-
-use rule * from Aligner
-
-module Tools:
-    snakefile: 'Tools.smk'
-    config: config
-
-use rule BedToIntervalList from Tools
 
 ##THIS FUNCION IS COPIED ALSO in Aligner.smk and Kraken.smk
 def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
@@ -50,7 +39,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = Aligner.checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = _readgroup_checkpoint.output(sample)
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']

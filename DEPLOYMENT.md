@@ -10,6 +10,21 @@ Clone the pipeline, Snakemake fork, ZSlurm and native executor into stable,
 shared locations visible to the controller and workers. Check out the pinned
 commits or the pipeline release tag; do not deploy from a moving default branch.
 
+Do not silently substitute stock Snakemake for the pinned fork. Besides the
+historical duplicate-rule bypass, that fork contains independent fixes used by
+this workflow, including checkpoint-safe temp cleanup, Conda support for
+`run:` rules, incomplete-metadata cleanup, and the symlinked-working-directory
+Apptainer bind. This list is not a replacement for the fork history. The
+workflow no longer needs duplicate rule names, so the pinned release revision
+restores only that validation on top of the pinned fork commit; it does not
+rebase the deployment onto stock Snakemake.
+
+The pipeline remains compatible with the immediately preceding fork revision
+`83c79c1d3d8dfd68bc42f4ac9ffa3dbb97d8c8ed`: the Snellius release canary
+built its DAG and completed real worker jobs with that revision. Updating to
+the revision in the component lock is nevertheless recommended because it
+restores duplicate-rule validation and prevents the ambiguity from returning.
+
 Install the Snakemake fork and executor plugin into the same controller
 environment. Install ZSlurm into the environment used by the manager and pilot
 chiefs. Confirm imports, rather than assuming the checkout is the imported code:
@@ -86,34 +101,76 @@ CLI workflow settings still take precedence for their established keys. For
 example, `--config deepvariant_native_prefix=...` overrides the corresponding
 site default for that invocation.
 
-## 4. Create environments and native tools
+## 4. Bootstrap the site once
 
-Choose durable Conda and Apptainer prefixes. The supplied profiles contain the
-known project defaults; change them when the target project path differs. Check
-the reproducibility inputs first:
+This section is for the site administrator, not for every cohort run. Choose
+durable Conda and Apptainer prefixes in the site configuration and check the
+reproducibility inputs first:
 
 ```bash
 sha256sum -c deployment/environment-inputs.sha256
 ```
 
-Use Snakemake to create the environments for the selected endpoints so every
-matching `*.post-deploy.sh` runs. Important post-deploy behavior includes the
-pinned patched DRAGMAP and KMC builds, GATK 4.5 installation and GATK-gCNV
-Python setup. `GATK_CNV_ROOT` is derived from the selected site software root.
-
-The Git-ignored native tools must be built in the Python/htslib environment
-that runs preprocessing, not copied from another checkout or Python ABI:
+Install a named, site-bound Snakemake profile once. The installer copies the
+Spider execution settings, records this pinned Snakefile, takes the Conda and
+Apptainer prefixes from the site configuration, passes that configuration to
+every controller/worker parse, and selects the production-safe `mtime` rerun
+trigger:
 
 ```bash
-conda run --prefix /path/to/resolved/preprocess-env \
-  make -C scripts all-hts PYTHON=python
-conda run --prefix /path/to/resolved/preprocess-env \
-  python -c 'import sys; sys.path.insert(0, "scripts"); import fastcheck, fastcheck_hts'
+PIPELINE=/absolute/path/to/short_read_analyzing_pipeline_Snakemake
+python "$PIPELINE/scripts/install_site_profile.py" \
+  --site-config /absolute/protected/path/spider.yaml \
+  --profile-name zslurm2
 ```
 
-`all-hts` builds `fastcheck`, `fastcheck_hts`, `bam_merge`, `bam_dechimer` and
-`fix_bam_rg_pairs`. This release was tested from a fresh worktree, so those
-artifacts were not borrowed from the active pipeline checkout.
+After that one-time step, both explicit environment preparation and normal
+workflow execution use the named profile. Run environment preparation from a
+configured cohort directory containing its sample TSV and sidecars; the real
+DAG determines exactly which environments are required. An empty directory has
+no sample jobs and therefore no environments to create. Explicit preparation
+is optional because a normal workflow invocation creates missing environments:
+
+```bash
+cd /absolute/path/to/configured/cohort-run
+snakemake --profile zslurm2 --cores 1 --conda-create-envs-only \
+  --config END_POINT=gVCF caller=Deepvariant
+```
+
+The `preprocess` environment's post-deploy hook automatically builds
+`fastcheck`, `fastcheck_hts`, `bam_merge`, `bam_dechimer` and
+`fix_bam_rg_pairs` in an isolated temporary directory and atomically installs
+them into this pipeline checkout. Native-source checksums participate in the
+environment hash. Do not locate a hashed environment manually and do not run
+`conda run --prefix ... make`.
+
+On Spider, a non-interactive Bash descended from an SSH login can reload the
+Conda function from `.bashrc`. If that function still points at an old base
+Conda, it takes precedence over a newer executable at the front of `PATH`.
+Snakemake requires Conda 24.7.1 or newer. This is a controller installation
+problem, not part of each pipeline invocation. Activate the intended
+controller and verify what it actually sees:
+
+```bash
+source /absolute/path/to/controller-environment/bin/activate
+snakemake --version
+conda --version
+type -a conda
+```
+
+The controller may be a Python environment containing Snakemake while Conda is
+provided separately; it does not have to contain `bin/conda`. If `conda
+--version` is too old, update/fix the site's login Conda before continuing.
+Merely checking `which conda` does not expose a shell function.
+
+There is intentionally no second deployment Snakefile or duplicated list of
+environments. To prepare another endpoint, invoke the main Snakefile with that
+endpoint against a representative configured cohort. Every `*.post-deploy.sh`
+belonging to an environment selected by that DAG runs when the environment is
+first created.
+Important post-deploy behavior includes the pinned patched DRAGMAP and KMC
+builds, GATK 4.5 installation and GATK-gCNV Python setup. `GATK_CNV_ROOT` is
+derived from the selected site software root.
 
 Prepare native DeepVariant at its final prefix. Its launchers contain absolute
 paths and the directory must not be moved afterwards:
@@ -129,14 +186,34 @@ The Spider profile is [`profiles/spider/config.yaml`](profiles/spider/config.yam
 It intentionally has no `/scratch-node` bind. `partition=compute` is a logical
 ZSlurm job class, not a physical Spider partition. The matching ZSlurm Spider
 profile discovers the pilot allocation's `$TMPDIR`, caps the advertised SSD
-entitlement, and exports one private `ZSLURM_SCRATCH_ROOT` per child job.
+entitlement, and exports one private `ZSLURM_SCRATCH_DIR` per child job.
 
-Do not run the production Spider workflow until the updated ZSlurm checkout is
-installed and a single-pilot canary has passed. Remaining Spider checks are:
+The pinned ZSlurm release discovers Spider's allocation `$TMPDIR`,
+gives every ZSlurm child a private directory through
+`ZSLURM_SCRATCH_DIR`, rewrites all ordinary temp variables to that directory,
+and cleans only that child directory. Partial pilots advertise 73 GiB per
+allocated core, bounded again by actual filesystem free space; a 30-core pilot
+therefore advertises at most 2,190 GiB. Generic `TMPDIR` discovery is enabled
+only in the Spider ZSlurm site file; it is not a cross-site pipeline guess. The
+nonexistent physical `staging` partition and its autogrow path are disabled.
+Demand-backed compute autogrow is enabled with a cap of 15 running plus queued
+pilots. GPFS RDMA telemetry is disabled for CephFS.
 
-- replacement/disablement of the unverified physical `staging` partition;
-- real manager/worker RPC, lease and failure/restart smoke tests;
-- confirmation of scratch cleanup and capacity reporting in a live pilot.
+A real Spider `short` allocation confirmed that the pipeline resolves the
+exported child path below the allocation's private `/tmp` XFS bind. A second
+canary exercised manager/worker RPC, dynamic lease resize, private scratch
+cleanup and a real two-job paired-FASTQ preprocessing DAG through the native
+executor. Its output FASTQs passed gzip validation and the expected read/base
+counts. The adapter rule used its normal five-core claim; only its walltime was
+reduced to fit Spider's 30-minute `short` limit.
+
+This is not yet a full alignment/calling production certification. The canary
+account could not read the pre-existing resource/software tree under
+`/project/cardseq`, which belongs to another Spider project; CardSeq is not a
+pipeline component. Alignment, DeepVariant, dCache writes, failure/restart and
+Apptainer therefore still require site-owned canaries before allowing the
+configured autogrow limit to scale a cohort run. Disable compute autogrow or
+temporarily cap it at one pilot during those canaries.
 
 Snellius archive sources additionally require its `daget`, `dals` and
 `darelease` commands. On Spider, use a tested dCache/S3 route unless an
@@ -186,18 +263,24 @@ Waiting remains subject to the node allocation's lifetime.
 
 ## 6. Start only after the readiness checks pass
 
-For Snellius, an explicit site-configured invocation is:
+Once the site profile is installed, a normal cohort start is deliberately
+short and does not repeat any deployment paths:
 
 ```bash
-export SHORT_READ_SITE_CONFIG=/path/to/checkout/config/sites/snellius.yaml
-python -m snakemake \
-  --profile /path/to/checkout/profiles/zslurm \
-  --snakefile /path/to/checkout/Snakefile \
-  --config END_POINT=Genotype caller=Deepvariant Combine_gVCF_method=GLnexus
+cd /absolute/path/to/configured/cohort-run
+snakemake --profile zslurm2 --zslurm-instance zslurm_site_controller
 ```
 
-For Spider, use `profiles/spider` only after the scratch work above passes a
-single-pilot canary. Before scaling, verify:
+Endpoint/caller overrides can still be appended with `--config`. The installed
+profile already supplies the Snakefile, site configuration, Conda/Apptainer
+prefixes, executor and normal safety settings. Snellius can use the installer
+with `--profile-template "$PIPELINE/profiles/zslurm/config.yaml"`; its
+established `zslurm2` profile remains valid.
+
+For Spider, use `profiles/spider` at production scale only after the scratch
+work above passes a single-pilot canary. Temporarily disable compute autogrow
+or cap it at one pilot for that canary; then restore the configured cap of 15.
+Before scaling, verify:
 
 - every selected reference/index and executable resolves below the intended
   project or protected credential root;

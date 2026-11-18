@@ -3,6 +3,7 @@ from common import *
 
 import utils
 from shlex import quote
+import readgroup_checkpoint as _readgroup_checkpoint
 onsuccess: shell("rm -fr logs/*")
 wildcard_constraints:
     sample=PROCESSING_SAMPLE_PATTERN,
@@ -11,12 +12,6 @@ wildcard_constraints:
     batchnr=r'[\d]+',
     readid=r'R1|R2'
     # readgroup="[\w\d_\-@]+"
-
-module Aligner:
-    snakefile: 'Aligner.smk'
-    config: config
-
-use rule * from Aligner
 
 rule kraken_all:
     input:
@@ -147,7 +142,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = Aligner.checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = _readgroup_checkpoint.output(sample)
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']

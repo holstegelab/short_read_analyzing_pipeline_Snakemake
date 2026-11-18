@@ -16,6 +16,8 @@ def test_low_io_rules_allow_normal_compute_nodes():
     optional_rules = {
         "Deepvariant.smk": (
             "deepvariant_phasing_fused",
+            "extract_and_tar_deepvariant_level2_wgs",
+            "extract_and_tar_deepvariant_level2_wes",
         ),
         "Deepvariant_apptainer.smk": ("deepvariant_apptainer",),
         "chrM_analysis.smk": (
@@ -41,3 +43,13 @@ def test_fused_optional_rules_pass_a_shared_scratch_fallback():
 
 def test_high_io_fused_bam_qc_stays_ssd_required():
     assert 'ssd_use="required"' in rule_block("Stat.smk", "bam_qc_fused")
+
+
+def test_level2_archives_size_scratch_from_staged_gvcfs():
+    for rule in (
+        "extract_and_tar_deepvariant_level2_wgs",
+        "extract_and_tar_deepvariant_level2_wes",
+    ):
+        block = rule_block("Deepvariant.smk", rule)
+        assert "ssd_gb_for_inputs(" in block
+        assert "input.gvcfs" in block

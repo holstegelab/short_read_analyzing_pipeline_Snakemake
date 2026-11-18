@@ -13,6 +13,11 @@ SPEC = importlib.util.spec_from_file_location("prepare_deepvariant_native", SCRI
 NATIVE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(NATIVE)
 
+RUNTIME_SCRIPT = Path(__file__).parents[1] / "scripts/pipeline_runtime.py"
+RUNTIME_SPEC = importlib.util.spec_from_file_location("pipeline_runtime", RUNTIME_SCRIPT)
+RUNTIME = importlib.util.module_from_spec(RUNTIME_SPEC)
+RUNTIME_SPEC.loader.exec_module(RUNTIME)
+
 
 def add_tar_file(archive, name, contents=b""):
     member = tarfile.TarInfo(name)
@@ -97,6 +102,29 @@ def test_production_deepvariant_rule_is_namespace_free():
     assert "get_deepvariant_native_runner" in rule
     assert "DEEPVARIANT" in rule
     assert "container:" not in rule
+
+
+def test_native_runner_path_is_not_validated_during_dag_construction():
+    text = DEEPVARIANT_RULES.read_text()
+    function = text.split("def get_deepvariant_native_runner", 1)[1].split(
+        "\ndef ", 1
+    )[0]
+    assert ".is_file(" not in function
+    assert "os.access(" not in function
+
+
+def test_native_runtime_is_validated_at_execution_time(tmp_path):
+    prefix = tmp_path / "deepvariant"
+    runner = prefix / "bin/run_deepvariant"
+    runner.parent.mkdir(parents=True)
+    runner.write_text("#!/bin/sh\nexit 0\n")
+    runner.chmod(0o755)
+
+    with pytest.raises(FileNotFoundError, match="runtime is incomplete"):
+        RUNTIME.deepvariant_executable(str(runner))
+
+    (prefix / ".deepvariant-native.ready").touch()
+    assert RUNTIME.deepvariant_executable(str(runner)) == str(runner.resolve())
 
 
 def test_apptainer_deepvariant_is_an_isolated_fallback():

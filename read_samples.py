@@ -14,6 +14,7 @@ import time
 import argparse
 from urllib.parse import urlsplit
 import utils
+from readgroup_rescue import discover_readgroups, readgroup_id
 
 from constants import *
 from collections import OrderedDict
@@ -202,15 +203,12 @@ def get_bam_readgroups(fname, filetype):
     :param fname: name of the bam file
     :param filetype: type of the file (bam, cram, extracted_bam, recalibrated_bam, recalibrated_cram, extracted_cram)
     :return: list of readgroups."""
-    p = subprocess.Popen('samtools view -H %s | grep ^@RG' % fname, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            shell=True)
-       
-    result, err = p.communicate()
+    p = subprocess.run(
+        ['samtools', 'view', '-H', fname], capture_output=True, text=True,
+    )
     if p.returncode != 0:
-        raise IOError(str(fname) + ': ' + str(err))
-    if not isinstance(result, str):
-        result = result.decode('utf-8')
-    rows = result.rstrip('\n').split('\n')
+        raise IOError(f'{fname}: {p.stderr.strip()}')
+    rows = [row for row in p.stdout.splitlines() if row.startswith('@RG\t')]
 
     def rejoin(x):
         if len(x) == 2:
@@ -469,7 +467,20 @@ def read_samplefile(filename, prefixpath=None):
                    # appropriate for unaligned CRAMs, but should not silently
                    # disable reference compression for other CRAM workflows.
                    'cram_no_ref': str(sample_config.get('cram_no_ref','0')).lower() in ('1','true','yes','y','on'),
+                   # RG-less CRAMs can be rescued from strict Illumina QNAMEs
+                   # after staging, in the get_readgroups checkpoint.
+                   'rescue_readgroups': str(sample_config.get('rescue_readgroups','0')).lower() in ('1','true','yes','y','on'),
+                   'rg_library': sample_config.get('rg_library', sample_id),
                    'cram_refs':cram_refs}
+
+            if res['rescue_readgroups'] and file_type != 'cram':
+                raise ValueError(
+                    f'rescue_readgroups is only supported for file_type=cram: {sample_id}'
+                )
+            if res['rescue_readgroups'] and res['erf_correct']:
+                raise ValueError(
+                    f'rescue_readgroups and erf_correct cannot be combined: {sample_id}'
+                )
                 
             all_files = [append_prefix(prefixpath,f) for f in itertools.chain(filenames1,filenames2)] 
             protocols = set([f.split(':')[0] for f in all_files if ':' in f])
@@ -480,7 +491,11 @@ def read_samplefile(filename, prefixpath=None):
 
                res['from_external'] = protocols.pop()
             else:
-                if _env_is_true('SKIP_FASTQ_VALIDATION') and file_type == 'fastq_paired':
+                if res['rescue_readgroups']:
+                    # Even local input needs the checkpoint: a complete scan is
+                    # required to find all source flowcell/lane combinations.
+                    pass
+                elif _env_is_true('SKIP_FASTQ_VALIDATION') and file_type == 'fastq_paired':
                     readgroups = []
                     for pos, (f1, f2) in enumerate(zip(filenames1, filenames2)):
                         readgroup_info = {
@@ -657,6 +672,25 @@ def get_readgroups(sample, sourcedir):
 
             readgroups_info = get_bam_readgroups(filename, file_type)
 
+            rescued_info = {}
+            if not readgroups_info and sample.get('rescue_readgroups', False):
+                if file_type != 'cram':
+                    raise ValueError(f'RG rescue requires a CRAM input: {filename}')
+                for group, count in discover_readgroups(filename, reference_file).items():
+                    rgid = readgroup_id(sample_id, group)
+                    rescued_info[rgid] = (group, count)
+                    readgroups_info.append({
+                        'ID': rgid,
+                        'SM': sample_id,
+                        'LB': sample.get('rg_library', sample_id),
+                        'PL': 'ILLUMINA',
+                    })
+            elif not readgroups_info:
+                raise ValueError(
+                    f'{filename} has no @RG entries. For an RG-less Illumina '
+                    'CRAM, set rescue_readgroups=true in the sample listing.'
+                )
+
             for readgroup_info in readgroups_info:
                 if not 'DT' in readgroup_info:
                     filedate = fstat.st_mtime
@@ -672,6 +706,11 @@ def get_readgroups(sample, sourcedir):
                 # Define the readgroup dictionary
                 readgroup = {'info': readgroup_info, 'file_type': file_type, 'file': filename,
                              'nreadgroups': len(readgroups_info), 'prefix': sourcedir, 'reference_file': reference_file}
+                if readgroup_info['ID'] in rescued_info:
+                    group, count = rescued_info[readgroup_info['ID']]
+                    readgroup['source_group'] = group
+                    readgroup['source_read_count'] = count
+                    readgroup['rescued_from_qname'] = True
                 
                 # Check if the readgroup ID has already been used
                 if readgroup_info['ID'] in used_readgroups:
@@ -941,7 +980,7 @@ def load_samplefiles(filedir, cache):
                         SAMPLEINFO[sample] = info
                         SAMPLE_TO_BATCH[sample] = None #default
                    
-                        if len(info.get('readgroups',[])) == 0:
+                        if len(info.get('readgroups',[])) == 0 and not info.get('rescue_readgroups', False):
                             no_readgroup.append(sample)
                     if no_readgroup:
                         print('WARNING: %d/%d samples have no readgroups' % (len(no_readgroup), len(w_filtered)))

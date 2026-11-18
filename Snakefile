@@ -5,6 +5,13 @@ import os
 from pathlib import Path
 from site_config import configure as _configure_site
 
+# Conda post-deploy scripts are copied next to their hashed environment before
+# execution, so they cannot locate this checkout through BASH_SOURCE.  Export
+# the canonical workflow root while the controller parses the Snakefile.  The
+# preprocessing post-deploy hook uses it only to build the checkout-local
+# native helpers against the selected environment's Python and htslib ABI.
+os.environ["SHORT_READ_PIPELINE_ROOT"] = os.path.realpath(workflow.basedir)
+
 _SITE_SETTINGS = _configure_site(config)
 if _SITE_SETTINGS.source is not None:
     envvars:
@@ -38,6 +45,8 @@ module Aligner:
     snakefile: 'Aligner.smk'
     config: config
 
+use rule * from Aligner
+
 module gVCF:
     snakefile: 'gVCF.smk'
     config: config
@@ -50,12 +59,18 @@ module DBImport:
     snakefile: 'DBImport.smk'
     config: config
 
-# module Genotype:
-#     snakefile: 'Genotype.smk'
-#     config: config
-# module VQSR:
-#     snakefile: 'VQSR.smk'
-#     config: config
+module Tools:
+    snakefile: 'Tools.smk'
+    config: config
+
+use rule * from Tools
+
+module Genotype:
+    snakefile: 'Genotype.smk'
+    config: config
+module VQSR:
+    snakefile: 'VQSR.smk'
+    config: config
 module Stat:
     snakefile: 'Stat.smk'
     config: config
@@ -105,7 +120,6 @@ END_RULE = []
 CLEAN_RULE = []
 chrM_flag = config.get("chrM","Yes")
 if chrM_flag == "Yes":
-    use rule * from chrM_analysis
     chrM_rule = rules.chrM_analysis_all.input
 else:
     chrM_rule = []
@@ -156,12 +170,8 @@ if end_point == "gVCF":
 
         use rule * from Deepvariant
 
-        use rule * from Aligner
-
         use rule * from Kraken
         
-        use rule * from Stat
-
         rule finished_sample:
             """Finish processing a sample. 
 
@@ -187,8 +197,6 @@ if end_point == "gVCF":
     elif gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
 
-        use rule * from Aligner
-
         use rule * from Kraken
 
         rule finished_sample:
@@ -211,13 +219,9 @@ if end_point == "gVCF":
         print("You will run following steps: Aligning with dragen and gVCF calling with HaplotypeCaller (default). "
               "To change gVCF caller to deepvariant pass '--config caller=Deepvariant'")
     elif gvcf_caller == "Deepvariant":
-        use rule * from Aligner
-        
         use rule * from Deepvariant
 
         use rule * from Kraken
-
-        use rule * from Stat
 
         rule finished_sample:
             """Finish processing a sample. 
@@ -261,13 +265,9 @@ elif end_point == 'PrepareRef':
 
     END_RULE = rules.Reference_preparation_all.input
 elif end_point == "Align" or end_point == "Aligner":
-    use rule * from Aligner
-
     END_RULE = rules.Aligner_all.input
     print("You will run following steps: Aligning with dragen")
 elif end_point == "Genotype" or end_point == "Genotyper":
-    use rule * from Aligner
-
     if gvcf_caller == "HaplotypeCaller":
         use rule * from gVCF
 
@@ -302,7 +302,10 @@ elif end_point == "Genotype" or end_point == "Genotyper":
               "* To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller' \n "
               "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
     elif gvcf_caller == "BOTH":
-        use rule * from Genotype
+        # Genotype and GLnexus have distinct annotation implementations with
+        # several historical generic rule names. Keep both DAGs, but give the
+        # GATK branch explicit names instead of relying on global overwrite.
+        use rule * from Genotype as gatk_*
 
         use rule * from Deepvariant
 
@@ -316,8 +319,6 @@ elif end_point == "Genotype" or end_point == "Genotyper":
             "invalid option provided to 'caller'; please choose either 'HaplotypeCaller'(default) or 'Deepvariant'."
         )
 elif end_point == "Combine":
-    use rule * from Aligner
-
     if gVCF_combine_method == "DBIMPORT":
         use rule * from gVCF
 
@@ -328,14 +329,11 @@ elif end_point == "Combine":
     elif gVCF_combine_method == "COMBINE_GVCF":
         use rule * from gVCF
 
-        END_RULE = rules.Combine_gVCF_all.input
-
         use rule * from Combine_gVCF
 
+        END_RULE = rules.Combine_gVCF_all.input
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
-        use rule * from Aligner
-
         if gvcf_caller == "HaplotypeCaller":
             use rule * from gVCF
 
@@ -372,8 +370,6 @@ elif end_point == "Combine":
             "invalid option provided to 'Combine_gVCF_method'; please choose either 'GLnexus'(default), 'COMBINE_GVCF' or 'DBIMPORT'."
         )
 elif end_point == "VQSR" or end_point == "VCF":
-    use rule * from Aligner
-
     if gVCF_combine_method == "DBIMPORT":
         use rule * from gVCF
 
@@ -433,8 +429,6 @@ elif end_point == "VQSR" or end_point == "VCF":
 
         rule_all_combine = rules.Combine_gVCF_all.input
     elif gVCF_combine_method == "GLnexus":
-        use rule * from Aligner
-
         if gvcf_caller == "HaplotypeCaller":
             use rule * from gVCF
 
@@ -455,7 +449,7 @@ elif end_point == "VQSR" or end_point == "VCF":
                   "* To change gVCF caller to HaplotypeCaller pass '--config caller=HaplotypeCaller'"
                   "* To change combining method to GATK-s GenomicDBimport pass '--config Combine_gVCF_method=DBIMPORT'")
         elif gvcf_caller == "BOTH":
-            use rule * from Genotype
+            use rule * from Genotype as gatk_*
 
             use rule * from Deepvariant
 
@@ -525,11 +519,38 @@ from restart_state import verify_rule_filters
 verify_rule_filters(workflow.rules, REUSED_SAMPLES)
 
 onstart:
+    import glob, os, shutil
+    from pathlib import Path
+
+    # DeepVariant is a separately prepared native runtime; CONDA_VCF only
+    # supplies the wrapper and post-processing tools.  Validate the runtime
+    # once on the controller, after DAG construction but before any jobs are
+    # submitted.  Worker Snakemake processes have is_main_process=False, and
+    # --conda-create-envs-only does not execute onstart, so neither path turns
+    # this preflight back into a deployment circularity.
+    if workflow.is_main_process and any(
+        job.rule.name == "deepvariant_phasing_fused"
+        for job in workflow.dag.needrun_jobs()
+    ):
+        from scripts.pipeline_runtime import deepvariant_executable
+        native_prefix = config.get(
+            "deepvariant_native_prefix",
+            os.environ.get("DEEPVARIANT_NATIVE_PREFIX"),
+        )
+        if not native_prefix:
+            raise ValueError(
+                "DeepVariant requires --config "
+                "deepvariant_native_prefix=/path/to/runtime or the "
+                "DEEPVARIANT_NATIVE_PREFIX environment variable"
+            )
+        deepvariant_executable(
+            str(Path(native_prefix).expanduser() / "bin/run_deepvariant")
+        )
+
     # A prior invocation can leave temp outputs behind: their consumers are
     # skipped for reused samples, so Snakemake does not garbage-collect them.
     # The controller has already validated the reused samples in restart_state.
     # Never clean a sample explicitly selected for rebuilding.
-    import glob, os, shutil
     def _rm(path):
         try:
             if os.path.isdir(path):

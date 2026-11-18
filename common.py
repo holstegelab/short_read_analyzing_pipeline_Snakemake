@@ -491,23 +491,22 @@ def ssd_gb_for_inputs(paths, factor=1.0, overhead_gb=1.0, minimum_gb=1):
 
 
 def node_ssd_base(tmpdir_fallback=None):
-    user = os.environ.get('USER','')
-    contracted = os.environ.get('ZSLURM_SCRATCH_ROOT')
-    if contracted and os.path.isdir(contracted) and os.access(contracted, os.W_OK):
-        return contracted
-    slurm_tmp = os.environ.get('SLURM_TMPDIR')
-    job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID')
-    if job_id:
-        p = f"/scratch-node/{user}.{job_id}"
-        if os.path.isdir(p) and os.access(p, os.W_OK):
-            return p
-    if tmpdir_fallback:
-        return tmpdir_fallback
-    if slurm_tmp and os.path.isdir(slurm_tmp) and os.access(slurm_tmp, os.W_OK):
-        return slurm_tmp
-    if os.path.isdir(TMPDIR_ALT) and os.access(TMPDIR_ALT, os.W_OK):
-        return os.path.join(TMPDIR_ALT, user)
-    return tmpdir
+    """Return this job's assigned scratch without borrowing another job's.
+
+    Keep legacy callers working by supplying the workflow's shared temporary
+    directory as an explicit fallback.  The actual scheduler-specific lookup
+    lives in ``scripts.pipeline_runtime`` so fused and non-fused code agree.
+    """
+    from scripts.pipeline_runtime import assigned_scratch
+
+    fallback = tmpdir_fallback
+    if fallback is None:
+        user = os.environ.get('USER', '')
+        if os.path.isdir(TMPDIR_ALT) and os.access(TMPDIR_ALT, os.W_OK):
+            fallback = os.path.join(TMPDIR_ALT, user)
+        else:
+            fallback = tmpdir
+    return os.fspath(assigned_scratch(shared_fallback=fallback))
 
 def node_tmp_path(*segments):
     base = node_ssd_base()

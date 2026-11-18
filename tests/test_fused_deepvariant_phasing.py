@@ -55,6 +55,10 @@ for key in ('--output_vcf', '--output_gvcf'):
     Path(str(out) + '.tbi').write_bytes(b'index')
 """,
     )
+    # The production launcher is prepared below PREFIX/bin and is accompanied
+    # by PREFIX/.deepvariant-native.ready.  This fake runner lives one level
+    # shallower, so its inferred prefix is tmp_path.
+    (tmp_path / ".deepvariant-native.ready").touch()
     whatshap = _script(
         tools / "whatshap",
         """import os

@@ -1,9 +1,11 @@
 # Dependency inventory and Spider/ZSlurm migration plan
 
-Date: 2026-09-07; implementation update: 2026-09-14. Steps 1 and 2 now have an
-isolated release implementation and documentation; they are not yet pushed or
-deployed. The workflow is still **not end-to-end tested on Spider**. The running
-pipelines and scheduler are not being reconfigured.
+Date: 2026-09-07; implementation update: 2026-09-17. Steps 1 and 2 and the code
+portion of step 3 are published on the default pipeline and ZSlurm branches.
+They are not automatically deployed into running controllers/managers. A real
+Spider preprocessing canary passed, but the workflow is still **not
+end-to-end tested on Spider**. Running pipelines and schedulers are not
+reconfigured by the repository merge.
 
 ## Conclusions
 
@@ -17,8 +19,9 @@ pipelines and scheduler are not being reconfigured.
    today.** Software installation/builds, relocatable path configuration,
    scheduler + executor installation, input manifests and authorized storage
    access are also required. Some important paths are outside the resource
-   folder. A plain clone of the remote default branch also does not include
-   this unpublished cleanup branch and its snapshot of the restart fixes.
+   folder. The remote default branch now contains the cleanup/portability
+   implementation, but still requires the separately pinned components and
+   site installation described below.
 3. Keep one workflow implementation, with site configuration for Snellius and
    Spider. Do not fork the biological algorithms, increase reservations, or
    force all jobs through Apptainer as part of this migration.
@@ -28,12 +31,12 @@ pipelines and scheduler are not being reconfigured.
 | Component | Current dependency/evidence | Copying resources sufficient? |
 |---|---|---|
 | Workflow + restart handling | This repository, including `restart_state.py`, `scripts/prepare_restart.py`, runners and delivery templates | Clone the tested revision, including the cleanup/restart commits |
-| Controller/worker Snakemake | Current environment imports the local fork at `~/repos/snakemake`, reports `9.13.8.dev16`; checked HEAD `83c79c1d` | No; install a tested revision and retain any required local patches. Do not assume an arbitrary released version accepts the profile |
-| ZSlurm manager/chiefs | Separate `~/projects/cluster_manager`, checked HEAD `93a1d96`; own `env.yaml`/installation | No; install into the environment used by manager and pilots |
+| Controller/worker Snakemake | Local fork reports `9.13.8.dev16`; existing installations at `83c79c1d` passed the Snellius canary, while the component lock pins `50bd8694` with duplicate-rule validation restored | No; retain the fork's checkpoint-temp, Conda-`run:`, metadata-cleanup and Apptainer-symlink fixes. Stock Snakemake was a compatibility test, not a replacement |
+| ZSlurm manager/chiefs | Separate `holstegelab/zslurm`, release commit `3b88987`; own `env.yaml`/installation | No; install into the environment used by manager and pilots; repository merge does not update a running manager process |
 | Native executor | Separate package `snakemake-executor-plugin-zslurm`; release fix commit `9ed793e` transports declared/resolved environment values to shell-free workers | No; install the pinned commit into the Snakemake environment on controller and workers |
 | Controller Python modules | `Snakefile`, `common.py`, `read_stats.py`: pandas, numpy, PyYAML, h5py, Snakemake and its plugins | No; a complete pinned controller environment is not supplied by this pipeline |
 | Rule environments | `envs/*.yaml` and **post-deploy scripts**; environments currently live outside resources under the user's `.snakemake` prefix | No; recreate at the final installation prefix, then smoke-test |
-| Custom native tools | `scripts/Makefile`: `bam_merge`, `bam_dechimer`, `fix_bam_rg_pairs`, `fastcheck` and `fastcheck_hts` extensions | No; binaries/extensions are Git-ignored. Build on target, against the Python ABI/htslib used there |
+| Custom native tools | `scripts/Makefile`: `bam_merge`, `bam_dechimer`, `fix_bam_rg_pairs`, `fastcheck` and `fastcheck_hts` extensions | No; binaries/extensions are Git-ignored. The preprocessing post-deploy hook now builds them automatically on target against that environment's Python/htslib ABI |
 | Native DeepVariant 1.9.0 | `software/deepvariant-1.9.0-native` under resources; `scripts/prepare_deepvariant_native.py` | Not by moving the installed runtime: launchers embed absolute paths. Recreate at final prefix from pinned image/archive and verify |
 | Containers | GLnexus v1.4.1 for joint calling; optional DeepVariant comparison image 1.9.0 | Not normally: images/cache are in a separate `.apptainer` prefix. Provision Apptainer and cache verified images if those endpoints are selected |
 | References/databases | See resource groups below, including all indexes and region files | Usually data can be copied, but verify completeness, symlink targets, hashes and licenses |
@@ -82,10 +85,10 @@ No credential contents were read for this inventory.
 | `Aligner.smk` / external adapter defaults | Corrected hg19/b37 chrY reference was outside the bundle at `.../marc/genome/hg19_b37chrY.fa` | **Implemented:** configured path plus checksum-pinned FASTA/FAI supplement; header-driven selection is retained |
 | `constants.py`, `precompute_capture_kits.py`, `decrypt_c4gh.py`, `GLnexus.smk` | Additional fixed resource/tool/preset paths; old user-specific token defaults | **Implemented for selected paths:** resource, preset, CRAM references, transfer executables/remotes and key filenames resolve through the shared site configuration |
 | `scripts/prepare_deepvariant_native.py` | Loader, Python, library and executable paths baked into launchers | Rebuild runtime at destination prefix; record source image digest and verify `--version` plus tiny WGS/WES jobs |
-| `profiles/zslurm/config.yaml` | User-specific Conda/Apptainer cache paths and `/scratch-node` bind | **Partly implemented:** `profiles/spider` has project prefixes and no false bind. Its correct allocation scratch bind/export remains step 3. Logical `partition=compute` stays unchanged |
-| `pipeline_runtime.assigned_scratch` | Accepts assigned `/scratch-node` location; `SLURM_TMPDIR` only if it resolves under `/scratch-node`; ignores Spider's `$TMPDIR` | Accept an engine-provided, validated scratch contract, independent of mount spelling |
-| `common.node_ssd_base`, markdup shell, `DBImport.smk`, `Deepvariant_apptainer.smk`, level-2 tar script | Multiple scratch-selection implementations; some scan other `/scratch-node/$USER.*` directories or use `/scratch-local` | Route through shared helper, remove foreign-job fallback, give every child job its own directory |
-| markdup cleanup shell | Cleanup targets the allocation-level `markdup/$SLURM_JOB_ID` subtree, not only its sample's directory | Narrow cleanup ownership before placing multiple jobs under one shared pilot scratch root; never clean another child job's files |
+| `profiles/zslurm/config.yaml` | User-specific Conda/Apptainer cache paths and `/scratch-node` bind | **Implemented:** `profiles/spider` uses project prefixes and no false bind. ZSlurm exports the exact child scratch path. Logical `partition=compute` stays unchanged |
+| `pipeline_runtime.assigned_scratch` | Accepted only Snellius `/scratch-node` layouts | **Implemented:** consumes `ZSLURM_SCRATCH_DIR`, retains the legacy path and explicit `SLURM_TMPDIR`, and never guesses from generic cross-site `TMPDIR` |
+| `common.node_ssd_base`, `DBImport.smk`, `Deepvariant_apptainer.smk`, level-2 tar script | Multiple scratch-selection implementations; some scanned other `/scratch-node/$USER.*` directories | **Implemented:** all route through the shared resolver; foreign-job scanning is removed |
+| child scratch cleanup | Multiple jobs share one pilot allocation | **Implemented:** the chief owns and cleans only the unique `.zslurm/jobs/job-<zslurm-id>-<suffix>` attempt directory; rule-level cleanup stays below that private root |
 | `constants.py` / `tmpdir` | Shared temporary directory is relative to run workdir; `/scratch-local` secondary fallback | Explicit durable shared-temp root on target project filesystem; node-temp paths only for data whose consumers are inside the same job |
 | Archive input route | `/opt/dacommands/bin/daget`/`dals` and Snellius archive paths | Do not enable unchanged on Spider. Select dCache/S3 input route or implement/test a genuine site archive backend |
 | Encryption / transfers | Private sender key fixed under resources; tokens/default remotes spread across modules | **Path separation implemented:** explicit protected filenames and tools/remotes. Endpoint capability checks remain part of the later preflight step |
@@ -129,46 +132,42 @@ before sizing pilots. Do not advertise the full physical SSD to every partial
 pilot just because `df` shows it.
 [SURF: compute on Spider](https://doc.spider.surfsara.nl/en/latest/Pages/compute_on_spider.html)
 
-### ZSlurm is partially prepared, not yet end-to-end portable
+### ZSlurm implementation on main, preprocessing-certified only
 
 The inspected `cluster_manager/config/sites/spider.yaml` and
-`zslurm._cluster_defaults` provide `normal`, SSD feature `ssd`, a
-30-core/240-GB pilot profile, and autogrow capped at 15 pilots. Use this as a
-starting template, **not as measured current capacity**.
+`zslurm._cluster_defaults` already provide `normal`, SSD feature `ssd`, a
+dynamic 2--30-core/8-GB-per-core pilot profile, and demand-backed compute
+autogrow capped at 15 running plus queued pilots. Use this as a starting
+template, **not as measured current capacity**. Temporarily disable autogrow or
+cap it at one pilot during the site-owned production canary.
 
-Scheduler scratch-contract implementation is now present in the local ZSlurm
-and pipeline checkouts. Items 1--5 below have simulated regression coverage;
-the deployment and live-cluster checks in items 6--8 remain open:
+Implemented in the ZSlurm release:
 
-1. Implemented: the chief discovers Spider `$TMPDIR` while retaining the
-   allocation-specific Snellius `/scratch-node/...` path.
-2. Implemented: occupancy and autogrow use configured `ssd_feature_name`, and
-   partial-pilot planning counts fitting CPU slots on MIXED nodes.
-3. Implemented: each child receives private `TMPDIR`/`TMP`/`TEMP` and
-   `ZSLURM_SCRATCH_ROOT` values below the allocation root; cleanup is scoped to
-   that child directory and the lease environment remains intact.
-4. Implemented for the supplied 30-core Spider profile: each pilot advertises
-   at most 3000 GiB of the 12-TB physical SSD. Live high-water validation and
-   policy confirmation remain required.
-5. Covered by the existing cgroup/Slurm memory cap and partial-pilot tests;
-   live Spider verification remains required.
-6. The template's `staging_partition: staging` needs target verification.
-   Configure transfer pilots on an available physical partition (for example
-   `normal`) while retaining the logical ZSlurm `archive` job class and
-   directional transfer slots. No evidence was gathered that Spider offers a
-   physical partition named `staging`.
-7. GPFS RDMA monitoring in `zslurm_chief` is not CephFS telemetry. Disable
-   GPFS-specific reporting on Spider until a measured Ceph/network equivalent
-   exists; do not interpret an unavailable/zero metric as zero I/O pressure.
-8. Verify manager ↔ worker RPC/DNS/firewall access, Slurm launch environment,
-   child subprocess mount namespace, cgroup behavior, local Unix lease socket,
-   reconnects/timeouts and clean engine shutdown under a real allocation.
+1. Scratch discovery is site-gated: Spider accepts its pilot `$TMPDIR`, while
+   Snellius cannot accidentally advertise ordinary `/tmp` as SSD.
+2. Scratch feature detection uses the configured `ssd`/`scratch-node` feature;
+   all 29 currently visible Spider `normal` nodes advertise `ssd`.
+3. Every child attempt receives a unique mode-0700 directory via
+   `ZSLURM_SCRATCH_DIR`; `TMPDIR`, `TMP`, `TEMP`, and `TEMPDIR` point there and
+   controller paths are removed.
+4. Spider partial pilots advertise 73 GiB per allocated core, additionally
+   bounded by physical total/free space. A 30-core pilot therefore exposes at
+   most 2,190 GiB, not the whole physical device.
+5. The nonexistent `staging` partition and staging autogrow are disabled;
+   archive sources remain unsupported until a real Spider backend exists.
+6. GPFS RDMA monitoring is disabled in the Spider site configuration.
 
-Implemented contract: the chief validates its scratch, exports
-`ZSLURM_SCRATCH_ROOT` plus `ZSLURM_SCRATCH_CAPACITY_GB`, and gives each child a
-unique `job-<zslurm_id>` subdirectory. The pipeline consumes this contract.
-Snellius and Spider only differ in how the chief discovers the allocation root;
-pipeline phases need no site branch.
+Real `short` pilots verified manager ↔ worker RPC, lease resizing, private
+scratch creation/removal and clean engine shutdown. Still required before
+production are full cgroup/failure/restart coverage, Apptainer visibility,
+dCache publication and alignment/calling jobs using the installed Spider
+resource tree.
+
+The implemented contract has the chief validate scratch, export the allocation
+root/capacity and give each attempt a unique
+`job-<zslurm_id>-<suffix>` subdirectory through `ZSLURM_SCRATCH_DIR`.
+The pipeline consumes this contract. Snellius and Spider only differ in how
+the chief discovers the allocation root; pipeline phases need no site branch.
 
 `ssd_use=required` must retain its meaning. Do not fix detection by declaring
 every job SSD-optional or by accepting a writable generic `/tmp`. Optional
@@ -180,7 +179,7 @@ products needed by a later rule or a restarted workflow.
 
 ### 1. Freeze a distributable baseline
 
-Implementation status: **done in the isolated release branch**. See
+Implementation status: **merged to the default branch**. See
 `RELEASE_BASELINE.md`, `deployment/component-lock.yaml` and
 `deployment/environment-inputs.sha256`. The executor environment fix is a
 separate tested commit. Solver-complete Conda locks remain desirable because
@@ -220,12 +219,15 @@ Snellius GPFS, old Conda prefix or a resource symlink outside the supplied bundl
 
 ### 3. Complete the scratch contract in ZSlurm and pipeline
 
-Implementation status: **implemented locally with simulated regression tests;
-live Spider canary still required**. The scheduler checkout contains the
-discovery/environment/capacity fixes above with simulated
-Snellius/Spider/partial-allocation coverage. Pipeline scratch users consume the
-portable contract and the Spider profile avoids a false `/scratch-node` bind.
-No tool command lines or CPU/memory reservations were tuned in this step.
+Implementation status: **merged to the default pipeline and ZSlurm branches;
+unit-tested and exercised by real Spider manager/worker, lease, cleanup and
+paired-FASTQ preprocessing canaries; not deployed for a production cohort**.
+
+Implement the discovery/environment/capacity fixes above in a scheduler
+checkout, with simulated Snellius/Spider/partial allocations and unavailable
+scratch tests. Update all pipeline scratch users, including markdup cleanup,
+and add a Spider Snakemake profile with correct optional container binds.
+Do not tune CPU/memory reservations or change tool command lines in this step.
 
 Acceptance: two child jobs in one pilot and two partial pilots on one host
 cannot claim each other's files or SSD quota; end/failure of one child cannot
@@ -235,9 +237,10 @@ correctly without changing the algorithm's tool parallelism.
 
 ### 4. Build software and add a preflight
 
-At final Spider paths, recreate environments including post-deploy actions,
-build native tools/extensions, prepare native DeepVariant and cache GLnexus
-only if needed. Test imports and actual binary versions from worker envs.
+At final Spider paths, recreate environments including post-deploy actions;
+the preprocessing hook builds the native tools/extensions automatically.
+Prepare native DeepVariant and cache GLnexus only if needed. Test imports and
+actual binary versions from worker envs.
 
 Add a read-only preflight before expensive DAG construction: selected endpoint
 dependencies, executable/ABI/ISA checks, references/indexes, intended target
@@ -252,9 +255,10 @@ active shared checkout.
 
 ### 5. Single-pilot Spider smoke tests, then controlled scale-up
 
-Use a separately named manager instance, autogrow initially off, one deliberately
-sized pilot and a small quota-limited run directory. No Snellius instance name
-or run state should be reused accidentally.
+Use a separately named manager instance, override the supplied autogrow default
+to off or a one-pilot cap, start one deliberately sized pilot and use a small
+quota-limited run directory. No Snellius instance name or run state should be
+reused accidentally.
 
 - Paired FASTQ/BAM/CRAM, one/multiple readgroups, ERF correction, dedup/rescue,
   WGS/WES, male/female (including skipped Y), chrM on/off.
@@ -274,16 +278,17 @@ or run state should be reused accidentally.
 
 Acceptance: successful end-to-end canary + restart, clean scratch, no missing
 outputs or silent sample skips, bounded reservations and correct RPC/lease
-behavior. Only then choose a node cap and enable controlled autogrow.
+behavior. Only then restore the reviewed compute-autogrow cap (15 in the
+supplied Spider ZSlurm configuration).
 
 ## Scope and open verification
 
-No Spider session, scheduler query or job was run for this report. Hardware,
-scratch entitlement and mount/namespace details must be confirmed on a real
-pilot; public documentation is not a substitute for that probe. Existing
-Snellius test results are recorded separately in `FUSED_CLEANUP_VALIDATION.md`.
-This plan intentionally does not migrate patient data, share credentials,
-publish code or alter a running pipeline. The merge+markdup and
-CRAM+encryption+upload fusions are now implemented and tested in the isolated
-`codex/active-storage-fusion-20260915` branch; they still require a measured
-Snellius canary and the Spider scratch-contract work above before deployment.
+Spider login/scheduler queries and real `short` allocations were used for the
+scratch, RPC, lease, cleanup and paired-FASTQ preprocessing canaries described
+above. They do not replace a full alignment/calling, restart, transfer and
+container canary. Existing Snellius test results are recorded separately in
+`FUSED_CLEANUP_VALIDATION.md`. This plan intentionally does not migrate patient
+data, share credentials or alter a running pipeline merely by merging code.
+The merge+markdup and CRAM+encryption+upload fusions are implemented on the
+pipeline default branch; they still require measured production-like canaries
+before deployment at a new site.

@@ -115,8 +115,17 @@ def test_deepvariant_gates_shared_scratch_and_retains_calls_before_publication(
             "--scratch-base", str(scratch), "--quota-mode", "required"]
     for flag in ("bed", "bam", "bai", "validated-sex", "reference", "deepvariant-reference",
                  "interval-bed", "capture-auto-bed", "capture-x-bed", "capture-y-bed",
-                 "merge-script", "stats-parser", "deepvariant-runner"):
+                 "merge-script", "stats-parser"):
         argv.extend(["--" + flag, str(input_file)])
+    # deepvariant_executable() requires a prepared native runtime:
+    # PREFIX/bin/run_deepvariant (executable) plus PREFIX/.deepvariant-native.ready.
+    native = tmp_path / "native"
+    (native / "bin").mkdir(parents=True)
+    runner = native / "bin" / "run_deepvariant"
+    runner.write_text("#!/bin/sh\nexit 0\n")
+    runner.chmod(0o755)
+    (native / ".deepvariant-native.ready").touch()
+    argv.extend(["--deepvariant-runner", str(runner)])
     for name in ("vcf", "vcf-tbi", "wstats", "merge-stats", "bcftools-stats", "bcftools-summary",
                  "gvcf", "gvcf-tbi", "exome-gvcf", "exome-gvcf-tbi"):
         argv.extend(["--output-" + name, str(outputs / name)])

@@ -10,6 +10,7 @@ import traceback
 import json
 import tempfile
 from collections.abc import Mapping
+import readgroup_checkpoint as _readgroup_checkpoint
 
 import read_samples
 from common import *
@@ -178,7 +179,7 @@ def sampleinfo(SAMPLEINFO, sample, checkpoint=False):  #{{{
             xsample = utils.load(rgpath)
         elif checkpoint:
             #no readgroup info yet
-            filename = checkpoints.get_readgroups.get(sample=sample).output[0]
+            filename = _readgroup_checkpoint.output(sample)
             xsample = utils.load(filename)
         sinfo = sinfo.copy()
         sinfo['readgroups'] = xsample['readgroups']
@@ -242,8 +243,12 @@ checkpoint get_readgroups:
     output:
         pj(SAMPLEINFODIR,"{sample}.dat")
     resources:
-        time = get_time('get_readgroups'),
-        n="0.5",
+        time=lambda wc, attempt: max(
+            get_time('get_readgroups')(wc, attempt),
+            int(SAMPLEINFO[wc.sample]['filesize'] * 600)
+            if SAMPLEINFO[wc.sample].get('rescue_readgroups', False) else 0,
+        ),
+        n=lambda wc: "1.0" if SAMPLEINFO[wc.sample].get('rescue_readgroups', False) else "0.5",
         mem_mb=256
     params:
         sample=lambda wildcards: SAMPLEINFO[wildcards['sample']],
@@ -261,6 +266,11 @@ checkpoint get_readgroups:
     conda: CONDA_MAIN
     script:
         "scripts/get_readgroups.py"
+
+# Snakemake isolates the checkpoint namespace of every workflow module.  Make
+# this canonical checkpoint available to the Stat and Kraken modules after it
+# has been registered by the checkpoint directive above.
+_readgroup_checkpoint.register(checkpoints.get_readgroups)
 
 rule archive_get:
     """Stage a batch of files from archive.
@@ -853,7 +863,9 @@ def ensure_source_aligned_file(wildcards):  #{{{
 def get_mem_mb_split_alignments(wildcards, attempt):  #{{{
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
     readgroups_b = sinfo['readgroups']
-    if len(readgroups_b) <= 1:
+    if len(readgroups_b) <= 1 and not any(
+        rg.get('rescued_from_qname', False) for rg in readgroups_b
+    ):
         return 512
     else:
         res = 7500
@@ -869,7 +881,9 @@ def get_n_split_alignments(wildcards):  #{{{
         rg for rg in sinfo['readgroups']
         if wildcards['filename'] in rg['file']
     ]
-    if len(readgroups) > 1 or sinfo.get('erf_correct', False):
+    if len(readgroups) > 1 or sinfo.get('erf_correct', False) or any(
+        rg.get('rescued_from_qname', False) for rg in readgroups
+    ):
         # A real-data sweep measured 2.87 cores on average with samtools -@ 3.
         return "3.0"
     # The single-RG path only creates a link and completion marker.
@@ -917,6 +931,7 @@ rule split_alignments_by_readgroup:
         quota_gate=srcdir('scripts/storage_quota.py'),
         quota_mode=STORAGE_QUOTA_MODE,
         lease_command=zslurm_lease_command(config),
+        rescuer=srcdir('readgroup_rescue.py'),
     run:
         # All branching in Python; shell executes a single, fixed command string
         sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
@@ -966,7 +981,7 @@ rule split_alignments_by_readgroup:
         sanitized = f"{output.readgroups}/{wildcards.sample}.sanitized.{extension_in}"
         n = len(readgroups)
 
-        if n > 1 or erf_correct:
+        if n > 1 or erf_correct or readgroups[0].get('rescued_from_qname', False):
             shell(
                 "python {params.quota_gate:q} --destination {output.readgroups:q} "
                 "--quota-mode {params.quota_mode:q} --cores {resources.n} "
@@ -974,7 +989,20 @@ rule split_alignments_by_readgroup:
                 "--lease-command {params.lease_command:q} --phase split_alignments"
             )
 
-        if n == 1:
+        if readgroups[0].get('rescued_from_qname', False):
+            # QNAME rescue requires a full scan in the checkpoint to discover
+            # all groups, then one streamed pass to tag and split the CRAM.
+            # Never link the RG-less source, even if only one lane was found.
+            groups_json = json.dumps(readgroups, separators=(',', ':'))
+            shell(
+                "python {params.rescuer:q} split --input {readfile:q} "
+                "--output-dir {output.readgroups:q} --sample {wildcards.sample:q} "
+                "--groups-json {groups_json:q} --reference {selected_reference:q} "
+                "--output-fmt {output_fmt:q} --extension {extension:q} "
+                "--threads {resources.use_threads}"
+            )
+            shell("touch {output.done:q}")
+        elif n == 1:
             # Single RG path: optionally sanitize, then link
             readgroup_id = readgroups[0]['info']['ID']
             if erf_correct:
@@ -1030,6 +1058,9 @@ def get_extension(wildcards):  #{{{
     """Utility function to get the extension of the input file for a sample (bam/cram)."""
     sinfo = sampleinfo(SAMPLEINFO,wildcards['sample'],checkpoint=True)
     readgroup = [readgroup for readgroup in sinfo['readgroups'] if readgroup['info']['ID'] == wildcards['readgroup']][0]
+    if readgroup.get('rescued_from_qname', False):
+        # A .ucram source is rewritten as a normal .cram by the rescue step.
+        return 'cram'
     res = os.path.splitext(readgroup['file'])[1][1:].lower()
 
     return res

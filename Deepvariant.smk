@@ -13,10 +13,6 @@ import shutil
 from pathlib import Path
 
 
-module Tools:
-    snakefile: 'Tools.smk'
-    config: config
-use rule * from Tools
 mode = config.get("computing_mode", "WES")
 DEEPVARIANT_APPTAINER = config.get("deepvariant_apptainer_output", f"{DEEPVARIANT}_apptainer")
 DEEPVARIANT_NATIVE_PREFIX = config.get(
@@ -40,15 +36,12 @@ def get_deepvariant_native_runner(wildcards):
             "DeepVariant requires --config deepvariant_native_prefix=/path/to/runtime "
             "or the DEEPVARIANT_NATIVE_PREFIX environment variable"
         )
-    prefix = Path(DEEPVARIANT_NATIVE_PREFIX).expanduser()
-    runner = prefix / "bin/run_deepvariant"
-    ready = prefix / ".deepvariant-native.ready"
-    if not ready.is_file() or not runner.is_file() or not os.access(runner, os.X_OK):
-        raise FileNotFoundError(
-            f"DeepVariant native runtime is incomplete at {prefix}. "
-            "Run scripts/prepare_deepvariant_native.py --prefix PATH first."
-        )
-    return str(runner)
+    # This params function runs while Snakemake constructs the DAG.  It must
+    # only calculate the configured path: validating the separately installed
+    # native runtime here prevents --conda-create-envs-only from doing its job.
+    # The controller preflight and the fused runner validate the installation
+    # immediately before execution instead.
+    return str(Path(DEEPVARIANT_NATIVE_PREFIX).expanduser() / "bin/run_deepvariant")
 
 
 def level2_parent_level1(region):
@@ -130,7 +123,13 @@ rule extract_and_tar_deepvariant_level2_wgs:
     resources:
         time = get_time('extract_and_tar_deepvariant_level2_wgs'),
         mem_mb=4000,
-        n=lambda wildcards, threads: str(threads)
+        n=lambda wildcards, threads: str(threads),
+        ssd_use="possible",
+        # One level-2 region is a fraction of its level-1 gVCFs; scratch holds
+        # the extracted files and their uncompressed tar at the same time.
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.gvcfs, factor=0.30, overhead_gb=2, minimum_gb=2
+        )
     script:
         "scripts/extract_and_tar_deepvariant_level2.py"
 
@@ -153,7 +152,11 @@ rule extract_and_tar_deepvariant_level2_wes:
     resources:
         time = get_time('extract_and_tar_deepvariant_level2_wes'),
         mem_mb=4000,
-        n=lambda wildcards, threads: str(threads)
+        n=lambda wildcards, threads: str(threads),
+        ssd_use="possible",
+        ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(
+            input.gvcfs, factor=0.30, overhead_gb=2, minimum_gb=2
+        )
     script:
         "scripts/extract_and_tar_deepvariant_level2.py"
 

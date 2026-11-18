@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -53,7 +54,7 @@ def test_raw_intermediates_are_temporary_but_completed_results_are_durable():
     ) == 1
     assert 'tar=pj(STAT,"{sample}.stats.tar.gz")' in stats
     assert "coverage_regions=pj(STAT, 'cov', '{sample}.regions.bed.gz')" in stats
-    assert 'os.path.join(FQ_BADMAP, se + ".*.badmap_*.fastq.gz")' in snakefile
+    assert re.search(r"os\.path\.join\(FQ_BADMAP, se \+ (['\"])\.\*\.badmap_\*\.fastq\.gz\1\)", snakefile)
     assert 'os.path.join(STAT, "cov", se + ".*")' not in snakefile
     assert 'os.path.join(STAT, "*.stats_bundle.tar.gz")' in snakefile
 
