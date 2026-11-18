@@ -130,9 +130,58 @@ echo '--- kmc_core/binary_reader.h
 @@ -469 +513 @@
 -						readed = fread(part, 1, part_size, get<0>(f));
 +						readed = ReadPart(get<0>(f), part, get<3>(f));' >> kmc_make.patch
+# A stats reader stops once the global sample quota is exhausted. The shared
+# binary producer then stops ALL input streams, not just that reader's stream.
+# Publish cancellation on every queue before completing any of them, so another
+# gzip reader cannot mistake this intentional cutoff for a truncated file.
+# Full counting uses fresh, uncancelled queues: real EOF/CRC failures stay fatal.
+printf '%b\n' '--- kmc_core/queues.h
++++ kmc_core/queues.h
+@@ -109,6 +109,11 @@
+ \t\tstop = true;
+ \t\tcv_push.notify_all();
+ \t}
++\tbool is_cancelled()
++\t{
++\t\tlock_guard<mutex> lck(mtx);
++\t\treturn stop;
++\t}
+ };
+\040
+\040
+--- kmc_core/binary_reader.h
++++ kmc_core/binary_reader.h
+@@ -504,6 +504,13 @@
+ \t\t}
+\040
++\t\t// A rejected push means the statistics sample quota was reached.
++\t\t// Mark EVERY stream cancelled before waking readers with completion.
++\t\t// Otherwise a different gzip reader sees a false, corrupt-file EOF.
++\t\tif (forced_to_finish)
++\t\t\tfor (auto& e : binary_pack_queues)
++\t\t\t\te->ignore_rest();
++
+ \t\t//user may specify more fastq_readers than input files
+ \t\tfor (auto& e : binary_pack_queues)
+ \t\t\te->mark_completed();
+ \t}
+--- kmc_core/fastq_reader.cpp
++++ kmc_core/fastq_reader.cpp
+@@ -1041,8 +1041,11 @@
+-\t\t\t\t\tif (ret != Z_STREAM_END) {
++\t\t\t\t\t// Statistics sampling can intentionally stop the producer
++\t\t\t\t\t// mid-gzip-stream. Only explicit queue cancellation permits
++\t\t\t\t\t// this; physical truncation in sampling/counting stays fatal.
++\t\t\t\t\tif (ret != Z_STREAM_END && !binary_pack_queue->is_cancelled()) {
+ \t\t\t\t\t\tstd::ostringstream ostr;
+ \t\t\t\t\t\tostr << "Unexpected end of gzip file";
+ \t\t\t\t\t\tCCriticalErrorHandler::Inst().HandleCriticalError(ostr.str());
+ \t\t\t\t\t}
+\040
+ \t\t\t\t\treturn ret_val;
+ \t\t\t\t}' >> kmc_make.patch
 
-
-patch --batch --ignore-whitespace -p0 < kmc_make.patch
+patch --batch --fuzz=0 --ignore-whitespace -p0 < kmc_make.patch
 make -j"${KMC_BUILD_JOBS}"
 
 cp bin/* "${CONDA_PREFIX}/bin/"

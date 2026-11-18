@@ -119,6 +119,29 @@ def _load_metrics(paths: Sequence[Path]) -> list[dict[str, Any]]:
     return result
 
 
+def source_rescue_policy(stats_path: str) -> dict[str, bool]:
+    policy = {"source_pair_rescue": False, "source_remove_duplicates": False}
+    with open(stats_path, encoding="utf-8") as handle:
+        for line in handle:
+            fields = line.rstrip("\n").split("\t")
+            if fields[0] in policy:
+                if len(fields) != 2 or fields[1].strip() not in {"0", "1"}:
+                    raise ValueError(f"invalid source FASTQ policy in {stats_path}: {line!r}")
+                policy[fields[0]] = fields[1].strip() == "1"
+    return policy
+
+
+def merge_source_command(args, bam_merge: str, policy: dict[str, bool]) -> str:
+    if policy["source_pair_rescue"]:
+        wrapper = Path(__file__).with_name("run_bam_merge_rescued.py")
+        dedup = " --remove-duplicates" if policy["source_remove_duplicates"] else ""
+        return (
+            f"{_q(sys.executable)} {_q(wrapper)} --r1 {_q(args.source_fastq1)} "
+            f"--r2 {_q(args.source_fastq2)}{dedup} -- {_q(bam_merge)}"
+        )
+    return f"{_q(bam_merge)} -a {_q(args.source_fastq1)} -b {_q(args.source_fastq2)}"
+
+
 def main() -> int:
     args = parse_args()
     _require_inputs([
@@ -131,6 +154,7 @@ def main() -> int:
     dechimer = executable(args.dechimer)
     if not Path(args.bam_stats).is_file():
         raise FileNotFoundError(args.bam_stats)
+    source_policy = source_rescue_policy(args.fastq_stats)
 
     scratch = assigned_scratch(args.scratch_base)
     scratch_parent = scratch / "aligner_fused"
@@ -191,10 +215,10 @@ def main() -> int:
         badmap2 = job_tmp / "badmap_R2.fastq.gz"
         merged = job_tmp / "merged.bam"
         fifo1 = job_tmp / "check-stage1.fifo"
-        merge_prefix = _q(bam_merge)
+        merge_prefix = merge_source_command(args, bam_merge, source_policy)
         stage1 = (
             f"{_q(samtools)} view -h --threads {args.low_tool_threads} {_q(aligned)} "
-            f"| {merge_prefix} -a {_q(args.source_fastq1)} -b {_q(args.source_fastq2)} "
+            f"| {merge_prefix} "
             f"-ua {_q(badmap1)} -ub {_q(badmap2)} -s {_q(merge_stats)} "
             f"| tee {_q(fifo1)} "
             f"| {_q(samtools)} fixmate -@ {args.low_tool_threads} -u -O BAM -m - {_q(merged)}"
@@ -344,6 +368,7 @@ def main() -> int:
                 "ssd_gb": args.ssd_gb,
             },
             "lease": lease,
+            "source_fastq_policy": source_policy,
             "phases": phases,
             "scratch_job_directory": str(job_tmp),
             "scratch_removed": not job_tmp.exists(),

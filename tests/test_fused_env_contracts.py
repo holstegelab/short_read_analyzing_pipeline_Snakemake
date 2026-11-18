@@ -65,6 +65,23 @@ def test_kmc_reserves_average_cpu_without_reducing_tool_parallelism():
         assert option in runner
 
 
+def test_kmc_stats_cancellation_is_distinct_from_corrupt_gzip_eof():
+    post_deploy = (REPO / "envs" / "kmc.post-deploy.sh").read_text()
+    assert "bool is_cancelled()" in post_deploy
+    assert "if (forced_to_finish)" in post_deploy
+    assert "e->ignore_rest();" in post_deploy
+    assert "ret != Z_STREAM_END && !binary_pack_queue->is_cancelled()" in post_deploy
+    assert 'ostr << "Unexpected end of gzip file";' in post_deploy
+    # Cancellation must be published before queue completion wakes readers.
+    cancellation_patch = post_deploy.split("bool is_cancelled()", 1)[1]
+    assert cancellation_patch.index("e->ignore_rest();") < cancellation_patch.index(
+        "e->mark_completed();"
+    )
+    # Keep the earlier filesystem error retries and Stage 2 budget correction.
+    assert "max_read_attempts = 5" in post_deploy
+    assert "Params.n_threads = Params.n_readers + Params.n_splitters;" in post_deploy
+
+
 def test_alignment_fusion_combines_aligner_and_bam_tooling():
     dependencies = conda_dependencies("align_fused.yaml")
     assert {"python", "dragmap", "samtools", "htslib", "setuptools"} <= dependencies

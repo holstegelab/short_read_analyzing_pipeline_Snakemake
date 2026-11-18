@@ -31,7 +31,7 @@ static void rev_inplace(char *s, size_t n){ size_t i=0, j = n? n-1:0; while(i<j)
 static void revcomp_inplace(char *s, size_t n){ size_t i=0, j = n? n-1:0; while(i<j){ char ci=rc_base(s[i]); char cj=rc_base(s[j]); s[i]=cj; s[j]=ci; i++; j--; } if(n%2==1) s[i]=rc_base(s[i]); }
 
 static void usage(const char *p){
-    fprintf(stderr,"Usage: %s -a fq1.gz -b fq2.gz -ua bad1.gz -ub bad2.gz -s stats.tsv [-o out|-]\n",p);
+    fprintf(stderr,"Usage: %s (-a fq1.gz -b fq2.gz | --interleaved-fastq plain.fq) -ua bad1.gz -ub bad2.gz -s stats.tsv [-o out|-]\n",p);
 }
 
 typedef struct {
@@ -160,7 +160,7 @@ static void print_unmapped_sam_pair(FILE *out, const FastqPair *fq, const char *
 }
 
 // --- FASTQ reader via pigz -dc ---
-typedef struct { FILE *fa; FILE *fb; Hash buf; size_t max_buf; int eof_a; int eof_b; int qual_shift; } FastqCtx;
+typedef struct { FILE *fa; FILE *fb; Hash buf; size_t max_buf; int eof_a; int eof_b; int qual_shift; int interleaved; } FastqCtx;
 
 static FILE* pigz_open(const char *path){
     char *cmd=NULL; size_t n = strlen(path)+20; cmd = (char*)malloc(n);
@@ -170,16 +170,22 @@ static FILE* pigz_open(const char *path){
     return fp;
 }
 
-static void fqctx_init(FastqCtx *fc, const char *a, const char *b){
-    fc->fa = pigz_open(a);
-    fc->fb = pigz_open(b);
+static void fqctx_init(FastqCtx *fc, const char *a, const char *b, const char *interleaved){
+    fc->interleaved = interleaved != NULL;
+    fc->fa = interleaved ? fopen(interleaved, "r") : pigz_open(a);
+    fc->fb = interleaved ? fc->fa : pigz_open(b);
+    if(!fc->fa || !fc->fb){ perror("open source FASTQ"); exit(1); }
     hash_init(&fc->buf, 8192);
     fc->max_buf = 200000; fc->eof_a=0; fc->eof_b=0;
     fc->qual_shift = 0;
     if(fc->fa) setvbuf(fc->fa, NULL, _IOFBF, 1<<20);
-    if(fc->fb) setvbuf(fc->fb, NULL, _IOFBF, 1<<20);
+    if(fc->fb && !fc->interleaved) setvbuf(fc->fb, NULL, _IOFBF, 1<<20);
 }
-static void fqctx_free(FastqCtx *fc){ if(fc->fa) pclose(fc->fa); if(fc->fb) pclose(fc->fb); hash_free(&fc->buf); }
+static void fqctx_free(FastqCtx *fc){
+    if(fc->interleaved){ if(fc->fa) fclose(fc->fa); }
+    else { if(fc->fa) pclose(fc->fa); if(fc->fb) pclose(fc->fb); }
+    hash_free(&fc->buf);
+}
 
 static char* trim_newline(char *s){ if(!s) return s; size_t l=strlen(s); while(l>0 && (s[l-1]=='\n'||s[l-1]=='\r')) s[--l]='\0'; return s; }
 static char* extract_qname(const char *hdr){
@@ -645,17 +651,18 @@ static void flush_group(FILE *out, gzFile g1, gzFile g2,
 }
 
 int main(int argc,char**argv){
-    const char *fq1=NULL,*fq2=NULL,*ua=NULL,*ub=NULL,*stats=NULL,*outp="-";
+    const char *fq1=NULL,*fq2=NULL,*interleaved=NULL,*ua=NULL,*ub=NULL,*stats=NULL,*outp="-";
     for(int i=1;i<argc;i++){
         if(!strcmp(argv[i],"-a")&&i+1<argc) fq1=argv[++i];
         else if(!strcmp(argv[i],"-b")&&i+1<argc) fq2=argv[++i];
+        else if(!strcmp(argv[i],"--interleaved-fastq")&&i+1<argc) interleaved=argv[++i];
         else if(!strcmp(argv[i],"-ua")&&i+1<argc) ua=argv[++i];
         else if(!strcmp(argv[i],"-ub")&&i+1<argc) ub=argv[++i];
         else if(!strcmp(argv[i],"-s")&&i+1<argc) stats=argv[++i];
         else if(!strcmp(argv[i],"-o")&&i+1<argc) outp=argv[++i];
         else { usage(argv[0]); return 1; }
     }
-    if(!fq1||!fq2||!ua||!ub||!stats){ usage(argv[0]); return 1; }
+    if((interleaved ? (fq1 || fq2) : (!fq1 || !fq2)) || !ua || !ub || !stats){ usage(argv[0]); return 1; }
 
     FILE*out=stdout; if(strcmp(outp,"-")) { out=fopen(outp,"w"); if(!out){perror("open out"); return 1;} }
     setvbuf(stdin, NULL, _IOFBF, 1<<20);
@@ -664,7 +671,7 @@ int main(int argc,char**argv){
     gzFile g2=gzopen(ub,"wb"); if(!g2){perror("gzopen ub"); return 1;}
     gzbuffer(g1, 1<<20);
     gzbuffer(g2, 1<<20);
-    FastqCtx fq; fqctx_init(&fq, fq1, fq2);
+    FastqCtx fq; fqctx_init(&fq, fq1, fq2, interleaved);
     Stats st; stats_init(&st);
 
     long long primary_aligned_bp=0, primary_soft_bp=0, supplementary_aligned_bp=0;

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import bz2
 import gzip
+import re
 import sys
 from dataclasses import dataclass
 from typing import Optional, TextIO, Tuple
@@ -33,26 +34,33 @@ class _ProcTextReader:
         self._proc = proc
         self._stream = proc.stdout  # type: ignore[assignment]
         self._closed = False
+        self._eof = False
 
     def readline(self) -> str:
-        return self._stream.readline()  # type: ignore[no-any-return]
+        line = self._stream.readline()
+        if not line:
+            self._eof = True
+        return line
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        # A failed downstream consumer can leave hundreds of GB unread. Never
+        # collect the remaining decompressed FASTQ with communicate().
+        self._stream.close()
+        if not self._eof and self._proc.poll() is None:
+            self._proc.terminate()
         try:
-            # Drain and wait, then report errors but do not raise
-            _out, err = self._proc.communicate()
-            rc = self._proc.returncode
-            if rc not in (0, None):
-                if err:
-                    print(f"[fastq_pair_rescue] decompressor exited with code {rc}:\n{err}", file=sys.stderr)
-                else:
-                    print(f"[fastq_pair_rescue] decompressor exited with code {rc}", file=sys.stderr)
-        except Exception:
-            # Best-effort cleanup; do not raise
-            pass
+            rc = self._proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            rc = self._proc.wait()
+        err = self._proc.stderr.read() if self._proc.stderr else ""
+        if self._proc.stderr:
+            self._proc.stderr.close()
+        if self._eof and rc:
+            raise RuntimeError(f"decompressor exited with code {rc}: {err.strip()}")
 
 
 def _should_use_external(path: str, decompress: str) -> bool:
@@ -123,6 +131,9 @@ def _open_text_file(path: str, mode: str, *, decompress: str = 'auto', threads: 
     return open(path, mode, encoding='utf-8', errors='replace'), True
 
 
+_INVALID_FASTQ_CHAR = re.compile(r"[^!-~]")
+
+
 def _read_fastq4(handle: TextIO, state: _ReaderState) -> Optional[Tuple[str, str, str, str]]:
     # Find next header line starting with '@'
     header: Optional[str] = None
@@ -168,6 +179,11 @@ def _read_fastq4(handle: TextIO, state: _ReaderState) -> Optional[Tuple[str, str
         # Qual length mismatch; drop
         raise ValueError("Malformed FASTQ record: sequence/quality length mismatch")
 
+    # Replacement/non-ASCII characters can have the right Python string
+    # length but expand to multiple bytes when piped to AdapterRemoval.
+    if _INVALID_FASTQ_CHAR.search(seq) or _INVALID_FASTQ_CHAR.search(qual):
+        raise ValueError("Malformed FASTQ record: non-printable/non-ASCII sequence or quality")
+
     return header, seq, plus, qual
 
 
@@ -203,7 +219,7 @@ class Stats:
     pairs_written: int = 0
 
 
-def interleave_rescue(r1_path: str, r2_path: str, out_path: str, quiet: bool = False, buffer_size: int = 2048, decompress: str = 'auto', threads: int = 0) -> Stats:
+def interleave_rescue(r1_path: str, r2_path: str, out_path: str, quiet: bool = False, buffer_size: int = 2048, decompress: str = 'auto', threads: int = 0, summary: bool = False) -> Stats:
     if not quiet:
         print(f"[fastq_pair_rescue] Mode: decompress={decompress} threads={threads} buffer_size={buffer_size}", file=sys.stderr)
         print(f"[fastq_pair_rescue] R1: {r1_path} via {_describe_input_source(r1_path, decompress, threads)}", file=sys.stderr)
@@ -305,15 +321,18 @@ def interleave_rescue(r1_path: str, r2_path: str, out_path: str, quiet: bool = F
             break
 
     finally:
-        if close1:
-            in1.close()
-        if close2:
-            in2.close()
-        if close_out:
-            out.flush()
-            out.close()
+        try:
+            if close1:
+                in1.close()
+        finally:
+            try:
+                if close2:
+                    in2.close()
+            finally:
+                if close_out:
+                    out.close()
 
-    if not quiet:
+    if not quiet or summary:
         print(
             (
                 f"R1 total: {st.r1_total}, corrupt: {st.r1_corrupt}. "
@@ -332,6 +351,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--r2', required=True, help='Path to R2 FASTQ (.gz/.bz2 supported)')
     p.add_argument('-o', '--output', default='-', help="Output path (use '-' for stdout)")
     p.add_argument('--quiet', action='store_true', help='Suppress progress messages on stderr')
+    p.add_argument('--summary', action='store_true', help='Report rescue counts even with --quiet')
     p.add_argument('--buffer-size', type=int, default=2048, help='Lookahead buffer size per side for resynchronization')
     p.add_argument('--decompress', choices=['auto','external','internal'], default='auto', help='Decompression mode for inputs')
     p.add_argument('--threads', type=int, default=0, help='Threads for external decompression tools (pigz/pbzip2)')
@@ -340,7 +360,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    interleave_rescue(args.r1, args.r2, args.output, quiet=args.quiet, buffer_size=args.buffer_size, decompress=args.decompress, threads=args.threads)
+    interleave_rescue(args.r1, args.r2, args.output, quiet=args.quiet, buffer_size=args.buffer_size, decompress=args.decompress, threads=args.threads, summary=args.summary)
 
 
 if __name__ == '__main__':
