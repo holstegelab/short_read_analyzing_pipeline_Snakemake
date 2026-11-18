@@ -293,6 +293,14 @@ def test_preflight_recovers_before_freezing_and_reports_irrecoverable_files(tmp_
     assert new.with_name(new.stem+'.resolved_missing_products.json').exists()
 
 
+def test_sampleinfo_is_required_only_for_checkpoint_samples():
+    sinfo = {'sample_type':'illumina_exome'}
+    config = {'chrM':'No'}
+    assert 'sampleinfo/A.dat' in rs.completion_products('A', sinfo, config, (['F'],[]))
+    local = {**sinfo, 'readgroups':[{}]}
+    assert 'sampleinfo/A.dat' not in rs.completion_products('A', local, config, (['F'],[]))
+
+
 @pytest.mark.parametrize('missing_qc', [False, True])
 def test_restart_dag_cannot_reopen_finished_sample_via_shared_stage(tmp_path, missing_qc):
     path = manifest(tmp_path)

@@ -1246,7 +1246,7 @@ rule external_adapter_fused:
         """
         python {params.runner:q} \
             --input-alignment {params.alignment:q} \
-            --cram-options {params.cram_options:q} \
+            --cram-options={params.cram_options:q} \
             --hg19-reference {params.hg19_reference:q} \
             --hg19-b37-chry-reference {params.hg19_b37_chry_reference:q} \
             --hg38-reference {params.hg38_reference:q} \

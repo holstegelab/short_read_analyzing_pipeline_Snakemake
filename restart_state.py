@@ -207,8 +207,10 @@ def restore_stats(root, sample, replace_newer=False, backup_root=None):
 def completion_products(sample, sinfo, config, levels):
     """Files needed by the supported gVCF endpoint's cohort consumers."""
     products = [f'source/{sample}.finished', f'cram/{sample}.mapped_hg38.cram.copied',
-                f'stats/{sample}.stats.tar.gz', f'sampleinfo/{sample}.dat',
-                f'kmer/{sample}.result.yaml']
+                f'stats/{sample}.stats.tar.gz', f'kmer/{sample}.result.yaml']
+    # Local samples get readgroups at parse time; only the checkpoint writes this.
+    if 'readgroups' not in sinfo:
+        products.append(f'sampleinfo/{sample}.dat')
     for suffix in ('samtools.stat', 'samtools.exome.stat', 'bam_all.tsv', 'bam_exome.tsv',
                    'pre_adapter_summary_metrics', 'bait_bias_summary_metrics',
                    'pre_adapter_detail_metrics', 'bait_bias_detail_metrics',

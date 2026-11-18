@@ -20,6 +20,9 @@ sample_types = config.get("sample_types","WES")
 genotype_mode = config.get("genotype_mode", "WES") #or WGS
 dcache_read_token = config.get("token", DCACHE_READ_CONFIG)
 dcache_read_prefix = config.get("prefix", DCACHE_READ_PREFIX)
+# Which sex_chrom.tab column decides Y inclusion: the k-mer call (default) or
+# the samplefile sex ('reported'), e.g. for panels without chrY targets.
+sex_column = 'reported' if config.get("glnexus_sex", "kmer") == "reported" else 'sex'
 
 print(f"Caller: {gvcf_caller}")
 print(f"Sample type: {sample_types}")
@@ -96,7 +99,7 @@ def generate_gvcf_input_HC(wildcards):
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
-        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'))
+        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'), column=sex_column)
         gvcf_input = []
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
@@ -121,7 +124,7 @@ def generate_gvcf_input_HC_divided(wildcards):
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
-        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'))
+        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'), column=sex_column)
         gvcf_input = []
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
@@ -136,7 +139,7 @@ def generate_gvcf_input_DV(wildcards):
     res = []
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
-        sample_sex = read_sexchrom(pj(get_samplefile_folder(samplefile), samplefile + '.sex_chrom.tab'))
+        sample_sex = read_sexchrom(pj(get_samplefile_folder(samplefile), samplefile + '.sex_chrom.tab'), column=sex_column)
         gvcf_input = []
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):
@@ -151,7 +154,7 @@ def generate_gvcf_input_DV_divided(wildcards):
     for samplefile in SAMPLE_FILES:
         sample_names = SAMPLEFILE_TO_SAMPLES[samplefile]
         samplefile_folder = get_samplefile_folder(samplefile)
-        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'))
+        sample_sex = read_sexchrom(pj(samplefile_folder, samplefile + '.sex_chrom.tab'), column=sex_column)
         gvcf_input = []
         for sample in sample_names:
             if sample_sex[sample] == 'F' and (region.startswith('Y') or region.endswith('H')):

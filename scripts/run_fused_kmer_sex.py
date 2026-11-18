@@ -185,7 +185,9 @@ def main() -> int:
         )
 
         for path in (yaml_output, chry, chrx, chrm, auto):
-            if not path.is_file() or path.stat().st_size <= 0:
+            # Panels can have no chrM k-mer above the KMC minimum count, and
+            # process_sex.py does not read chrm.tsv, so it may be empty.
+            if not path.is_file() or (path != chrm and path.stat().st_size <= 0):
                 raise RuntimeError(f"required fused KMC/sex output is absent or empty: {path}")
         for source, destination in (
             (chry, Path(args.output_chry)),

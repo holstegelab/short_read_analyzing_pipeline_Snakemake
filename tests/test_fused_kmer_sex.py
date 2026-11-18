@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_kmer_sex.py"
@@ -15,7 +17,11 @@ def _script(path, body):
     return path
 
 
-def test_fused_kmer_sex_keeps_database_local_and_shrinks(tmp_path):
+@pytest.mark.parametrize(
+    "empty_dump, succeeds",
+    [("", True), ("chrm.tsv", True), ("chrx.tsv", False)],
+)
+def test_fused_kmer_sex_keeps_database_local_and_shrinks(tmp_path, empty_dump, succeeds):
     tools = tmp_path / "tools"
     tools.mkdir()
     kmc = _script(
@@ -29,7 +35,8 @@ Path(str(prefix) + '.kmc_suf').write_bytes(b'suf')
     )
     kmc_tools = _script(
         tools / "kmc_tools",
-        """import sys
+        """import os
+import sys
 from pathlib import Path
 args = sys.argv[1:]
 if 'simple' in args:
@@ -37,7 +44,8 @@ if 'simple' in args:
     Path(str(out) + '.kmc_pre').write_bytes(b'pre')
     Path(str(out) + '.kmc_suf').write_bytes(b'suf')
 elif 'transform' in args:
-    Path(args[-1]).write_text('kmer\\tcount\\nAAAA\\t2\\n')
+    empty = Path(args[-1]).name == os.environ['FAKE_EMPTY_DUMP']
+    Path(args[-1]).write_text('' if empty else 'kmer\\tcount\\nAAAA\\t2\\n')
 else:
     raise SystemExit('unexpected args: ' + repr(args))
 """,
@@ -136,9 +144,15 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
             "ZSLURM_LEASE_TOKEN": "fake-token",
             "ZSLURM_JOB_ID": "123",
             "FAKE_LEASE_LOG": str(lease_log),
+            "FAKE_EMPTY_DUMP": empty_dump,
         }
     )
-    subprocess.run(command, check=True, env=environment)
+    result = subprocess.run(command, env=environment)
+    if not succeeds:
+        assert result.returncode != 0
+        assert not (outputs / "result.yaml").exists()
+        return
+    assert result.returncode == 0
 
     assert (outputs / "result.yaml").read_text() == "sex: F\n"
     assert lease_log.read_text().splitlines() == ["status", "set"]

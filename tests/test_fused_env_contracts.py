@@ -148,6 +148,7 @@ def test_adapter_routes_use_one_shared_implementation():
     assert "--identify-adapters" not in source
     assert "sample=NATIVE_FASTQ_SAMPLE_PATTERN" in rule_block(source, "adapter_removal")
     assert "sample=EXTERNAL_ALIGNMENT_SAMPLE_PATTERN" in rule_block(source, "external_adapter_fused")
+    assert "--cram-options={params.cram_options:q}" in rule_block(source, "external_adapter_fused")
     for runner in ("run_fastq_adapter.py", "run_fused_external_adapter.py"):
         assert "from adapter_processing import prepare_adapters" in (REPO / "scripts" / runner).read_text()
 

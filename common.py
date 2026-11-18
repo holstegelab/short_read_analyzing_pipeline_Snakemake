@@ -517,15 +517,17 @@ def get_samplefile_folder(samplefile):
     return os.path.dirname(os.path.realpath(samplefile + '.tsv'))
 
 
-def read_sexchrom(filename):
+def read_sexchrom(filename, column='sex'):
+    """column: 'sex' (k-mer call) or 'reported' (samplefile sex)."""
     result = {}
     with open(filename,'r') as f:
         r = csv.reader(f,delimiter='\t')
         lines = [row for row in r]
+        index = lines[0].index(column)
         for row in lines[1:]:
-            
-            result[row[0]] = row[2]
-    return result            
+
+            result[row[0]] = row[index]
+    return result
 
 cache = {}
 SAMPLE_FILES, SAMPLEFILE_TO_SAMPLES, SAMPLEINFO, SAMPLE_TO_BATCH, SAMPLEFILE_TO_BATCHES = load_samplefiles('.',cache)
