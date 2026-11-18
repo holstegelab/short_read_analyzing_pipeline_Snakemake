@@ -17,6 +17,9 @@ def writable_scratch(output_parent: Path) -> Path:
     user = os.environ.get("USER", "")
     job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID")
     candidates = []
+    contracted = os.environ.get("ZSLURM_SCRATCH_ROOT")
+    if contracted:
+        candidates.append(Path(contracted))
     if user and job_id:
         candidates.append(Path(f"/scratch-node/{user}.{job_id}"))
     slurm_tmp = os.environ.get("SLURM_TMPDIR")

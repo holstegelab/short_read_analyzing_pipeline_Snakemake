@@ -38,11 +38,10 @@ rule deepvariant_apptainer:
         """
         if [ {params.skipsex} -eq 0 ]
         then
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
+            TMP_SSD="${{ZSLURM_SCRATCH_ROOT:-/scratch-node/${{USER}}.${{SLURM_JOB_ID}}}}"
             JOB_ID="${{SLURM_JOB_ID}}"
             if [ -z "$JOB_ID" ]; then JOB_ID="${{SLURM_JOBID}}"; fi
             if [ -z "$JOB_ID" ]; then JOB_ID="$$"; fi
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
             if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then RUNDIR_BASE="$TMP_SSD/deepvariant_apptainer/$JOB_ID"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then RUNDIR_BASE="$SLURM_TMPDIR/deepvariant_apptainer/$JOB_ID"; else RUNDIR_BASE="{params.inter_dir}"; fi
             RUNDIR="$RUNDIR_BASE/{wildcards.sample}.{wildcards.region}"
             echo "SSD base: $TMP_SSD" >&2
@@ -90,4 +89,3 @@ rule DeepVariant_apptainer_all:
 
 # python {params.check} {output.vcf}
 # python {params.check} {output.gvcf}
-

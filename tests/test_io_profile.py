@@ -167,6 +167,13 @@ def test_assigned_scratch_requires_explicit_or_slurm_path(tmp_path, monkeypatch)
     assert assigned_scratch(str(tmp_path)) == tmp_path.resolve()
 
 
+def test_assigned_scratch_accepts_zslurm_spider_contract(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZSLURM_SCRATCH_ROOT", str(tmp_path))
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+
+    assert assigned_scratch() == tmp_path.resolve()
+
+
 def test_profile_records_success_and_cleans_local_path(tmp_path):
     local = tmp_path / "scratch" / "job"
     local.mkdir(parents=True)

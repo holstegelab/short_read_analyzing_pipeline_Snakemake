@@ -94,13 +94,10 @@ rule GenomicDBImport:
         ssd_gb=lambda wildcards, input: ssd_gb_for_inputs(input.g, factor=0.25, overhead_gb=10, minimum_gb=20)
     shell:
         """
-            TMP_SSD="/scratch-node/${{USER}}.${{SLURM_JOB_ID}}"
-            if [ ! -d "$TMP_SSD" ] || [ ! -w "$TMP_SSD" ]; then CAND=$(ls -1dt /scratch-node/${{USER}}.* 2>/dev/null | head -n1 || true); if [ -n "${{CAND:-}}" ] && [ -d "$CAND" ] && [ -w "$CAND" ]; then TMP_SSD="$CAND"; fi; fi
-            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else TMPDIR_USE="{resources.tmpdir}"; fi
+            TMP_SSD="${{ZSLURM_SCRATCH_ROOT:-/scratch-node/${{USER}}.${{SLURM_JOB_ID}}}}"
+            if [ -d "$TMP_SSD" ] && [ -w "$TMP_SSD" ]; then TMPDIR_USE="$TMP_SSD"; elif [ -n "${{SLURM_TMPDIR:-}}" ] && [ -d "$SLURM_TMPDIR" ] && [ -w "$SLURM_TMPDIR" ]; then TMPDIR_USE="$SLURM_TMPDIR"; else echo "ssd_use=required but no assigned node-local SSD is writable" >&2; exit 70; fi
             {gatk} GenomicsDBImport --java-options "-Xmx{resources.mem_mb_reduced}M"  --reader-threads {threads} {params.inputs}  --consolidate True --max-num-intervals-to-import-in-parallel {threads} \
             --intervals {input.intervals} {params.merge_contigs} -R {params.ref} --genomicsdb-workspace-path {output.dbi}/ --batch-size {params.batches} --tmp-dir "$TMPDIR_USE" --merge-input-intervals \
          --genomicsdb-shared-posixfs-optimizations true --bypass-feature-reader
         """
-
-
 

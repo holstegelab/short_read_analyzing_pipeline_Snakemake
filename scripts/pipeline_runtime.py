@@ -43,11 +43,16 @@ def assigned_scratch(
 ) -> Path:
     """Resolve this job's scratch root; never borrow another job's directory.
 
-    Required-SSD callers omit ``shared_fallback`` and retain the strict
-    ``/scratch-node`` contract.  Rules with ``ssd_use=possible`` explicitly
-    supply a workflow-local shared directory for normal compute nodes.
+    Required-SSD callers omit ``shared_fallback`` and require either the
+    scheduler-provided scratch contract or the legacy Snellius allocation
+    path. Rules with ``ssd_use=possible`` explicitly supply a workflow-local
+    shared directory for normal compute nodes.
     """
     candidate: Path | None = Path(explicit) if explicit else None
+    if candidate is None:
+        contracted = os.environ.get("ZSLURM_SCRATCH_ROOT")
+        if contracted:
+            candidate = Path(contracted)
     if candidate is None:
         user = os.environ.get("USER")
         job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID")
@@ -71,7 +76,7 @@ def assigned_scratch(
     if candidate is None or not candidate.is_dir() or not os.access(candidate, os.W_OK):
         raise RuntimeError(
             "ssd_use=required but this job has no writable assigned "
-            "/scratch-node directory"
+            "node-local SSD directory"
         )
     return candidate.resolve()
 
@@ -487,5 +492,4 @@ def acquire_lease(
         file=sys.stderr,
     )
     return lease
-
 

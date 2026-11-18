@@ -492,22 +492,15 @@ def ssd_gb_for_inputs(paths, factor=1.0, overhead_gb=1.0, minimum_gb=1):
 
 def node_ssd_base(tmpdir_fallback=None):
     user = os.environ.get('USER','')
+    contracted = os.environ.get('ZSLURM_SCRATCH_ROOT')
+    if contracted and os.path.isdir(contracted) and os.access(contracted, os.W_OK):
+        return contracted
     slurm_tmp = os.environ.get('SLURM_TMPDIR')
     job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID')
     if job_id:
         p = f"/scratch-node/{user}.{job_id}"
         if os.path.isdir(p) and os.access(p, os.W_OK):
             return p
-    base = "/scratch-node"
-    if os.path.isdir(base):
-        try:
-            entries = [os.path.join(base, d) for d in os.listdir(base) if d.startswith(user + '.')]
-        except OSError:
-            entries = []
-        entries = [e for e in entries if os.path.isdir(e) and os.access(e, os.W_OK)]
-        if entries:
-            entries.sort(key=lambda q: os.stat(q).st_mtime, reverse=True)
-            return entries[0]
     if tmpdir_fallback:
         return tmpdir_fallback
     if slurm_tmp and os.path.isdir(slurm_tmp) and os.access(slurm_tmp, os.W_OK):

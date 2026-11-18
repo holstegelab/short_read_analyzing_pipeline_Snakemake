@@ -132,29 +132,26 @@ pilot just because `df` shows it.
 ### ZSlurm is partially prepared, not yet end-to-end portable
 
 The inspected `cluster_manager/config/sites/spider.yaml` and
-`zslurm._cluster_defaults` already provide `normal`, SSD feature `ssd`, a
-30-core/240-GB initial pilot profile, and autogrow disabled. Use this as a
+`zslurm._cluster_defaults` provide `normal`, SSD feature `ssd`, a
+30-core/240-GB pilot profile, and autogrow capped at 15 pilots. Use this as a
 starting template, **not as measured current capacity**.
 
-Remaining scheduler work (separate checkout/PR; none changed here):
+Scheduler scratch-contract implementation is now present in the local ZSlurm
+and pipeline checkouts. Items 1--5 below have simulated regression coverage;
+the deployment and live-cluster checks in items 6--8 remain open:
 
-1. `zslurm_chief.detect_scratch_path` only searches `/scratch-node/...`.
-   On Spider it can report no SSD, blocking all `ssd_use=required` work even
-   if the allocation has suitable scratch.
-2. `zslurm_shared._collect_states_by_scratch` still hardcodes feature
-   `scratch-node`. Use configured feature/capability for pending-node planning
-   and display too, not only `sbatch --constraint` construction.
-3. Before starting child jobs the chief replaces the manager's `SLURM_*`
-   variables with the engine's values, but **not `TMPDIR`/`TMP`/`TEMP`**.
-   A Spider child must receive the pilot's actual scratch namespace, not an
-   environment captured on the manager. Keep lease socket visibility too.
-4. `read_scratch_usage` uses filesystem total/free space. Add a separate
-   allocation scratch entitlement/cap: usable capacity is bounded by the
-   grant and physical availability, with headroom and reservation tracking.
-   Avoid double-counting shared physical SSD across concurrent partial pilots.
-5. Keep CPU/memory bounded by Slurm/cgroup allocation, not host totals;
-   exercise the existing partial-reservation logic on Spider. Never derive
-   quota solely from advertised RAM/core of the physical machine.
+1. Implemented: the chief discovers Spider `$TMPDIR` while retaining the
+   allocation-specific Snellius `/scratch-node/...` path.
+2. Implemented: occupancy and autogrow use configured `ssd_feature_name`, and
+   partial-pilot planning counts fitting CPU slots on MIXED nodes.
+3. Implemented: each child receives private `TMPDIR`/`TMP`/`TEMP` and
+   `ZSLURM_SCRATCH_ROOT` values below the allocation root; cleanup is scoped to
+   that child directory and the lease environment remains intact.
+4. Implemented for the supplied 30-core Spider profile: each pilot advertises
+   at most 3000 GiB of the 12-TB physical SSD. Live high-water validation and
+   policy confirmation remain required.
+5. Covered by the existing cgroup/Slurm memory cap and partial-pilot tests;
+   live Spider verification remains required.
 6. The template's `staging_partition: staging` needs target verification.
    Configure transfer pilots on an available physical partition (for example
    `normal`) while retaining the logical ZSlurm `archive` job class and
@@ -167,11 +164,11 @@ Remaining scheduler work (separate checkout/PR; none changed here):
    child subprocess mount namespace, cgroup behavior, local Unix lease socket,
    reconnects/timeouts and clean engine shutdown under a real allocation.
 
-Proposed contract (names below are **new design**, not existing settings):
-chief validates its scratch, exports `ZSLURM_SCRATCH_ROOT` plus an allocation
-capacity value, and gives each child a unique `job-<zslurm_id>` subdirectory.
-The pipeline consumes this contract. Snellius and Spider only differ in how
-the chief discovers the allocation root; pipeline phases need no site branch.
+Implemented contract: the chief validates its scratch, exports
+`ZSLURM_SCRATCH_ROOT` plus `ZSLURM_SCRATCH_CAPACITY_GB`, and gives each child a
+unique `job-<zslurm_id>` subdirectory. The pipeline consumes this contract.
+Snellius and Spider only differ in how the chief discovers the allocation root;
+pipeline phases need no site branch.
 
 `ssd_use=required` must retain its meaning. Do not fix detection by declaring
 every job SSD-optional or by accepting a writable generic `/tmp`. Optional
@@ -223,11 +220,12 @@ Snellius GPFS, old Conda prefix or a resource symlink outside the supplied bundl
 
 ### 3. Complete the scratch contract in ZSlurm and pipeline
 
-Implement the discovery/environment/capacity fixes above in a scheduler
-checkout, with simulated Snellius/Spider/partial allocations and unavailable
-scratch tests. Update all pipeline scratch users, including markdup cleanup,
-and add a Spider Snakemake profile with correct optional container binds.
-Do not tune CPU/memory reservations or change tool command lines in this step.
+Implementation status: **implemented locally with simulated regression tests;
+live Spider canary still required**. The scheduler checkout contains the
+discovery/environment/capacity fixes above with simulated
+Snellius/Spider/partial-allocation coverage. Pipeline scratch users consume the
+portable contract and the Spider profile avoids a false `/scratch-node` bind.
+No tool command lines or CPU/memory reservations were tuned in this step.
 
 Acceptance: two child jobs in one pilot and two partial pilots on one host
 cannot claim each other's files or SSD quota; end/failure of one child cannot
