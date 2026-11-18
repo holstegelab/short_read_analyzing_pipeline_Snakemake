@@ -179,4 +179,4 @@ def test_both_rules_reserve_workers_without_changing_memory():
         assert "threads: DEEPVARIANT_LEVEL2_WORKERS" in block
         assert "n=lambda wildcards, threads: str(threads)" in block
         assert "mem_mb=4000" in block
-        assert 'lease_command=srcdir("scripts/zslurm_lease_client.py")' in block
+        assert 'lease_command=str(srcdir("scripts/zslurm_lease_client.py"))' in block
