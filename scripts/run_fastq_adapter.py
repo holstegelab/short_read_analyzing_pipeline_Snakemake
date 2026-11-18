@@ -9,6 +9,7 @@ from pathlib import Path
 
 from adapter_processing import prepare_adapters
 from pipeline_runtime import _atomic_json, _atomic_publish, executable
+from storage_quota import DEFAULT_LEASE_COMMAND, wait_for_storage_quota
 
 
 def parse_args():
@@ -23,6 +24,9 @@ def parse_args():
     parser.add_argument("--remove-duplicated-reads", type=int, choices=(0, 1), default=0)
     parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument("--adapter-memory-mb", type=float, default=512)
+    parser.add_argument("--initial-cores", type=float, default=5.0)
+    parser.add_argument("--quota-mode", choices=("auto", "required", "disabled"), default="auto")
+    parser.add_argument("--lease-command", default=DEFAULT_LEASE_COMMAND)
     parser.add_argument("--pigz", default="pigz")
     parser.add_argument("--adapter-removal", default="AdapterRemoval")
     parser.add_argument("--poll-interval", type=float, default=5.0)
@@ -41,6 +45,13 @@ def main():
             raise FileNotFoundError(path)
     pigz = executable(args.pigz)
     adapter_removal = executable(args.adapter_removal)
+    # This route writes its temporary FASTQs on the output filesystem itself,
+    # so a publication-only check would happen after consuming the space.
+    quota_wait = wait_for_storage_quota(
+        [Path(args.output_forward), Path(args.output_reverse)], mode=args.quota_mode,
+        resume_cores=args.initial_cores, resume_memory_mb=args.adapter_memory_mb,
+        lease_command=args.lease_command, resume_phase="native_fastq_prepare",
+    )
     parent = Path(args.output_forward).parent
     parent.mkdir(parents=True, exist_ok=True)
     phases = []
@@ -66,6 +77,7 @@ def main():
                 "sample": args.sample, "readgroup": args.readgroup,
                 "attempt": args.attempt, "success": success,
                 "observed_fastq_encoding": encoding,
+                "quota_wait": quota_wait,
                 "phases": [json.loads(p.read_text()) for p in phases if p.is_file()],
             })
     return 0

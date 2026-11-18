@@ -127,21 +127,62 @@ python scripts/prepare_deepvariant_native.py \
 
 The Spider profile is [`profiles/spider/config.yaml`](profiles/spider/config.yaml).
 It intentionally has no `/scratch-node` bind. `partition=compute` is a logical
-ZSlurm job class, not a physical Spider partition.
+ZSlurm job class, not a physical Spider partition. The matching ZSlurm Spider
+profile discovers the pilot allocation's `$TMPDIR`, caps the advertised SSD
+entitlement, and exports one private `ZSLURM_SCRATCH_ROOT` per child job.
 
-Do not run the production Spider workflow yet. Step 3 of
-[`PORTABILITY_PLAN.md`](PORTABILITY_PLAN.md) remains required:
+Do not run the production Spider workflow until the updated ZSlurm checkout is
+installed and a single-pilot canary has passed. Remaining Spider checks are:
 
-- chief discovery and propagation of the pilot allocation `$TMPDIR`;
-- a bounded allocation scratch capacity, including partial pilots;
-- unique child-job scratch roots and ownership-safe cleanup;
-- removal of remaining `/scratch-node` assumptions in selected rules;
-- replacement/disablement of the nonexistent physical `staging` partition;
-- real manager/worker RPC, lease and failure/restart smoke tests.
+- replacement/disablement of the unverified physical `staging` partition;
+- real manager/worker RPC, lease and failure/restart smoke tests;
+- confirmation of scratch cleanup and capacity reporting in a live pilot.
 
 Snellius archive sources additionally require its `daget`, `dals` and
 `darelease` commands. On Spider, use a tested dCache/S3 route unless an
 equivalent archive backend is installed.
+
+### Large-write quota backoff (Snellius only)
+
+The shared gate in `scripts/fastq_quota.py`, exposed through
+`scripts/storage_quota.py` for direct shell rules, checks only the destination
+Snellius fileset/mount with `mmlsquota -e -Y -j FILESET FILESYSTEM`. The default
+is `storage_quota_mode=auto`; home and scratch quotas are not queried. GPFS
+`in_doubt` usage is included. Checks precede bulk writes in:
+
+- `external_adapter_fused`: publication of raw and trimmed FASTQs from SSD;
+- `markdup`: publication of the completed BAM, index and duplicate statistics;
+- `deepvariant_phasing_fused`: shared-scratch computation and final publication;
+- `start_sample_archive/dcache/s3`: new source materializations;
+- native-FASTQ `adapter_removal`: before preparing FASTQs on shared storage;
+- `split_alignments_by_readgroup`: actual splitting or ERF correction;
+- BAM restoration: encrypted download, decryption, and CRAM-to-BAM expansion.
+
+Validated/adopted materializations, active inputs, single-RG hardlinks, shared
+tape staging batches, and alignment/upload/cleanup paths are exempt.
+DeepVariant on local SSD checks project quota only when publishing its results.
+
+At 97% or above (storage or inodes), or if a quota query fails, the job keeps
+any SSD data/reservation, requests a small existing CPU/RAM lease, and retries
+after a random 4–6 minutes. Once quota recovers, it waits a random 0–10 minutes
+and checks again before writing. Each caller's complete CPU/RAM work profile
+is reacquired through the existing lease interface, capped at its original
+reservation, and quota is rechecked after reacquisition. Healthy/disabled
+checks do not query the scheduler; initially healthy jobs proceed immediately.
+Local execution without a lease can wait but retains its resources. No
+manager/chief changes, shared locks or atomic space reservations are involved;
+this is best-effort
+backpressure, not a guarantee against other writers filling the quota.
+
+The Spider profile explicitly sets `storage_quota_mode=disabled` and
+`external_adapter_quota_mode=disabled`; auto mode also skips non-Snellius
+project paths. Other profiles can disable all gates with
+`--config storage_quota_mode=disabled`, or require recognized Snellius project
+destinations with `...=required`. `external_adapter_quota_mode` overrides the
+global setting for that rule alone. Already-running processes do not reload
+these changes; already-expanded queued shell commands also retain their old
+form until the workflow reparses. Frozen checkouts must be updated separately.
+Waiting remains subject to the node allocation's lifetime.
 
 ## 6. Start only after the readiness checks pass
 

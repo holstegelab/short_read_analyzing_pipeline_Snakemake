@@ -6,11 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "run_fused_external_adapter.py"
 sys.path.insert(0, str(REPO / "scripts"))
 import select_cram_reference as REFERENCE_SELECTOR
+import fastq_quota as QUOTA
 
 SPEC = importlib.util.spec_from_file_location("run_fused_external_adapter", RUNNER)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -70,7 +72,10 @@ def test_runtime_cram_reference_selection_rewrites_existing_command(
     }
 
 
-def test_external_adapter_fusion_extracts_once_and_publishes_legacy_contract(tmp_path):
+@pytest.mark.parametrize("wait_on_quota", [False, True])
+def test_external_adapter_fusion_extracts_once_and_publishes_legacy_contract(
+    tmp_path, monkeypatch, wait_on_quota
+):
     tools = tmp_path / "tools"
     tools.mkdir()
     samtools = _script(
@@ -108,7 +113,8 @@ with gzip.open(sys.argv[-1], 'rb') as handle:
 import sys
 from pathlib import Path
 args = sys.argv[1:]
-data = sys.stdin.buffer.read()
+with open(args[args.index('--file1') + 1], 'rb') as handle:
+    data = handle.read()
 if '--identify-adapters' in args:
     print('adapter')
 else:
@@ -188,20 +194,52 @@ print(json.dumps({'ok': True, 'held_cores': cores, 'held_mem_mb': memory}))
             "FAKE_LEASE_LOG": str(lease_log),
         }
     )
-    subprocess.run(command, check=True, env=environment)
+    if wait_on_quota:
+        real_wait = MODULE.wait_for_fastq_quota
+
+        def checked_wait(destinations, lease, **kwargs):
+            readings = iter([98.0, 96.0, 96.0, 96.0])
+
+            def sleeping_on_ssd(seconds):
+                # Neither raw nor trimmed FASTQs have been published or lost.
+                assert not any(destination.exists() for destination in destinations)
+                job_tmp, = (scratch / "external_adapter_fused").iterdir()
+                for name in ("raw_R1.fastq.gz", "raw_R2.fastq.gz", "singletons.fastq.gz"):
+                    assert (job_tmp / name).is_file()
+                assert len(list(job_tmp.glob("*.gz"))) >= 5
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(QUOTA, "project_quota_target", lambda destination: ("qtholstg", "wstor_work3"))
+                scoped.setattr(QUOTA, "read_project_quota", lambda *args: {
+                    "storage_percent": next(readings), "inode_percent": 10.0,
+                })
+                scoped.setattr(QUOTA.random, "uniform", lambda low, high: (low + high) / 2)
+                scoped.setattr(QUOTA.time, "sleep", sleeping_on_ssd)
+                return real_wait(destinations, lease, **kwargs)
+
+        for name, value in environment.items():
+            monkeypatch.setenv(name, value)
+        monkeypatch.setattr(sys, "argv", command[1:])
+        monkeypatch.setattr(MODULE, "wait_for_fastq_quota", checked_wait)
+        assert MODULE.main() == 0
+    else:
+        subprocess.run(command, check=True, env=environment)
 
     assert gzip.open(outputs / "raw1.fq.gz", "rt").read().startswith("@r1")
     assert gzip.open(outputs / "raw2.fq.gz", "rt").read().startswith("@r2")
     assert (outputs / "singletons.fq.gz").is_file()
     assert gzip.open(outputs / "cut1.fq.gz", "rt").read().startswith("@r1")
-    assert lease_log.read_text().splitlines() == ["status", "set"]
+    assert lease_log.read_text().splitlines() == (
+        ["status", "set", "set", "set"] if wait_on_quota else ["status", "set"]
+    )
     metrics = json.loads((outputs / "metrics.json").read_text())
     assert metrics["success"] is True
     assert metrics["requested"]["adapter_cores"] == 5.0
     assert [
         adjustment["response"]["held_cores"]
         for adjustment in metrics["lease"]["adjustments"]
-    ] == [5.0]
+    ] == ([5.0, 0.1, 1.0] if wait_on_quota else [5.0])
+    assert metrics["quota_wait"]["checks"] == (4 if wait_on_quota else 0)
     assert [phase["label"] for phase in metrics["phases"]] == [
         "external_adapter_fused.extract",
         "external_adapter_fused.adapter_removal",

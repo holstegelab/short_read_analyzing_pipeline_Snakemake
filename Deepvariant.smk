@@ -316,6 +316,7 @@ rule deepvariant_phasing_fused:
         merge_script=srcdir(MERGEPHASEDIRECT),
         stats_parser=srcdir('scripts/deepvariant_bcftools_stats_parser.py'),
         lease_mode=DEEPVARIANT_LEASE_MODE,
+        quota_mode=str(config.get('storage_quota_mode', 'auto')).strip().lower(),
         lease_command=zslurm_lease_command(config)
     conda: CONDA_VCF
     resources:
@@ -373,6 +374,7 @@ rule deepvariant_phasing_fused:
             --attempt {resources.attempt} \
             --lease-mode {params.lease_mode:q} \
             --lease-command {params.lease_command:q} \
+            --quota-mode {params.quota_mode:q} \
             --ssd-gb {resources.ssd_gb} \
             --shared-scratch-base {resources.tmpdir:q} \
             2>> {log.runner:q}

@@ -26,6 +26,18 @@ if EXTERNAL_ADAPTER_LEASE_MODE not in {'required', 'optional', 'disabled'}:
         "external_adapter_lease_mode must be required, optional, or disabled"
     )
 
+STORAGE_QUOTA_MODE = str(config.get('storage_quota_mode', 'auto')).strip().lower()
+if STORAGE_QUOTA_MODE not in {'auto', 'required', 'disabled'}:
+    raise ValueError("storage_quota_mode must be auto, required, or disabled")
+
+EXTERNAL_ADAPTER_QUOTA_MODE = str(
+    config.get('external_adapter_quota_mode', STORAGE_QUOTA_MODE)
+).strip().lower()
+if EXTERNAL_ADAPTER_QUOTA_MODE not in {'auto', 'required', 'disabled'}:
+    raise ValueError(
+        "external_adapter_quota_mode must be auto, required, or disabled"
+    )
+
 
 def _normalize(value):
     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -657,6 +669,10 @@ def _run_start_sample(wildcards, output, params):
         s3_max_backoff_seconds=max(
             0, float(config.get('s3_max_backoff_seconds', 300))
         ),
+        quota_mode=STORAGE_QUOTA_MODE,
+        quota_cores=float(_start_sample_cores(wildcards)),
+        quota_memory_mb=_start_sample_mem_mb(wildcards),
+        lease_command=zslurm_lease_command(config),
     )
 
 
@@ -898,6 +914,9 @@ rule split_alignments_by_readgroup:
     params:
         fixer=srcdir('scripts/fix_bam_rg_pairs'),
         reference_selector=srcdir('scripts/select_cram_reference.py'),
+        quota_gate=srcdir('scripts/storage_quota.py'),
+        quota_mode=STORAGE_QUOTA_MODE,
+        lease_command=zslurm_lease_command(config),
     run:
         # All branching in Python; shell executes a single, fixed command string
         sinfo = sampleinfo(SAMPLEINFO, wildcards['sample'], checkpoint=True)
@@ -946,6 +965,14 @@ rule split_alignments_by_readgroup:
 
         sanitized = f"{output.readgroups}/{wildcards.sample}.sanitized.{extension_in}"
         n = len(readgroups)
+
+        if n > 1 or erf_correct:
+            shell(
+                "python {params.quota_gate:q} --destination {output.readgroups:q} "
+                "--quota-mode {params.quota_mode:q} --cores {resources.n} "
+                "--memory-mb {resources.mem_mb} "
+                "--lease-command {params.lease_command:q} --phase split_alignments"
+            )
 
         if n == 1:
             # Single RG path: optionally sanitize, then link
@@ -1075,7 +1102,9 @@ rule adapter_removal:
         rmdups=srcdir('scripts/remove_interleaved_duplicates.py'),
         rescuer=srcdir('scripts/fastq_pair_rescue.py'),
         remove_duplicated_reads=lambda wc: int(SAMPLEINFO[wc.sample].get('remove_duplicated_reads', False)),
-        error_file=lambda wc: str(SAMPLEINFO[wc.sample]['samplefile']) + '.errors'
+        error_file=lambda wc: str(SAMPLEINFO[wc.sample]['samplefile']) + '.errors',
+        quota_mode=STORAGE_QUOTA_MODE,
+        lease_command=zslurm_lease_command(config)
     resources:
         time=get_time('adapter_removal'),
         n="5",
@@ -1097,6 +1126,9 @@ rule adapter_removal:
             --output-fastq-stats {output.fastq_stats:q} \
             --output-adapters {output.adapters:q} \
             --adapter-memory-mb {resources.mem_mb} \
+            --initial-cores {resources.n} \
+            --quota-mode {params.quota_mode:q} \
+            --lease-command {params.lease_command:q} \
             --metrics {log.io_profile:q} 2> {log.runner:q}
         """
 
@@ -1164,13 +1196,14 @@ rule external_adapter_fused:
         remove_duplicated_reads=lambda wc: int(SAMPLEINFO[wc.sample].get('remove_duplicated_reads', False)),
         error_file=lambda wc: str(SAMPLEINFO[wc.sample]['samplefile']) + '.errors',
         lease_mode=EXTERNAL_ADAPTER_LEASE_MODE,
+        quota_mode=EXTERNAL_ADAPTER_QUOTA_MODE,
         lease_command=zslurm_lease_command(config)
     conda: CONDA_MAIN
     priority: 10
     resources:
         time=get_time('external_adapter_fused'),
         # AdapterRemoval uses all five cores in production. Keep them for
-        # the whole fused job so no phase has to reacquire released cores.
+        # compute phases. Quota waiting releases CPU/RAM via existing leases.
         n="5",
         mem_mb=lambda wildcards, attempt: (
             (attempt - 1) * 14250 * 0.5 + 14250
@@ -1210,6 +1243,7 @@ rule external_adapter_fused:
             --adapter-memory-mb 768 \
             --lease-mode {params.lease_mode:q} \
             --lease-command {params.lease_command:q} \
+            --quota-mode {params.quota_mode:q} \
             --ssd-gb {resources.ssd_gb} \
             2> {log.runner:q}
         """
@@ -1587,6 +1621,7 @@ rule markdup:
         # machine error rate, default is 2500; NovaSeq uses 100
         no_dedup=lambda wildcards: 1 if SAMPLEINFO[wildcards['sample']]['no_dedup'] else 0,
         lease_mode=MERGE_MARKDUP_LEASE_MODE,
+        quota_mode=STORAGE_QUOTA_MODE,
         lease_command=zslurm_lease_command(config)
     log:
         runner=pj(LOG,"Aligner","{sample}.merge_markdup_fused.log"),
@@ -1626,6 +1661,7 @@ rule markdup:
             --markdup-memory-mb {resources.mem_mb} \
             --lease-mode {params.lease_mode:q} \
             --lease-command {params.lease_command:q} \
+            --quota-mode {params.quota_mode:q} \
             --ssd-gb {resources.ssd_gb} \
             2> {log.runner:q}
         """

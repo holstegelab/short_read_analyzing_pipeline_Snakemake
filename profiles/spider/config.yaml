@@ -1,11 +1,14 @@
 # Spider controller profile. Site-dependent biological/resource paths come from
-# SHORT_READ_SITE_CONFIG; see DEPLOYMENT.md. Scratch support remains blocked on
-# the ZSlurm allocation-scratch contract described there.
+# SHORT_READ_SITE_CONFIG; see DEPLOYMENT.md. ZSlurm supplies each child with a
+# private directory below the pilot allocation's SSD-backed $TMPDIR.
 use-conda: true
 use-apptainer: true
 conda-prefix: /project/holstegelab/Software/short_read_pipeline/conda
 apptainer-prefix: /project/holstegelab/Software/short_read_pipeline/apptainer
 executor: zslurm
+config:
+  - storage_quota_mode=disabled
+  - external_adapter_quota_mode=disabled
 default-resources:
   - partition=compute
   - time=3600

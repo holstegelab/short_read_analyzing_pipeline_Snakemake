@@ -1,5 +1,8 @@
 from common import *
 
+STORAGE_QUOTA_MODE = str(config.get('storage_quota_mode', 'auto')).strip().lower()
+if STORAGE_QUOTA_MODE not in {'auto', 'required', 'disabled'}:
+    raise ValueError("storage_quota_mode must be auto, required, or disabled")
 
 wildcard_constraints:
     sample=r"[\w\d_\-@]+",
@@ -61,7 +64,10 @@ rule download_encrypted_cram_from_tape:
         remote_crai=remote_cram_index,
         token=dcache_read_token,
         rclone=RCLONE,
-        cram_dir=CRAM
+        cram_dir=CRAM,
+        quota_gate=srcdir('scripts/storage_quota.py'),
+        quota_mode=STORAGE_QUOTA_MODE,
+        lease_command=zslurm_lease_command(config)
     resources:
         mem_mb=2000,
         n="0.2",
@@ -75,7 +81,11 @@ rule download_encrypted_cram_from_tape:
         set -euo pipefail
         mkdir -p {params.cram_dir}
         mkdir -p $(dirname {log})
-        {params.rclone:q} --config {params.token:q} -v copyto {params.remote_cram:q} {output.encrypted:q} > {log:q} 2>&1
+        : > {log:q}
+        python {params.quota_gate:q} --destination {output.encrypted:q} {output.crai_download:q} \
+            --quota-mode {params.quota_mode:q} --cores {resources.n} --memory-mb {resources.mem_mb} \
+            --lease-command {params.lease_command:q} --phase restore_download 2>> {log:q}
+        {params.rclone:q} --config {params.token:q} -v copyto {params.remote_cram:q} {output.encrypted:q} >> {log:q} 2>&1
         {params.rclone:q} --config {params.token:q} -v copyto {params.remote_crai:q} {output.crai_download:q} >> {log:q} 2>&1
         """
 
@@ -90,7 +100,10 @@ rule decrypt_cram:
     params:
         script=srcdir("scripts/decrypt_c4gh.py"),
         private_key=decryption_private_key,
-        passphrase_arg=decryption_passphrase_arg
+        passphrase_arg=decryption_passphrase_arg,
+        quota_gate=srcdir('scripts/storage_quota.py'),
+        quota_mode=STORAGE_QUOTA_MODE,
+        lease_command=zslurm_lease_command(config)
     resources:
         mem_mb=1000,
         n="0.5"
@@ -101,7 +114,11 @@ rule decrypt_cram:
         """
         set -euo pipefail
         mkdir -p $(dirname {log})
-        python {params.script} --sk {params.private_key} {params.passphrase_arg} --replace {input.encrypted} {output.cram} > {log} 2>&1
+        : > {log:q}
+        python {params.quota_gate:q} --destination {output.cram:q} {output.crai:q} \
+            --quota-mode {params.quota_mode:q} --cores {resources.n} --memory-mb {resources.mem_mb} \
+            --lease-command {params.lease_command:q} --phase restore_decrypt 2>> {log:q}
+        python {params.script} --sk {params.private_key} {params.passphrase_arg} --replace {input.encrypted} {output.cram} >> {log:q} 2>&1
         cp {input.crai_download} {output.crai}
         """
 
@@ -115,7 +132,10 @@ rule cram_to_markdup_bam:
         bai=ensure(pj(BAM, "{sample}.markdup.bam.bai"), non_empty=True)
     params:
         ref=REF,
-        bam_dir=BAM
+        bam_dir=BAM,
+        quota_gate=srcdir('scripts/storage_quota.py'),
+        quota_mode=STORAGE_QUOTA_MODE,
+        lease_command=zslurm_lease_command(config)
     resources:
         n=8,
         mem_mb=14000
@@ -127,6 +147,10 @@ rule cram_to_markdup_bam:
         set -euo pipefail
         mkdir -p {params.bam_dir}
         mkdir -p $(dirname {log})
-        samtools view --threads {resources.n} --reference {params.ref} -O BAM -o {output.bam} {input.cram} 2> {log}
+        : > {log:q}
+        python {params.quota_gate:q} --destination {output.bam:q} {output.bai:q} \
+            --quota-mode {params.quota_mode:q} --cores {resources.n} --memory-mb {resources.mem_mb} \
+            --lease-command {params.lease_command:q} --phase restore_bam 2>> {log:q}
+        samtools view --threads {resources.n} --reference {params.ref} -O BAM -o {output.bam} {input.cram} 2>> {log:q}
         samtools index -@ {resources.n} {output.bam} {output.bai} 2>> {log}
         """

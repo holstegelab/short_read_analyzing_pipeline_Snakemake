@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
+from storage_quota import DEFAULT_LEASE_COMMAND, wait_for_storage_quota
 from start_sample_route import (
     StartSampleRouteError,
     make_partial_directory,
@@ -54,6 +55,10 @@ def run_start_sample_job(
     s3_max_attempts: int = 6,
     s3_initial_backoff_seconds: float = 30,
     s3_max_backoff_seconds: float = 300,
+    quota_mode: str = "auto",
+    quota_cores: float | None = None,
+    quota_memory_mb: float | None = None,
+    lease_command: str = DEFAULT_LEASE_COMMAND,
 ) -> None:
     """Validate or materialize one sample, then publish atomic markers."""
 
@@ -92,6 +97,22 @@ def run_start_sample_job(
                 flush=True,
             )
         except StartSampleRouteError as existing_error:
+            # Gate only new materialization, never active/adopted data or the
+            # shared tape-stage batch. Wait before creating/quarantining dirs.
+            # Older queued callers may not pass the new arguments. Restore
+            # their route's complete transfer profile, not a generic copy one.
+            route_cores, route_memory = {
+                "archive": (0.6, 256.0),
+                "dcache": (1.0, 1024.0),
+                "s3": (0.5, 512.0),
+            }[route]
+            wait_for_storage_quota(
+                [materialized], mode=quota_mode,
+                resume_cores=route_cores if quota_cores is None else quota_cores,
+                resume_memory_mb=route_memory if quota_memory_mb is None else quota_memory_mb,
+                lease_command=lease_command,
+                resume_phase="source_materialize",
+            )
             if materialized.exists() or materialized.is_symlink():
                 quarantine = quarantine_incomplete(materialized)
                 print(

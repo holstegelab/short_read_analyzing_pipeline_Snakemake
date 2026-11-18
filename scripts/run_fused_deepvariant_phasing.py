@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from io_profile import run_profiled
+from storage_quota import wait_for_storage_quota
 from pipeline_runtime import (
     _atomic_json,
     _atomic_publish,
@@ -75,6 +76,8 @@ def parse_args() -> argparse.Namespace:
         default="required",
     )
     parser.add_argument("--lease-command", default="zslurm_lease")
+    parser.add_argument("--quota-mode", choices=("auto", "required", "disabled"), default="auto")
+    parser.add_argument("--quota-threshold-percent", type=float, default=97.0)
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
     parser.add_argument(
@@ -160,15 +163,31 @@ def main() -> int:
         args.scratch_base,
         shared_fallback=args.shared_scratch_base,
     )
+    started = time.time()
+    lease = lease_preflight(
+        args.lease_mode,
+        args.lease_command,
+        initial_cores=args.initial_cores,
+        initial_memory_mb=args.initial_memory_mb,
+    )
+    # Local SSD does not consume project quota. When using the shared
+    # fallback, wait before creating intermediate results or runtime caches.
+    scratch_quota_wait = wait_for_storage_quota(
+        [scratch], lease,
+        mode="auto" if args.quota_mode == "required" else args.quota_mode,
+        threshold_percent=args.quota_threshold_percent,
+        resume_cores=args.initial_cores, resume_memory_mb=args.initial_memory_mb,
+        resume_phase="deepvariant", wait_phase="deepvariant_scratch_quota_wait",
+        log_label="DeepVariant scratch quota",
+    )
     parent = scratch / "deepvariant_phasing_fused"
     parent.mkdir(parents=True, exist_ok=True)
     job_tmp = Path(
         tempfile.mkdtemp(prefix=f"{args.sample}.{args.region}.", dir=parent)
     )
     phase_paths: list[Path] = []
-    lease: dict = {}
+    quota_wait: dict = {"enabled": False, "reason": "publication not reached"}
     success = False
-    started = time.time()
 
     raw_vcf = job_tmp / "raw.vcf.gz"
     raw_gvcf = job_tmp / "raw.g.vcf.gz"
@@ -198,12 +217,6 @@ def main() -> int:
             f"TMPDIR={temp_dir} cache={cache_dir}",
             file=sys.stderr,
             flush=True,
-        )
-        lease = lease_preflight(
-            args.lease_mode,
-            args.lease_command,
-            initial_cores=args.initial_cores,
-            initial_memory_mb=args.initial_memory_mb,
         )
         intermediate = job_tmp / "intermediate"
         intermediate.mkdir()
@@ -347,7 +360,7 @@ def main() -> int:
             if not path.is_file():
                 raise RuntimeError(f"required phasing output is absent: {path}")
 
-        for source, destination in (
+        publications = (
             (phased_tbi, Path(args.output_vcf_tbi)),
             (phased, Path(args.output_vcf)),
             (wstats, Path(args.output_wstats)),
@@ -358,7 +371,17 @@ def main() -> int:
             (final_gvcf, Path(args.output_gvcf)),
             (exome_gvcf_tbi, Path(args.output_exome_gvcf_tbi)),
             (exome_gvcf, Path(args.output_exome_gvcf)),
-        ):
+        )
+        quota_wait = wait_for_storage_quota(
+            [destination for _, destination in publications], lease,
+            mode=args.quota_mode,
+            threshold_percent=args.quota_threshold_percent,
+            resume_cores=min(1.0, args.low_cores, args.initial_cores),
+            resume_memory_mb=min(1024.0, args.low_memory_mb, args.initial_memory_mb),
+            resume_phase="deepvariant_copy", wait_phase="deepvariant_copy_quota_wait",
+            log_label="DeepVariant output quota",
+        )
+        for source, destination in publications:
             _atomic_publish(source, destination)
         success = True
         return 0
@@ -385,6 +408,8 @@ def main() -> int:
                 "ssd_gb": args.ssd_gb,
             },
             "lease": lease,
+            "scratch_quota_wait": scratch_quota_wait,
+            "quota_wait": quota_wait,
             "phases": phases,
             "scratch_job_directory": str(job_tmp),
             "temporary_directory": str(temp_dir),

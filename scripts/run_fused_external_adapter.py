@@ -15,6 +15,7 @@ from pathlib import Path
 
 from io_profile import run_profiled
 from adapter_processing import prepare_adapters
+from fastq_quota import wait_for_fastq_quota
 from pipeline_runtime import (
     _atomic_copy,
     _atomic_json,
@@ -51,7 +52,9 @@ def q(value: object) -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-alignment", required=True)
-    parser.add_argument("--cram-options", default="")
+    # Snakemake omits the shell argument when a BAM needs no CRAM options.
+    # Accept a bare flag so commands already queued by a running workflow work.
+    parser.add_argument("--cram-options", nargs="?", const="", default="")
     # Defaults keep already-queued commands from a running Snakemake process
     # compatible. New workflow parses pass these paths explicitly.
     parser.add_argument("--hg19-reference", default=DEFAULT_HG19_REFERENCE)
@@ -91,6 +94,8 @@ def parse_args() -> argparse.Namespace:
         default="required",
     )
     parser.add_argument("--lease-command", default="zslurm_lease")
+    parser.add_argument("--quota-mode", choices=("auto", "required", "disabled"), default="auto")
+    parser.add_argument("--quota-threshold-percent", type=float, default=97.0)
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
     parser.add_argument("--poll-interval", type=float, default=5.0)
@@ -214,6 +219,7 @@ def main() -> int:
     phase_paths: list[Path] = []
     lease: dict = {}
     reference_selection: dict = {}
+    quota_wait: dict = {"enabled": False, "reason": "publication not reached"}
     success = False
     started = time.time()
     raw1 = job_tmp / "raw_R1.fastq.gz"
@@ -282,9 +288,10 @@ def main() -> int:
             args, raw1, raw2, job_tmp, phase_paths, pigz=pigz,
             adapter_removal=adapter_removal,
             label="external_adapter_fused.adapter_removal",
+            from_samtools_fastq=True,
         )
         prepared1, prepared2, adapter_log, fastq_stats, adapters = prepared
-        for source_path, destination in (
+        publications = (
             (raw1, Path(args.output_raw_forward)),
             (raw2, Path(args.output_raw_reverse)),
             (singletons, Path(args.output_singletons)),
@@ -293,7 +300,15 @@ def main() -> int:
             (fastq_stats, Path(args.output_fastq_stats)),
             (adapters, Path(args.output_adapters)),
             (adapter_log, Path(args.output_adapter_log)),
-        ):
+        )
+        quota_wait = wait_for_fastq_quota(
+            [destination for _, destination in publications], lease,
+            mode=args.quota_mode,
+            threshold_percent=args.quota_threshold_percent,
+            copy_cores=min(1.0, args.adapter_cores),
+            copy_memory_mb=args.adapter_memory_mb,
+        )
+        for source_path, destination in publications:
             _atomic_copy(source_path, destination)
         success = True
         return 0
@@ -320,6 +335,7 @@ def main() -> int:
                 },
                 "observed_fastq_encoding": encoding if "encoding" in locals() else {},
                 "reference_selection": reference_selection,
+                "quota_wait": quota_wait,
                 "lease": lease,
                 "phases": phases,
                 "scratch_job_directory": str(job_tmp),

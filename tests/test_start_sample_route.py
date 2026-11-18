@@ -74,7 +74,10 @@ def test_materialization_promote_validate_and_markers(tmp_path):
     assert not destination.exists()
 
 
-def test_active_start_job_validates_without_owned_temp_directory(tmp_path):
+def test_active_start_job_validates_without_owned_temp_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(start_sample_job, "wait_for_storage_quota", lambda *a, **k: pytest.fail(
+        "active source must not wait for bulk-write quota"
+    ))
     source = tmp_path / "input.cram"
     source.write_bytes(b"cram")
     started = tmp_path / "source" / "S1.started"
@@ -108,7 +111,10 @@ def test_active_start_job_validates_without_owned_temp_directory(tmp_path):
     ]
 
 
-def test_dcache_start_job_adopts_declared_materialization(tmp_path):
+def test_dcache_start_job_adopts_declared_materialization(tmp_path, monkeypatch):
+    monkeypatch.setattr(start_sample_job, "wait_for_storage_quota", lambda *a, **k: pytest.fail(
+        "validated source must not wait or redownload"
+    ))
     sample = {
         "from_external": "dcache",
         "prefix": "dcache:remote:/cohort",
@@ -216,3 +222,52 @@ def test_s3_start_job_retries_signed_requester_pays_download(
     assert validate_materialized(destination, sample, "s3") == [
         {"path": "snd10000/sample.cram", "bytes": 4}
     ]
+
+
+@pytest.mark.parametrize("route,cores,memory", [
+    ("archive", 0.6, 256.0), ("dcache", 1.0, 1024.0), ("s3", 0.5, 512.0),
+])
+@pytest.mark.parametrize("override", [False, True])
+def test_new_source_waits_before_quarantine_and_materialization(
+    tmp_path, monkeypatch, route, cores, memory, override
+):
+    destination = tmp_path / "source" / "S1.data"
+    destination.mkdir(parents=True)  # Incomplete old destination, no data.
+    events = []
+
+    def wait(paths, **kwargs):
+        assert paths == [destination]
+        assert destination.is_dir()
+        assert list(destination.parent.iterdir()) == [destination]
+        assert kwargs == dict(
+            mode="required", resume_cores=2.0 if override else cores,
+            resume_memory_mb=2000.0 if override else memory,
+            lease_command="/pipeline/lease", resume_phase="source_materialize",
+        )
+        events.append("wait")
+
+    def materialize(**kwargs):
+        assert events == ["wait"]
+        assert not destination.exists()
+        (kwargs["partial"] / "sample.cram").write_bytes(b"cram")
+        events.append("write")
+
+    monkeypatch.setattr(start_sample_job, "wait_for_storage_quota", wait)
+    monkeypatch.setattr(start_sample_job, {
+        "archive": "_copy_archive_sample", "dcache": "_download_dcache_sample",
+        "s3": "_download_s3_sample",
+    }[route], materialize)
+    monkeypatch.setattr(start_sample_job, "_release_archive_sources", lambda *a: None)
+    extra = dict(quota_cores=2.0, quota_memory_mb=2000.0) if override else {}
+    run_start_sample_job(
+        sample={"from_external": route, "prefix": "unused", "file1": ["sample.cram"], "file2": []},
+        sample_name="S1", expected_route=route, destination=destination,
+        started=tmp_path / "S1.started", route_ready=tmp_path / "S1.route_ready",
+        append_prefix=lambda prefix, filename: f"{prefix}/{filename}",
+        dcache_source_file=lambda *_: ("remote", "/sample.cram"),
+        transfer_script="unused.py", source_dir=destination.parent,
+        dcache_download_workers=1, dcache_download_lock_slots=1,
+        quota_mode="required", lease_command="/pipeline/lease", **extra,
+    )
+    assert events == ["wait", "write"]
+    assert (destination / "sample.cram").read_bytes() == b"cram"

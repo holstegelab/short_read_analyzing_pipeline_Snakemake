@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Sequence
 
 from io_profile import run_profiled
+from storage_quota import wait_for_storage_quota
 from pipeline_runtime import (
     _atomic_copy,
     _atomic_json,
@@ -55,6 +56,8 @@ def parse_args() -> argparse.Namespace:
         default="required",
     )
     parser.add_argument("--lease-command", default="zslurm_lease")
+    parser.add_argument("--quota-mode", choices=("auto", "required", "disabled"), default="auto")
+    parser.add_argument("--quota-threshold-percent", type=float, default=97.0)
     parser.add_argument("--ssd-gb", type=float, required=True)
     parser.add_argument("--scratch-base", help="Explicit scratch root for tests")
     parser.add_argument("--poll-interval", type=float, default=5.0)
@@ -104,6 +107,7 @@ def main() -> int:
     job_tmp = Path(tempfile.mkdtemp(prefix=f"{args.sample}.", dir=parent))
     phase_paths: list[Path] = []
     lease: dict = {}
+    quota_wait: dict = {"enabled": False, "reason": "publication not reached"}
     success = False
     started = time.time()
     local_merge_log = job_tmp / "merge_rgs.log"
@@ -208,11 +212,21 @@ def main() -> int:
 
         # Publish the large BAM last. Until it appears, downstream rules cannot
         # observe a partially published output set.
-        for source, destination in (
+        publications = (
             (final_bai, Path(args.output_bai)),
             (final_stat, Path(args.output_stat)),
             (final_bam, Path(args.output_bam)),
-        ):
+        )
+        quota_wait = wait_for_storage_quota(
+            [destination for _, destination in publications], lease,
+            mode=args.quota_mode,
+            threshold_percent=args.quota_threshold_percent,
+            resume_cores=min(1.0, args.markdup_cores, args.initial_cores),
+            resume_memory_mb=min(1024.0, args.markdup_memory_mb, args.initial_memory_mb),
+            resume_phase="markdup_copy", wait_phase="markdup_quota_wait",
+            log_label="markdup quota", wait_note="on SSD before publication",
+        )
+        for source, destination in publications:
             _atomic_copy(source, destination)
         success = True
         return 0
@@ -248,6 +262,7 @@ def main() -> int:
                     "ssd_gb": args.ssd_gb,
                 },
                 "lease": lease,
+                "quota_wait": quota_wait,
                 "phases": phases,
                 "scratch_job_directory": str(job_tmp),
                 "scratch_removed": not job_tmp.exists(),
