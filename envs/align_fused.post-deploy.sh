@@ -9,10 +9,14 @@ readonly DRAGMAP_REPOSITORY='https://github.com/populationgenomics/DRAGMAP.git'
 readonly DRAGMAP_REVISION='4f98e00e2aedc85e27ea6c118cf7b16663036c14'
 readonly EXPECTED_VERSION='1.3.0-tokenizer-next-fix'
 readonly BUILD_JOBS=8
-readonly SYSTEM_CC='/usr/bin/gcc'
-readonly SYSTEM_CXX='/usr/bin/g++'
 
 : "${CONDA_PREFIX:?CONDA_PREFIX is required by the DRAGMAP post-deploy script}"
+
+readonly SYSTEM_CC="${CONDA_PREFIX}/bin/gcc"
+readonly SYSTEM_CXX="${CONDA_PREFIX}/bin/g++"
+
+conda install -y conda-forge::gcc conda-forge::gxx conda-forge::git conda-forge::coreutils conda-forge::grep conda-forge::make conda-forge::binutils
+  
 [[ -x "${SYSTEM_CC}" ]] || { echo "Missing compiler: ${SYSTEM_CC}" >&2; exit 1; }
 [[ -x "${SYSTEM_CXX}" ]] || { echo "Missing compiler: ${SYSTEM_CXX}" >&2; exit 1; }
 
@@ -62,6 +66,24 @@ elif ! grep -Fq 'binStr[20], valStr[32], pctStr[20]' "${hash_table_source}"; the
     exit 1
 fi
 
+
+git -C "${source_dir}" apply <<'PATCH'
+diff --git a/thirdparty/dragen/src/common/hash_generation/gen_hash_table.c b/thirdparty/dragen/src/common/hash_generation/gen_hash_table.c
+index cdca3df..5a55699 100644
+--- a/thirdparty/dragen/src/common/hash_generation/gen_hash_table.c
++++ b/thirdparty/dragen/src/common/hash_generation/gen_hash_table.c
+@@ -249,7 +249,7 @@ void setDefaultHashParams(hashTableConfig_t* defConfig, const char* destDir, Has
+     free(dir);
+   }
+ 
+-  defConfig->hostVersion = (char*)getHostVersion(0);
++  defConfig->hostVersion = (char*)getHostVersion();
+ }
+ 
+ //-------------------------------------------------------------------------------swhitmore
+PATCH
+
+
 (
     cd "${source_dir}"
 
@@ -71,7 +93,7 @@ fi
     # flags, matching the known-good build used by this pipeline since 2024.
     unset CC CXX CPPFLAGS CFLAGS CXXFLAGS LDFLAGS
     unset BOOST_ROOT BOOST_INCLUDEDIR BOOST_LIBRARYDIR
-    CC="${SYSTEM_CC}" CXX="${SYSTEM_CXX}" \
+    CC="${SYSTEM_CC} -Wno-unused-but-set-variable" CXX="${SYSTEM_CXX} -include cstdint -Wno-unused-but-set-variable -Wno-nonnull" \
         HAS_GTEST=0 make -j "${BUILD_JOBS}"
 )
 
@@ -93,3 +115,6 @@ printf 'repository=%s\nrevision=%s\nlocal_patch=%s\nversion=%s\n' \
     "${DRAGMAP_REPOSITORY}" "${actual_revision}" \
     'hash-table-uint64-buffer-20-to-32' "${actual_version}" \
     > "${CONDA_PREFIX}/dragen-os.build-info"
+
+#remove depencies only needed at compile time. This does not benefit Docker, but apptainer containers do, since they are not layered
+conda remove -y gcc gxx git coreutils grep

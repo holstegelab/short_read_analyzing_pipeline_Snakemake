@@ -5,7 +5,11 @@ set -euo pipefail
 # executed.  SHORT_READ_PIPELINE_ROOT is therefore exported by the root
 # Snakefile instead of deriving the checkout from BASH_SOURCE.
 : "${CONDA_PREFIX:?CONDA_PREFIX is required by the preprocess post-deploy script}"
+# Detect whether the script is running in an Apptainer container
+[ "$(dirname "$CONDA_PREFIX")" = "/conda-envs" ] && export SHORT_READ_PIPELINE_ROOT=/tmp/bind
+
 : "${SHORT_READ_PIPELINE_ROOT:?Run environment creation through the pipeline Snakefile}"
+conda install -y conda-forge::flock conda-forge::make conda-forge::coreutils conda-forge::gcc==13.4.0
 
 readonly source_dir="${SHORT_READ_PIPELINE_ROOT}/scripts"
 readonly lock_file="${source_dir}/.native-build.lock"
@@ -90,3 +94,5 @@ install_atomic "${fastcheck_hts_module}" \
 PYTHONPATH="${source_dir}" "${CONDA_PREFIX}/bin/python" -c \
     'import fastcheck, fastcheck_hts; print("native preprocessing imports OK")'
 echo "[preprocess.post-deploy] Native tools installed in ${source_dir}" >&2
+
+conda remove -y coreutils make flock gcc
